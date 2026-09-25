@@ -1,0 +1,223 @@
+{
+    "data": [
+        {
+            "sysname": "",
+            "ip": "172.22.0.11",
+            "collector": "dev-c1",
+            "session_id": "1790256572268145654",
+            "peers_up": 1,
+            "peers_down": 0,
+            "peers_view_lost": 0,
+            "peers_stale": 0,
+            "last_seen": "2026-09-24T13:29:32.26845Z"
+        },
+        {
+            "sysname": "",
+            "ip": "172.22.0.11",
+            "collector": "dev-c2",
+            "session_id": "1790256572268380769",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 0,
+            "peers_stale": 1,
+            "last_seen": "2026-09-24T13:29:32.268488Z"
+        },
+        {
+            "sysname": "4a8063e2ed30",
+            "ip": "172.22.0.7",
+            "collector": "dev-c1",
+            "session_id": "1789166368659383364",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 2,
+            "peers_stale": 0,
+            "last_seen": "2026-09-17T21:27:27.307748Z"
+        },
+        {
+            "sysname": "4a8063e2ed30",
+            "ip": "172.22.0.8",
+            "collector": "dev-c1",
+            "session_id": "1789750424502141066",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 2,
+            "peers_stale": 0,
+            "last_seen": "2026-09-22T23:51:30.786266Z"
+        },
+        {
+            "sysname": "4a8063e2ed30",
+            "ip": "172.22.0.8",
+            "collector": "dev-c2",
+            "session_id": "1790256447428733222",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 0,
+            "peers_stale": 2,
+            "last_seen": "2026-09-24T13:27:27.429354Z"
+        },
+        {
+            "sysname": "7a35fd594265",
+            "ip": "172.22.0.12",
+            "collector": "dev-c1",
+            "session_id": "1789942564039336873",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-09-20T22:22:26.403762Z"
+        },
+        {
+            "sysname": "7a35fd594265",
+            "ip": "172.22.0.12",
+            "collector": "dev-c2",
+            "session_id": "1789942564039401564",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-09-20T22:22:26.403753Z"
+        },
+        {
+            "sysname": "bmpgen-r1",
+            "ip": "172.22.0.1",
+            "collector": "dev-c1",
+            "session_id": "1786474332449172025",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 3,
+            "peers_stale": 0,
+            "last_seen": "2026-08-11T18:52:12.451248Z"
+        },
+        {
+            "sysname": "nx-leaf1",
+            "ip": "10.0.103.67",
+            "collector": "dev-c1",
+            "session_id": "1786377807706827633",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-08-10T17:37:41.430188Z"
+        },
+        {
+            "sysname": "nx-leaf2",
+            "ip": "10.0.103.68",
+            "collector": "dev-c1",
+            "session_id": "1786383730713893707",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-08-10T17:42:10.714046Z"
+        },
+        {
+            "sysname": "nx-p3",
+            "ip": "10.0.103.74",
+            "collector": "dev-c1",
+            "session_id": "1787088045035999149",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-08-18T21:20:45.036361Z"
+        },
+        {
+            "sysname": "nx-spine1",
+            "ip": "10.0.103.66",
+            "collector": "dev-c1",
+            "session_id": "1786377795374618900",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 2,
+            "peers_stale": 0,
+            "last_seen": "2026-08-10T17:37:51.407368Z"
+        },
+        {
+            "sysname": "replay-nx-p3",
+            "ip": "172.22.0.10",
+            "collector": "dev-c1",
+            "session_id": "1790256572241129859",
+            "peers_up": 3,
+            "peers_down": 0,
+            "peers_view_lost": 0,
+            "peers_stale": 0,
+            "last_seen": "2026-09-24T13:29:32.241609Z"
+        },
+        {
+            "sysname": "replay-nx-p3",
+            "ip": "172.22.0.10",
+            "collector": "dev-c2",
+            "session_id": "1790256572241314618",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 0,
+            "peers_stale": 3,
+            "last_seen": "2026-09-24T13:29:32.241498Z"
+        },
+        {
+            "sysname": "xr-p1",
+            "ip": "10.0.103.64",
+            "collector": "dev-c1",
+            "session_id": "1787091191979968912",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-08-18T22:13:11.980071Z"
+        },
+        {
+            "sysname": "xr-p2",
+            "ip": "10.0.103.65",
+            "collector": "dev-c1",
+            "session_id": "1787091193744638745",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 1,
+            "peers_stale": 0,
+            "last_seen": "2026-08-18T22:13:13.745216Z"
+        },
+        {
+            "sysname": "xr-pe1",
+            "ip": "10.0.103.62",
+            "collector": "dev-c1",
+            "session_id": "1787091200892569228",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 2,
+            "peers_stale": 0,
+            "last_seen": "2026-08-18T22:13:20.892875Z"
+        },
+        {
+            "sysname": "xr-pe2",
+            "ip": "10.0.103.63",
+            "collector": "dev-c1",
+            "session_id": "1787091204212742620",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 2,
+            "peers_stale": 0,
+            "last_seen": "2026-08-18T22:13:24.212909Z"
+        },
+        {
+            "sysname": "xr-rr1",
+            "ip": "10.0.103.61",
+            "collector": "dev-c1",
+            "session_id": "1787091198766107609",
+            "peers_up": 0,
+            "peers_down": 0,
+            "peers_view_lost": 5,
+            "peers_stale": 0,
+            "last_seen": "2026-08-18T22:13:18.766453Z"
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [
+            {
+                "code": "collector_stale",
+                "message": "at least one row in this answer comes from a collector that has not been heard from in over 1m30s, so it is that collector's last view rather than a current one; its peers read \"stale\""
+            }
+        ],
+        "total_matched": null
+    }
+}

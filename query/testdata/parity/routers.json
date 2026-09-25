@@ -1,0 +1,46 @@
+[
+  {
+    "SysName": "parity-r1",
+    "IP": "10.250.1.1",
+    "Collector": "parity-c1",
+    "SessionID": 25002,
+    "PeersUp": 2,
+    "PeersDown": 1,
+    "PeersViewLost": 1,
+    "PeersStale": 0,
+    "LastSeen": "2030-01-01T00:00:30Z"
+  },
+  {
+    "SysName": "parity-r2",
+    "IP": "10.250.1.2",
+    "Collector": "parity-c1",
+    "SessionID": 25101,
+    "PeersUp": 1,
+    "PeersDown": 0,
+    "PeersViewLost": 0,
+    "PeersStale": 0,
+    "LastSeen": "2030-01-01T00:01:10Z"
+  },
+  {
+    "SysName": "parity-r2",
+    "IP": "10.250.1.2",
+    "Collector": "parity-c2",
+    "SessionID": 25201,
+    "PeersUp": 1,
+    "PeersDown": 0,
+    "PeersViewLost": 0,
+    "PeersStale": 0,
+    "LastSeen": "2030-01-01T00:01:18Z"
+  },
+  {
+    "SysName": "parity-r3",
+    "IP": "10.250.1.3",
+    "Collector": "parity-c1",
+    "SessionID": 25301,
+    "PeersUp": 2,
+    "PeersDown": 0,
+    "PeersViewLost": 0,
+    "PeersStale": 0,
+    "LastSeen": "2030-01-01T00:01:23Z"
+  }
+]

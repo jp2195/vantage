@@ -1,0 +1,54 @@
+// Near misses for scripts/citation-patterns.txt, the set CI runs. No
+// pattern in it may match any line of this file, so these are sentences an
+// ordinary contributor could write.
+// Give a brief summary of the change in the commit message.
+// In brief, the collector restarts its sessions.
+// The audit trail names the caller by token name.
+// Append each route to this slice of results.
+// A worker picks up one task at a time, and tasks 3 and 4 wait.
+// multitask10 is not a word, and neither is subtask-7x.
+// RFC 7854 §4.3 defines the Initiation message.
+// Phase 1 of the script captures the two unparameterized endpoints.
+// See README.md and CONTRIBUTING.md.
+// The capture-report.json file is written next to the capture.
+// Finding the peer requires the router first.
+// The OpenAPI spec lists every path this daemon serves.
+// Run the retention sweep again on 2026-09-20 if the disk fills.
+// Design the schema, then document it.
+// Measured on a local dev archive and on a lab archive.
+// The NX-OS banner reads 10.6(2)I9(1), and an SVG path starts M1 1l4 4.
+// "resolved": "https://registry.npmjs.org/@types/json-schema/-/json-schema-7.0.15.tgz"
+// The controller reconciles the StatefulSet on every change.
+// Per the spec, the length field includes the 19-byte header.
+// An earlier draft used code point 5 for this TLV
+// During this phase, the speaker defers best-path
+// Cancel this task's context
+// The brief flap between withdraw and re-announce
+// major 10, minor 3
+// Double the previous round, capped at 30s
+// If this branch adds the implicit withdraw
+// See the design doc in the PR description
+// Round 2 of the handshake
+// Before this pass, the TLVs are still in wire order.
+// The plan says full scan
+// Step 1a: create the namespace.
+// The handoff between the accept loop and the session goroutine
+out, err := json.Marshal(spec)
+// The audit found no issues in the TLS configuration.
+// Run this test once with -race
+// the controller notes the generation it last reconciled
+// moves the archive to schema version 2
+// I have performed a self-review of my code
+// write a design doc first
+// The worker pool runs each task on its own goroutine; task 1 and task 2 never share a buffer
+// A maintainer does a final review before merging
+// The ledger of pending acknowledgements is keyed by sequence number
+// Cron task 5
+// the Kubernetes Job's task 0 index
+// Minor 2 release notes
+// Important 1: back up first
+// Critical 3 pods
+// a finding 2 steps into
+// RFC 7854 §4.2 defines the per-peer header.
+// See §4.2 of RFC 7854 for the per-peer header.
+// The liveness probe and the readiness probe are designed apart.

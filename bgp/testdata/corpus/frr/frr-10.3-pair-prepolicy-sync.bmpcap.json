@@ -1,0 +1,10 @@
+{
+  "router": "172.22.0.7",
+  "sys_descr": "FRRouting 10.3_git",
+  "vendor": "frr",
+  "os": "frr",
+  "version": "10.3",
+  "captured_at": "2026-08-28T23:51:48.774663718Z",
+  "message_count": 17,
+  "mode": "window"
+}

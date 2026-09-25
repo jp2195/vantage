@@ -1,0 +1,65 @@
+# Image scan: builds the three daemon images and scans each with Grype,
+# failing on a CRITICAL or HIGH vulnerability that has a fix.
+#
+# It runs on pull requests that change what goes into an image (a
+# Dockerfile, or the Go modules), and weekly, because a new advisory can make
+# an unchanged image vulnerable. release.yml runs the same scan before it
+# pushes anything.
+#
+# This workflow is not a required check: it does not run on every pull
+# request, and a required check that never reports blocks the merge.
+#
+# The token is read-only and no checkout persists it. Actions are pinned by
+# commit SHA.
+name: Image scan
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile.*"
+      - go.mod
+      - go.sum
+      - .github/workflows/image-scan.yml
+  schedule:
+    # Weekly, Monday 06:41 UTC, off the hour.
+    - cron: "41 6 * * 1"
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [collector, writer, api]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: scan/vantage-${{ matrix.component }}:${{ github.sha }}
+      - uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: scan/vantage-${{ matrix.component }}:${{ github.sha }}
+          grype-version: v0.118.0
+          only-fixed: true
+          severity-cutoff: high
+          fail-build: true
+          output-format: table

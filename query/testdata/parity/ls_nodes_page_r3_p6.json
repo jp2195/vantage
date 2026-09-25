@@ -1,0 +1,69 @@
+[
+  {
+    "Rows": [
+      {
+        "RouterSysName": "parity-r3",
+        "RouterIP": "10.250.1.3",
+        "PeerIP": "10.250.2.6",
+        "Collector": "parity-c1",
+        "RIB": "in_pre",
+        "Protocol": 2,
+        "Identifier": 0,
+        "ASN": 65250,
+        "BGPLSID": 0,
+        "Area": 0,
+        "RouterID": "0afa00a1",
+        "NodeKey": 17433878112934920666,
+        "RouterIDv4": "10.250.200.1",
+        "Name": "parity-ls-a",
+        "SRGBBase": 16000,
+        "SRGBSize": 8000,
+        "SRLBBase": 15000,
+        "SRLBSize": 1000,
+        "SRAlgorithms": "AA==",
+        "IsWithdraw": false,
+        "DumpState": "complete"
+      }
+    ],
+    "Next": {
+      "Collector": "parity-c1",
+      "SessionID": 25301,
+      "Router": "10.250.1.3",
+      "Peer": "10.250.2.6",
+      "RIB": "",
+      "Last": [
+        "in_pre",
+        "0afa00a1",
+        17433878112934920666
+      ]
+    }
+  },
+  {
+    "Rows": [
+      {
+        "RouterSysName": "parity-r3",
+        "RouterIP": "10.250.1.3",
+        "PeerIP": "10.250.2.6",
+        "Collector": "parity-c1",
+        "RIB": "in_pre",
+        "Protocol": 2,
+        "Identifier": 0,
+        "ASN": 65250,
+        "BGPLSID": 0,
+        "Area": 0,
+        "RouterID": "0afa00b2",
+        "NodeKey": 5871875415242679220,
+        "RouterIDv4": "",
+        "Name": "parity-ls-b",
+        "SRGBBase": 16000,
+        "SRGBSize": 8000,
+        "SRLBBase": 15000,
+        "SRLBSize": 1000,
+        "SRAlgorithms": "AA==",
+        "IsWithdraw": false,
+        "DumpState": "complete"
+      }
+    ],
+    "Next": null
+  }
+]

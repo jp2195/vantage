@@ -1,0 +1,10 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use: [STANDARD]
+  # PeerType mirrors RFC 7854 §4.2 peer-type wire values 1:1, so its zero
+  # value is PEER_TYPE_GLOBAL rather than PEER_TYPE_UNSPECIFIED.
+  except: [ENUM_ZERO_VALUE_SUFFIX]
+breaking:
+  use: [WIRE_JSON]

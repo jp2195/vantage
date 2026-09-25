@@ -1,0 +1,161 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "vantage.fullname" . }}-collector
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  # A StatefulSet for IDENTITY, not storage: there are no volumeClaimTemplates
+  # and the collector needs none. collector_id is half of session identity, and
+  # under a Deployment the generated pod name makes it change on every restart
+  # -- stranding the previous view under a (collector_id, router_ip) pairing no
+  # future session will ever carry, so nothing can displace it.
+  serviceName: {{ include "vantage.fullname" . }}-collector
+  replicas: {{ .Values.collector.replicas }}
+  selector:
+    matchLabels:
+      {{- include "vantage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: collector
+  template:
+    metadata:
+      labels:
+        {{- include "vantage.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: collector
+      annotations:
+        # Roll the pods when the rendered config changes. Without this a
+        # helm upgrade that only alters the ConfigMap leaves the old config
+        # running, and the release reports success.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-collector.yaml") . | sha256sum }}
+    spec:
+      # None of these pods talks to the Kubernetes API, so none gets a
+      # token to leak.
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # BMP sessions are long-lived and stateful from the first byte, and the
+      # close-out that emits KIND_VIEW_LOST runs on shutdown. Give it room to
+      # finish before SIGKILL.
+      terminationGracePeriodSeconds: 60
+      # The daemon image (Dockerfile.collector) builds on
+      # gcr.io/distroless/static-debian12, which has no shell, so the
+      # "cp && echo >>" pipeline that appends collector_id has to come from an
+      # image that has one. schemaJob.image is already a chart value that
+      # points at one (see deployment-writer.yaml's identical pattern).
+      # Scheduling controls, and the one place this chart's BMP ingress can
+      # need them. The BMP Service is externalTrafficPolicy: Local, because a
+      # router's source address is its identity. Some LoadBalancer
+      # implementations do not honor that setting when choosing which node
+      # answers ARP for the VIP: Cilium's L2 announcements documents itself as
+      # "incompatible with the externalTrafficPolicy: Local on services as it
+      # may cause service IPs to be announced on nodes without pods causing
+      # traffic drops", and its leader election is first-come-first-served
+      # without regard to where the backend runs.
+      #
+      # Where that is true, the VIP only works while the announcing node and
+      # this pod happen to be the same node -- which is a coincidence, not a
+      # guarantee, and it ends at the first reschedule. Pinning this pod to the
+      # node the announcer is constrained to makes it a guarantee. Implementations
+      # whose election does account for ready endpoints (MetalLB's L2 mode) need
+      # none of this, which is why it is a value rather than a default.
+      {{- with .Values.collector.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.collector.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.collector.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: render-config
+          image: "{{ .Values.schemaJob.image.repository }}:{{ .Values.schemaJob.image.tag }}"
+          imagePullPolicy: {{ .Values.schemaJob.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              cp /etc/vantage-src/collector.yaml /etc/vantage/collector.yaml
+              # The pod name, which a StatefulSet keeps stable across restarts.
+              echo "collector_id: \"$POD_NAME\"" >> /etc/vantage/collector.yaml
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: config-src
+              mountPath: /etc/vantage-src
+            - name: config
+              mountPath: /etc/vantage
+      containers:
+        - name: collector
+          image: "{{ .Values.images.collector.repository }}:{{ .Values.images.collector.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.images.collector.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # The daemon is a static binary that writes nothing to disk: its
+            # config arrives on the emptyDir the init container fills, and it
+            # has no temp files, caches or state of its own.
+            readOnlyRootFilesystem: true
+          args: ["-config", "/etc/vantage/collector.yaml"]
+          ports:
+            - name: bmp
+              containerPort: {{ .Values.collector.bmpPort }}
+            - name: metrics
+              containerPort: {{ .Values.collector.metricsPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vantage
+            {{- if .Values.nats.tls.enabled }}
+            - name: nats-tls
+              mountPath: {{ include "vantage.natsTLSDir" . | quote }}
+              readOnly: true
+            {{- end }}
+          # /healthz answers whenever the process is serving; /readyz only
+          # while the NATS connection is up. Liveness must not follow NATS:
+          # restarting the collector would drop every router's BMP session
+          # and bring NATS back no sooner.
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.collector.resources | nindent 12 }}
+      volumes:
+        - name: config-src
+          configMap:
+            name: {{ include "vantage.fullname" . }}-collector
+        - name: config
+          emptyDir: {}
+        {{- if .Values.nats.tls.enabled }}
+        - name: nats-tls
+          secret:
+            # Deliberately NOT in the checksum/config annotation above. The
+            # kubelet propagates a rewritten Secret into the mount, and
+            # nats.go re-reads these files on the next connection attempt --
+            # so a renewal needs no restart, and a checksum here would roll
+            # both daemons on every renewal for nothing.
+            secretName: {{ include "vantage.natsCollectorSecret" . }}
+            # Secret-volume files come out owned root:root, and this pod
+            # runs as UID 65532 with no group bits set by default -- a mode
+            # unreadable to "other" is unreadable to the daemon too.
+            # fsGroup: 65532 above adds that UID as a supplementary group
+            # and kubelet normalizes the mount to defaultMode OR'd with the
+            # group-read bit, so tls.key lands at exactly 0440 regardless of
+            # whether this says 0400 or 0440. Measured on a v1.36.2 cluster.
+            defaultMode: 0440
+        {{- end }}

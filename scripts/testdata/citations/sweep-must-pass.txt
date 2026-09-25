@@ -1,0 +1,37 @@
+// Near misses for the sweep set, scripts/citation-sweep-patterns.txt. The
+// sweep flags ordinary English on purpose, so these are only the phrasings
+// each sweep pattern was written to leave alone.
+// Give a brief summary of the change in the commit message.
+// In brief, the collector restarts its sessions.
+// The audit trail names the caller by token name.
+// Append each route to this slice of results.
+// A worker picks up one task at a time, and tasks 3 and 4 wait.
+// RFC 7854 §4.3 defines the Initiation message.
+// Phase 1 of the script captures the two unparameterized endpoints.
+// The OpenAPI spec lists every path this daemon serves.
+// Each task's own queue drains first, and this task runs once per tick.
+// A later tick retries the task.
+// The query plan reads three parts, and the plan cache holds it.
+// Step 3: run make test, then step 4.
+// The TCP handoff between listener and worker is synchronous.
+// Design the layout first; a global constant holds the width.
+// Ruling out a stale cache is the first step; the ruler is 12px.
+// PR authors say what they ruled out.
+// The prefix 10.0.0.0/8 is fixed; fix the 3 flaky tests first.
+// bmpgen -churn-rounds 50 runs fifty churn rounds; this round trip preserves the cursor.
+// Each round-trip re-encodes the cursor.
+// An important detail: minor versions and critical paths are unnumbered.
+// Review the final revision before merging; code review is what enforces it.
+// RFC 7606 is an amendment of RFC 4271, and A4 paper is the default.
+// The browser passes the cookie back on every request.
+// The controller reconciles the StatefulSet on every change.
+// Phase 1 of the script is quick; phase 2 ms is the second column.
+// During this phase of the handshake the peer is idle.
+// Rows whose AS path is empty take this branch.
+// The collector works through the queue, doing the identity work.
+// A pass over the rows runs once; a fix for the leak is in redact.
+// The schema v1 baseline and JSON Schema 2020-12 both apply.
+// "resolved": "https://registry.npmjs.org/@types/json-schema/-/json-schema-7.0.15.tgz"
+// Measured on a local dev archive and on a lab archive.
+// The first version of the protocol is BMPv3; an earlier draft of RFC 7854 had it.
+// A buffer is used to read the header.

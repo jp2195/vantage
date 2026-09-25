@@ -1,0 +1,141 @@
+{{- if .Values.schemaJob.apply }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  # A completed Job's pod template is immutable, so a fixed name would make
+  # the next helm upgrade fail as soon as anything that changes the Job's
+  # spec changes -- not just the SQL. vantage.schemaJobChecksum (_helpers.tpl)
+  # covers every value-driven input to that spec, so a changed input creates
+  # a new Job while an unchanged one reuses the completed Job as a no-op.
+  name: {{ include "vantage.fullname" . }}-schema-{{ include "vantage.schemaJobChecksum" . }}
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels: {{- include "vantage.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- include "vantage.schemaJobPodSecurity" . | nindent 6 }}
+      containers:
+        - name: schema
+          image: "{{ .Values.schemaJob.image.repository }}:{{ .Values.schemaJob.image.tag }}"
+          imagePullPolicy: {{ .Values.schemaJob.image.pullPolicy }}
+          {{- include "vantage.schemaJobContainerSecurity" . | nindent 10 }}
+          env:
+            - name: CH_HOST
+              value: {{ include "vantage.clickhouseHost" . | quote }}
+            - name: CH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vantage.clickhouseSecret" . }}
+                  key: username
+            - name: CH_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vantage.clickhouseSecret" . }}
+                  key: password
+            - name: CH_DB
+              value: {{ include "vantage.clickhouseDatabase" . | quote }}
+            - name: CH_PORT
+              value: {{ .Values.clickhouse.externalPort | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              # ClickHouse is often still starting when this runs -- installed
+              # in the same rollout, or restarting. The Job's backoffLimit
+              # covers a genuine failure, but waiting here turns the common
+              # case from a restart loop into a short pause.
+              for i in $(seq 1 60); do
+                if clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" \
+                     --password "$CH_PASS" --query "SELECT 1" >/dev/null 2>&1; then
+                  break
+                fi
+                echo "waiting for clickhouse ($i/60)"; sleep 5
+              done
+              clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" \
+                --password "$CH_PASS" \
+                --query "CREATE DATABASE IF NOT EXISTS $CH_DB"
+              # Lexical order is application order: 000-schema.sql, then each
+              # migration in turn.
+              for f in $(ls /schema/*.sql | sort); do
+                echo "applying $f"
+                clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" \
+                  --password "$CH_PASS" --database "$CH_DB" \
+                  --multiquery < "$f"
+              done
+              # THE JOB MUST NOT REPORT SUCCESS FOR A DATABASE IT DID NOT
+              # ACTUALLY MOVE. Everything above is idempotent by design --
+              # CREATE TABLE IF NOT EXISTS, ADD COLUMN IF NOT EXISTS, and a
+              # version INSERT guarded on the version -- which means applying
+              # a set of files that does NOT contain the migration an
+              # existing database needs completes cleanly and changes
+              # nothing. That is not hypothetical: a chart that shipped
+              # schema.sql at a new version while its copy of the migration
+              # to it was missing ran to Complete against a live cluster one
+              # version behind, printed "schema applied", and left it there
+              # -- after which vantage-writer and vantage-api refuse to start,
+              # at their next restart rather than at deploy time, which is
+              # the worst possible moment to find out.
+              #
+              # The expectation is DERIVED from this chart's own
+              # 000-schema.sql (see vantage.expectedSchemaVersion in
+              # _helpers.tpl), not restated here, so it cannot drift from the
+              # DDL it is checking.
+              want="{{ include "vantage.expectedSchemaVersion" . }}"
+              got=$(clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" \
+                --password "$CH_PASS" --database "$CH_DB" \
+                --query "SELECT max(version) FROM $CH_DB.schema_version")
+              if [ "$got" != "$want" ]; then
+                echo "SCHEMA VERSION MISMATCH: applied every file in /schema and the database reports version '$got', but this chart's own 000-schema.sql establishes version $want." >&2
+                echo "Nothing above failed, because every statement here is idempotent -- so this almost always means the migration that moves an existing database to $want is not in this chart. Check that /schema holds a migration for every version step, and run 'make sync-helm-schema' in the vantage repository if the chart's copies are stale." >&2
+                exit 1
+              fi
+              echo "schema version verified: $got"
+
+              # History retention, from retention.days (see
+              # vantage.retentionScript in _helpers.tpl). Only the ten
+              # history tables are altered: current state has no TTL.
+              {{- include "vantage.retentionScript" . | nindent 14 }}
+
+              # The AS holder name dictionaries: outside the schema_version
+              # sequence (see files/dictionaries/asnames.sql's own header),
+              # so applying them is not gated on whether the data file is
+              # present -- they are applied here on every cluster, and
+              # placing the data is the operator's job now that this chart
+              # deploys no ClickHouse of its own to mount it into. CREATE
+              # DICTIONARY never touches the source path at apply time
+              # (ClickHouse's dictionaries_lazy_load); confirmed directly
+              # against this image with the source directory entirely
+              # absent (not merely empty): both statements succeed and the
+              # dictionary lands at status NOT_LOADED, no error, nothing to
+              # retry. Applying both files together here, unconditionally,
+              # is what keeps "asnames.sql applied, asnames_meta.sql
+              # forgotten" from happening through this path -- see
+              # asnames_meta.sql's own header for why that specific half
+              # is the trap.
+              for f in $(ls /dictionaries/*.sql | sort); do
+                echo "applying $f"
+                clickhouse-client --host "$CH_HOST" --port "$CH_PORT" --user "$CH_USER" \
+                  --password "$CH_PASS" --database "$CH_DB" \
+                  --multiquery < "$f"
+              done
+              echo "schema applied"
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+            - name: dictionaries
+              mountPath: /dictionaries
+          resources: {{- toYaml .Values.schemaJob.resources | nindent 12 }}
+      volumes:
+        - name: schema
+          configMap:
+            name: {{ include "vantage.fullname" . }}-schema
+        - name: dictionaries
+          configMap:
+            name: {{ include "vantage.fullname" . }}-asnames
+{{- end }}

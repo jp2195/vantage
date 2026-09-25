@@ -1,0 +1,135 @@
+{
+    "data": [
+        {
+            "router_ip": "10.0.103.65",
+            "router_sysname": "xr-p2",
+            "sessions": 252,
+            "up": 380,
+            "down": 2,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.62",
+            "router_sysname": "xr-pe1",
+            "sessions": 248,
+            "up": 689,
+            "down": 2,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.63",
+            "router_sysname": "xr-pe2",
+            "sessions": 246,
+            "up": 427,
+            "down": 2,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.61",
+            "router_sysname": "xr-rr1",
+            "sessions": 200,
+            "up": 846,
+            "down": 0,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.64",
+            "router_sysname": "xr-p1",
+            "sessions": 196,
+            "up": 196,
+            "down": 1,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.73",
+            "router_sysname": "",
+            "sessions": 16,
+            "up": 79,
+            "down": 32,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "172.22.0.1",
+            "router_sysname": "bmpgen-iosxr",
+            "sessions": 10,
+            "up": 20,
+            "down": 0,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "172.22.0.7",
+            "router_sysname": "7c50524465f0",
+            "sessions": 9,
+            "up": 20,
+            "down": 8,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.66",
+            "router_sysname": "nx-spine1",
+            "sessions": 8,
+            "up": 33,
+            "down": 19,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.74",
+            "router_sysname": "nx-p3",
+            "sessions": 5,
+            "up": 19,
+            "down": 12,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "172.22.0.91",
+            "router_sysname": "15f2b8973676",
+            "sessions": 5,
+            "up": 5,
+            "down": 5,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.68",
+            "router_sysname": "nx-leaf2",
+            "sessions": 4,
+            "up": 9,
+            "down": 5,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "172.22.0.201",
+            "router_sysname": "7181fde60af4",
+            "sessions": 4,
+            "up": 10,
+            "down": 5,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.67",
+            "router_sysname": "nx-leaf1",
+            "sessions": 3,
+            "up": 9,
+            "down": 6,
+            "view_lost": 0
+        },
+        {
+            "router_ip": "10.0.103.69",
+            "router_sysname": "",
+            "sessions": 2,
+            "up": 2,
+            "down": 0,
+            "view_lost": 0
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": 15,
+        "session_totals": {
+            "sessions": 1208,
+            "up": 2744,
+            "down": 99,
+            "view_lost": 0
+        }
+    }
+}

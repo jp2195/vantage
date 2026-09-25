@@ -1,0 +1,209 @@
+{
+  "198.18.1.0/24": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.1",
+      "NextHop": "10.250.9.1",
+      "Collector": "parity-c1",
+      "RIB": "in_pre",
+      "Family": "ipv4u",
+      "Prefix": "198.18.1.0/24",
+      "PathID": 0,
+      "ASPath": [
+        65101,
+        65200,
+        65300
+      ],
+      "OriginASN": 65300,
+      "MED": 50,
+      "LocalPref": 100,
+      "Communities": [
+        "65101:100"
+      ],
+      "LargeCommunities": [
+        "65101:1:1"
+      ],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "complete"
+    }
+  ],
+  "198.18.10.0/24": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.3",
+      "NextHop": "10.250.9.3",
+      "Collector": "parity-c1",
+      "RIB": "loc_rib",
+      "Family": "ipv4u",
+      "Prefix": "198.18.10.0/24",
+      "PathID": 0,
+      "ASPath": [
+        65103,
+        65995
+      ],
+      "OriginASN": 65995,
+      "MED": null,
+      "LocalPref": null,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "complete"
+    }
+  ],
+  "198.18.11.0/24": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.3",
+      "NextHop": "10.250.9.3",
+      "Collector": "parity-c1",
+      "RIB": "in_pre",
+      "Family": "ipv4u",
+      "Prefix": "198.18.11.0/24",
+      "PathID": 0,
+      "ASPath": [
+        65103,
+        65300
+      ],
+      "OriginASN": 65300,
+      "MED": null,
+      "LocalPref": null,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "dumping"
+    },
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.3",
+      "NextHop": "10.250.9.3",
+      "Collector": "parity-c1",
+      "RIB": "loc_rib",
+      "Family": "ipv4u",
+      "Prefix": "198.18.11.0/24",
+      "PathID": 0,
+      "ASPath": [
+        65103,
+        65300
+      ],
+      "OriginASN": 65300,
+      "MED": null,
+      "LocalPref": null,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "complete"
+    }
+  ],
+  "198.18.12.0/24": [],
+  "198.18.13.0/24": [],
+  "198.18.2.0/24": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.1",
+      "NextHop": "10.250.9.2",
+      "Collector": "parity-c1",
+      "RIB": "in_pre",
+      "Family": "ipv4u",
+      "Prefix": "198.18.2.0/24",
+      "PathID": 2,
+      "ASPath": [
+        65101,
+        65202
+      ],
+      "OriginASN": 65202,
+      "MED": null,
+      "LocalPref": null,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "complete"
+    }
+  ],
+  "198.18.3.0/24": [],
+  "198.18.4.0/24": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.1",
+      "NextHop": "10.250.9.1",
+      "Collector": "parity-c1",
+      "RIB": "in_pre",
+      "Family": "ipv4u",
+      "Prefix": "198.18.4.0/24",
+      "PathID": 0,
+      "ASPath": [
+        65101,
+        65205,
+        65204
+      ],
+      "OriginASN": 65204,
+      "MED": null,
+      "LocalPref": null,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "complete"
+    }
+  ],
+  "198.18.5.0/24": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.1",
+      "NextHop": "10.250.9.1",
+      "Collector": "parity-c1",
+      "RIB": "in_pre",
+      "Family": "ipv4u",
+      "Prefix": "198.18.5.0/24",
+      "PathID": 0,
+      "ASPath": [],
+      "OriginASN": 0,
+      "MED": null,
+      "LocalPref": 200,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "complete"
+    }
+  ],
+  "198.18.6.0/24": [],
+  "198.18.7.0/24": [],
+  "198.18.9.0/24": [],
+  "2001:db8:250::/48": [
+    {
+      "RouterSysName": "parity-r1",
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.1",
+      "NextHop": "2001:db8:250::1",
+      "Collector": "parity-c1",
+      "RIB": "in_pre",
+      "Family": "ipv6u",
+      "Prefix": "2001:db8:250::/48",
+      "PathID": 0,
+      "ASPath": [
+        65101,
+        65206
+      ],
+      "OriginASN": 65206,
+      "MED": null,
+      "LocalPref": null,
+      "Communities": [],
+      "LargeCommunities": [],
+      "ExtCommunities": [],
+      "RouteTargets": [],
+      "DumpState": "dumping"
+    }
+  ]
+}

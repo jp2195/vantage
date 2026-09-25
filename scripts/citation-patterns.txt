@@ -1,0 +1,77 @@
+# Patterns scripts/check-citations.sh looks for in every published file, on
+# every run: locally, in make standalone-check and in CI. One extended
+# regular expression per line, read by GNU grep -E (so \b works); blank
+# lines and lines starting with # are ignored.
+#
+# Each one is a kind of pointer at material the public repository does not
+# contain: the plans, briefs, reports, ledgers and reviews the code was built
+# from. A public reader cannot follow any of them, so a comment that leans on
+# one explains nothing. Say what the cited material established, in the
+# comment itself.
+#
+# THIS SET GATES EVERY CONTRIBUTOR. A pattern belongs here only if nobody
+# writing about BGP, BMP, Go, Vue, ClickHouse or Kubernetes would plausibly
+# type it. Anything broader goes in scripts/citation-sweep-patterns.txt,
+# which runs only on request. A rare legitimate hit is listed in
+# scripts/citation-allow.txt rather than weakening a pattern here.
+#
+# check-citations.sh also runs every pattern over comment blocks joined
+# across line wraps, so write each pattern for the words, not for the line.
+#
+# Every pattern needs a line in scripts/testdata/citations/must-fail.txt that
+# no other pattern matches, or scripts/check-citations-test.sh fails, and
+# must-pass.txt holds ordinary sentences no pattern here may match.
+#
+# A numbered task, capitalized or hyphenated: "Task 7's job", "task-3".
+# Lowercase "task 1" is left to the sweep set: worker pools, cron and
+# Kubernetes Jobs all number their tasks.
+\bTask[- ]?[0-9]{1,2}\b|\btask-[0-9]{1,2}\b
+# The same, spelled out: "Task zero", "task-zero".
+\b(Task zero|[Tt]ask-zero)\b
+# Several numbered tasks: "Tasks 2 and 4".
+\bTasks [0-9]{1,2}\b
+# A report or brief file by name. "capture-report.json" does not match.
+[A-Za-z0-9_.-]+-(report|brief)\.md\b
+# A numbered decision: "Ruling 3".
+\b[Rr]uling [0-9]+\b
+# A numbered finding of a named review: "finding 12 of the widget audit".
+# A bare "finding 2" is left to the sweep set ("a finding 2 steps into").
+\b[Ff]inding [0-9]{1,2} of the\b
+# A lettered internal phase: "phase 2b", "phase-1a". A bare "phase 2" and
+# "Step 1a" do not match.
+\b[Pp]hase[ -]?[0-9][a-z]\b
+# A lettered amendment to a plan: "amendment A3", "TestAmendmentA3".
+[Aa]mendment[- ]?A[0-9]\b
+# The private development database: "the dev archive", "the usual local
+# dev archive". "a local dev archive" does not match.
+\b[Tt]he ([a-z]+ ){0,2}dev[- ]archive\b
+# Deployment notes kept outside the repository.
+\bk8s notes\b
+# A dated internal document: "the 2030-01-02 widget audit", "a 2030-01-02
+# plan".
+\b20[0-9]{2}-[0-9]{2}-[0-9]{2}('s)? ([A-Za-z-]+ ){0,2}(audit|ledger|spec|plan)\b
+# The review that assigned finding labels. A bare "final review" is left to
+# the sweep set: a maintainer does one before merging.
+\bwhole-branch review\b
+# A finding by its short label: "I7's covering test", "M2/M3(b), made a
+# test", "review I4", "I5 (final review)", "I2, final review". The NX-OS
+# version "10.6(2)I9(1)" does not match.
+\b[IM][0-9](\([a-z]\))?(/[IM]?[0-9](\([a-z]\))?)*('s covering test|, made a test|,? \(?final review)|\breview [IM][0-9]\b
+# Review rounds: "a fix round", "fix-round-2".
+\b[Ff]ix[- ]rounds?\b
+# A finding by severity and number, in capitals: "MINOR 9", "IMPORTANT 2".
+# Other cases are left to the sweep set: "Minor 2 release notes",
+# "Important 1: back up first" and "Critical 3 pods" are ordinary prose.
+\b(IMPORTANT|MINOR|CRITICAL)[- ][0-9]{1,2}\b
+# Who directed the work: "per the coordinator", "the coordinator's
+# correction". "The controller reconciles the StatefulSet" does not match.
+\b([Pp]er the coordinator|[Tt]he (coordinator|controller)'s (message|correction|instructions?|ruling))\b
+# The unpublished UI design package: "the design handoff".
+\b[Dd]esign handoff\b
+# A section of an internal design by number: "§5 of the widget design". An
+# RFC section, "RFC 7854 §4.2" or "§4.2 of RFC 7854", does not match.
+§[0-9]+(\.[0-9]+)* of the\b
+# The design document for collector liveness, by name.
+\b[Ll]iveness design\b
+# A numbered acceptance criterion of a spec: "spec criterion 2".
+\b[Ss]pec criteri(on|a)\b

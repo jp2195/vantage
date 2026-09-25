@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "module": "ESNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "preserve",
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  // vite.config.ts and openapi-ts.config.ts run under Node, not the
+  // browser; DOM and Node ambient types don't conflict here (skipLibCheck
+  // covers the third-party declaration files), so one tsconfig covers both
+  // contexts rather than the two-project split larger templates use.
+  "include": ["src/**/*.ts", "src/**/*.vue", "vite.config.ts", "vitest.setup.ts", "openapi-ts.config.ts", "scripts/**/*.ts"]
+}

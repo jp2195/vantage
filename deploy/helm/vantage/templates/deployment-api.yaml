@@ -1,0 +1,199 @@
+{{- include "vantage.requireAPITokens" . }}
+{{- include "vantage.requireUniqueAPITokenNames" .Values.api.tokens }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vantage.fullname" . }}-api
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      {{- include "vantage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  template:
+    metadata:
+      labels:
+        {{- include "vantage.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: api
+      annotations:
+        # Roll the pods when the rendered config changes -- see
+        # deployment-writer.yaml, which this mirrors.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-api.yaml") . | sha256sum }}
+    spec:
+      # None of these pods talks to the Kubernetes API, so none gets a
+      # token to leak.
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        # Makes the clickhouse-auth Secret volume readable: its files are
+        # root-owned, and without a supplementary group a non-root UID
+        # cannot read them. See deployment-writer.yaml's nats-tls volume.
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # On SIGTERM vantage-api drains for up to 70 seconds (shutdownGrace in
+      # cmd/vantage-api, longer than its 60-second write timeout) so a
+      # request already in a handler gets the time it was promised. The
+      # pod default of 30 would SIGKILL that drain partway; 75 covers the
+      # grace plus the process exit.
+      terminationGracePeriodSeconds: 75
+      # See deployment-writer.yaml for the full rationale, restated briefly:
+      # vantage-api's own image (Dockerfile.api, gcr.io/distroless/static-
+      # debian12) has no shell, so this init container runs schemaJob's
+      # ClickHouse image instead, copies the ConfigMap-sourced api.yaml onto
+      # a shared emptyDir, and appends the two fields that come from Secrets:
+      # clickhouse_dsn (for its username) and tokens. The ClickHouse password
+      # is not one of them -- the daemon reads it from the clickhouse-auth
+      # volume through clickhouse_password_file.
+      #
+      # The two need DIFFERENT treatment on the way in, and that is the trap
+      # this file exists to not fall into:
+      #
+      #   - clickhouse_dsn's username goes into URL userinfo, so it is
+      #     percent-encoded (urlencode, copied from deployment-writer.yaml).
+      #     clickhouse-go's DSN parser (lib/churl, a net/url fork) decodes
+      #     userinfo back to the original bytes with no restriction on which
+      #     ones may be escaped.
+      #
+      #   - A token is never percent-decoded anywhere on its read path.
+      #     Verified by reading api/config.go and api/auth.go:
+      #     secret.APIToken.UnmarshalYAML (secret/secret.go) hands back
+      #     exactly the string yaml.v3 decoded from the scalar, and
+      #     RevealSecret returns that same string to
+      #     subtle.ConstantTimeCompare against the literal bytes of the
+      #     Authorization header -- no URL, no decode step, anywhere. So a
+      #     token is percent-encoded HERE and only YAML-escaped
+      #     (yaml_escape): backslash and double-quote, the only two bytes a
+      #     double-quoted YAML scalar cannot carry literally. Encoding a
+      #     token the DSN's way would make the daemon compare against the
+      #     encoded form and reject every real client.
+      initContainers:
+        - name: render-config
+          image: "{{ .Values.schemaJob.image.repository }}:{{ .Values.schemaJob.image.tag }}"
+          imagePullPolicy: {{ .Values.schemaJob.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cp /etc/vantage-src/api.yaml /etc/vantage/api.yaml
+
+              urlencode() {
+                printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n' | sed 's/../%&/g'
+              }
+              enc_user=$(urlencode "$CH_USER")
+              printf 'clickhouse_dsn: "clickhouse://%s@{{ include "vantage.clickhouseHost" . }}:{{ .Values.clickhouse.externalPort }}/{{ include "vantage.clickhouseDatabase" . }}"\n' "$enc_user" >> /etc/vantage/api.yaml
+
+              # Escapes \ and " for a double-quoted YAML scalar -- the two
+              # bytes that scalar can never carry literally, with none of
+              # the alphabet-narrowing urlencode does. This is NOT a
+              # general YAML-safety transform: a raw C0 control byte
+              # (reachable via an operator-supplied existingSecret, since
+              # a chart-generated token is alphanumeric by construction)
+              # is still not valid inside a double-quoted scalar. Widening
+              # this is a deliberate non-goal here -- the practical risk is
+              # low, and doing so is not what this escaping is for.
+              # printf, not echo: some /bin/sh builtins (this image's is
+              # busybox ash) interpret backslash escapes in an echo
+              # argument, which would silently re-collapse the very
+              # backslashes this is escaping. printf's %s never reinterprets
+              # its argument.
+              yaml_escape() {
+                printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+              }
+
+              # vantage-api refuses to start with zero tokens (api/config.go)
+              # and this chart refuses to render with zero configured
+              # (vantage.requireAPITokens, top of this file), so this list is
+              # never empty here.
+              printf 'tokens:\n' >> /etc/vantage/api.yaml
+              {{- range .Values.api.tokens }}
+              {{- include "vantage.validateAPITokenName" .name }}
+              printf '  - name: {{ .name }}\n' >> /etc/vantage/api.yaml
+              esc_token=$(yaml_escape "$TOKEN_{{ .name | upper }}")
+              printf '    token: "%s"\n' "$esc_token" >> /etc/vantage/api.yaml
+              {{- end }}
+          env:
+            - name: CH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vantage.clickhouseSecret" . }}
+                  key: username
+            {{- range .Values.api.tokens }}
+            - name: TOKEN_{{ .name | upper }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $.Values.api.existingSecret | default (printf "%s-api" (include "vantage.fullname" $)) }}
+                  key: {{ .name }}
+            {{- end }}
+          volumeMounts:
+            - name: config-src
+              mountPath: /etc/vantage-src
+            - name: config
+              mountPath: /etc/vantage
+          resources: {{- toYaml .Values.schemaJob.resources | nindent 12 }}
+      containers:
+        - name: api
+          image: "{{ .Values.images.api.repository }}:{{ .Values.images.api.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.images.api.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # The daemon is a static binary that writes nothing to disk: its
+            # config arrives on the emptyDir the init container fills, and it
+            # has no temp files, caches or state of its own.
+            readOnlyRootFilesystem: true
+          args: ["-config", "/etc/vantage/api.yaml"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.port }}
+            - name: metrics
+              containerPort: {{ .Values.api.metricsPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vantage
+            - name: clickhouse-auth
+              mountPath: {{ include "vantage.clickhousePasswordDir" . | quote }}
+              readOnly: true
+          # On the metrics listener, which serves no API route and needs no
+          # token. /healthz answers whenever the process is serving; /readyz
+          # only while a ClickHouse ping succeeds, so the Service stops
+          # sending queries to a pod that cannot answer them. Liveness must
+          # not follow ClickHouse: restarting the API does not bring the
+          # database back.
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          # /healthz, not /readyz. The API's /readyz reports ClickHouse
+          # health for monitoring. Gating readiness on it would pull a single
+          # replica out of its Service during a ClickHouse outage, turning the
+          # API's own explanatory error into a bare connection failure.
+          readinessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.api.resources | nindent 12 }}
+      volumes:
+        - name: config-src
+          configMap:
+            name: {{ include "vantage.fullname" . }}-api
+        - name: config
+          emptyDir: {}
+        - name: clickhouse-auth
+          secret:
+            secretName: {{ include "vantage.clickhouseSecret" . }}
+            # Only the password: the username is already in the DSN.
+            items:
+              - key: password
+                path: password
+            defaultMode: 0440

@@ -1,0 +1,628 @@
+# Image coordinates. repository is the FULL path including the registry host
+# (a bare name/image resolves to Docker Hub). Keeping the whole path here is
+# what makes moving registries a values change rather than a template edit.
+#
+# The defaults are the official release images. An empty tag means
+# .Chart.AppVersion, so a chart at appVersion X.Y.Z pulls images X.Y.Z. For
+# images you built yourself (`make push-images REGISTRY=...`, tagged with the
+# git short SHA), set repository and tag to match.
+images:
+  collector:
+    repository: ghcr.io/jp2195/vantage-collector
+    tag: ""            # defaults to .Chart.AppVersion
+    pullPolicy: IfNotPresent
+  writer:
+    repository: ghcr.io/jp2195/vantage-writer
+    tag: ""
+    pullPolicy: IfNotPresent
+  api:
+    repository: ghcr.io/jp2195/vantage-api
+    tag: ""
+    pullPolicy: IfNotPresent
+# Needed only for a private registry, e.g.
+#   imagePullSecrets: [{name: my-registry-credentials}]
+imagePullSecrets: []
+
+# Logging for all three daemons, rendered into each one's log_level and
+# log_format. logLevel is debug, info, warn or error; logFormat is text or
+# json (json for a log pipeline that parses fields). Each component's own
+# logLevel/logFormat below overrides these when set. Any other value fails the
+# render, as the daemons would refuse it at startup.
+logLevel: info
+logFormat: text
+
+collector:
+  replicas: 1
+  # Per-component overrides of the top-level logLevel/logFormat; empty
+  # inherits them. Same for writer and api.
+  logLevel: ""
+  logFormat: ""
+  bmpPort: 11019
+  metricsPort: 9469
+  # "off" or "required". Required means every BMP connection must open with a
+  # PROXY protocol header and its source address becomes the router's
+  # identity. Turn this on ONLY with a front-end that emits one -- HAProxy
+  # (send-proxy / send-proxy-v2), NGINX stream (proxy_protocol on), Envoy, or
+  # an external load balancer configured for it. A Cilium LoadBalancer Service
+  # does NOT: its SNAT happens in the eBPF datapath and writes no header, so
+  # enabling this without a proxy in front takes BMP ingestion down. See
+  # deploy/helm/README.md.
+  #
+  # Keep the quotes, here and in any values file that overrides this. Helm
+  # parses values files with YAML 1.1 semantics, where off/no/on/yes are
+  # booleans, so an unquoted `proxyProtocol: off` renders proxy_protocol:
+  # "false" -- a value the collector refuses to start on.
+  # vantage.validateProxyProtocol (_helpers.tpl) fails the render rather than
+  # let that reach a pod.
+  proxyProtocol: "off"
+  # Which addresses may open a BMP session, as CIDRs, e.g.
+  #   allowedSources: ["10.0.0.0/8", "2001:db8::/32"]
+  # The address checked is the router's: the TCP peer with proxyProtocol
+  # "off", the PROXY header's source with "required". A connection from
+  # anywhere else is closed before any BMP byte is parsed and counted in
+  # vantage_collector_connections_rejected_total{reason="source_not_allowed"}.
+  #
+  # Empty accepts BMP from any address, and the collector logs a warning at
+  # startup saying so. The port takes unauthenticated input that becomes
+  # routing data, so it should be reachable only by your routers: set this,
+  # and keep the Service off the internet (see service.annotations below).
+  # The collector refuses to start on a malformed CIDR; the chart passes
+  # these through unchecked.
+  allowedSources: []
+  # Only with proxyProtocol "required": the proxies allowed to send PROXY
+  # headers. A connection whose TCP peer is outside these is closed and
+  # counted with reason="proxy_not_trusted". Empty trusts any peer's header,
+  # which lets anything that can reach the port claim any router's address.
+  # Setting this with proxyProtocol "off" fails the render (the collector
+  # refuses it too).
+  trustedProxies: []
+  # Per-router overrides, keyed by the router's IP address as the collector
+  # sees it (the TCP peer, or the PROXY header's source with proxyProtocol
+  # "required"). Rendered verbatim into collector.yaml's `routers:` map.
+  #
+  #   vendor, os      the router's identity, ahead of anything its BMP
+  #                   Initiation banner says. Some banners carry no vendor
+  #                   token at all (XRd's sysDescr is a bare version number),
+  #                   and without these no vendor quirk can match that router.
+  #                   Lowercase tokens: vendor cisco, os nxos or iosxr; vendor
+  #                   frr, os frr. os needs a vendor.
+  #   force_quirks,   quirk IDs to apply or suppress for this router regardless
+  #   disable_quirks  of what vendor matching decides, e.g. QK_TS_ZERO.
+  #
+  # For example:
+  #   routers:
+  #     "192.0.2.11": {vendor: cisco, os: iosxr}
+  #     "2001:db8::1": {vendor: cisco, os: nxos, disable_quirks: [QK_TS_ZERO]}
+  #
+  # Quote the keys: an IPv6 address is not a plain YAML scalar. The collector
+  # refuses to start on a key that is not an IP address, an unknown quirk ID,
+  # or an os without a vendor; the chart passes the map through unchecked.
+  routers: {}
+  # Concurrent BMP connections before new ones are closed immediately
+  # (reason="max_connections"). 0 leaves the collector's default, 1024.
+  maxConnections: 0
+  # BMP ingress. A LoadBalancer Service, not a Gateway TCPRoute: an L4
+  # LoadBalancer (e.g. Cilium LB IPAM, MetalLB) forwards with no terminating
+  # proxy, so a pod death closes the router's connection instead of leaving a
+  # headless stream ingesting.
+  service:
+    type: LoadBalancer
+    # loadBalancerIP: 192.0.2.10   # optional; your LoadBalancer implementation
+                                   # assigns an address when unset
+    # A cloud provider's LoadBalancer is INTERNET-FACING unless annotated
+    # otherwise. Keep BMP internal with your provider's annotation:
+    #   EKS: service.beta.kubernetes.io/aws-load-balancer-scheme: internal
+    #   GKE: networking.gke.io/load-balancer-type: "Internal"
+    #   AKS: service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+    annotations: {}
+    # Rendered only when type is LoadBalancer. Left empty, it defaults to
+    # collector.allowedSources with proxyProtocol "off" and to
+    # collector.trustedProxies with "required" -- the addresses that actually
+    # open the TCP connection in each mode -- so the load balancer drops
+    # what the collector would refuse anyway. Set it to override that.
+    loadBalancerSourceRanges: []
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {memory: 1Gi}
+  # Pin the collector where the BMP VIP is actually announced. Needed only
+  # where the LoadBalancer implementation ignores externalTrafficPolicy: Local
+  # when electing an announcer -- Cilium's L2 announcements is documented as
+  # incompatible with it, so on Cilium the announcer must be constrained (a
+  # nodeSelector on the CiliumL2AnnouncementPolicy) and this pod pinned to the
+  # same node. See deploy/helm/README.md.
+  nodeSelector: {}
+  affinity: {}
+  tolerations: []
+  # The collector creates its JetStream streams at startup, and these are
+  # rendered into its config only when set; 0 leaves the collector's own
+  # default.
+  streams:
+    partitions: 0
+    # Copies of each stream, for ROUTES, PEER and STATS. Left at 0, the chart
+    # derives it: 3 when the bundled NATS is clustered (nats.enabled and
+    # nats.config.cluster.enabled, the default), whatever the cluster's
+    # size; otherwise nothing is rendered and the collector uses 1. A
+    # value set here always wins. A cluster whose streams are single-copy
+    # still goes offline stream by stream when one server restarts, so the
+    # three-copy default is what makes the NATS cluster worth running.
+    #
+    # With external NATS (nats.enabled: false) the chart cannot see your
+    # cluster, so it leaves this alone: set it to match, 3 for a cluster of
+    # three or more servers, 1 for a single server.
+    #
+    # LS follows this unless lsReplicas is set (the collector defaults it
+    # from replicas). RAW is always one copy whatever is set here: it is a
+    # 24-hour replay buffer, not something the archive depends on.
+    #
+    # Changing it on a running install takes effect at the collector's next
+    # start, which the chart triggers by changing its config: the collector
+    # updates each stream in place, and JetStream copies the existing
+    # messages to the new replicas without dropping any. That holds within a
+    # cluster. Moving an existing install from one server to three is
+    # different, because the old server's streams were created outside any
+    # cluster and the new cluster does not adopt them: see "Moving an
+    # existing install to three servers" in deploy/helm/README.md before
+    # upgrading one.
+    replicas: 0
+    lsReplicas: 0
+    routesMaxBytes: 0
+    rawMaxBytes: 0
+
+writer:
+  replicas: 1
+  metricsPort: 9472
+  logLevel: ""
+  logFormat: ""
+  batchRows: 0
+  batchWait: ""
+  fetchBatch: 0
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+api:
+  replicas: 1
+  port: 9473
+  metricsPort: 9474
+  logLevel: ""
+  logFormat: ""
+  service:
+    type: ClusterIP
+  # At least one token is mandatory in this chart. The daemon's own rule is
+  # narrower -- vantage-api refuses to start with an empty token list in its
+  # default auth.mode: token, and an operator can write auth.mode: none to
+  # run it unauthenticated on purpose -- but this chart renders a token-mode
+  # config and has no setting for the other mode, so from here a token is
+  # required.
+  # To supply token values from a Secret you manage (by hand, or through a
+  # secrets operator), leave each token empty and set existingSecret; that
+  # Secret must hold one key per token, named after it.
+  tokens:
+    - name: lab
+      token: ""        # generated when empty; read it from the Secret after install
+  existingSecret: ""
+  # Left unset, the daemon's own api/config.go defaults apply
+  # (default_page 1000, max_page 10000, max_unscoped_since 24h, stale_after 90s); set any of
+  # these to render it into api.yaml explicitly, the same optional-value
+  # pattern writer.batchRows/batchWait/fetchBatch already use below.
+  defaultPage: 0
+  maxPage: 0
+  maxUnscopedSince: ""
+  # How long a collector may go without a heartbeat before its peers read
+  # "stale": a Go duration between 60s and 24h, with its unit, e.g. 90s.
+  # The Grafana "Peer status" panel cannot read this and always uses the
+  # 90s default.
+  staleAfter: ""
+  # configmap-api.yaml generates api.yaml's `collectors:` list itself, one
+  # entry per collector.replicas pod, each addressed at its own per-pod DNS
+  # name (the headless Service in service-collector-metrics.yaml) rather
+  # than the bare Service name -- see that template for why a bare name is
+  # actually dangerous here, not merely wrong. Leave this empty (the
+  # default) to get that generated list.
+  #
+  # Set it to replace the generated list wholesale, for collectors that run
+  # outside this chart (a different cluster, bare metal, etc). Every id
+  # here MUST equal that collector's own collector_id: api/config.go's
+  # Collectors doc comment explains that the id is not derived from the url,
+  # so a mismatch does not fail at startup -- it renders on the card as a
+  # disagreement between what was configured and what the collector actually
+  # reports.
+  collectorsOverride: []
+  #   - id: external-1
+  #     url: http://collector.example.com:9469
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+# ClickHouse is NOT deployed by this chart. Bring your own.
+#
+# Standing up a datastore is not vantage's job: an operator running
+# ClickHouse already has opinions about replication, backup, retention and
+# who holds the credentials, and a chart-owned database silently competes
+# with all of them. An operator-managed cluster IS "your own", so it lives
+# beside the chart rather than inside it -- deploy/clickhouse/k8s/ carries
+# values and a guide for the official ClickHouse-org operator.
+clickhouse:
+  # Required. The render fails with an explanatory message if it is empty.
+  externalHost: ""
+  externalPort: 9000
+  # There is no database setting: vantage's schema and every query the writer
+  # and the API run name the `vantage` database explicitly, so the chart always
+  # uses it. A values file that still sets clickhouse.database to anything
+  # else fails the render rather than being silently ignored.
+  #
+  # Credentials for YOUR database. There is no generated fallback: this
+  # chart used to mint a random password, which is sane for a database it
+  # controls and is a guaranteed authentication failure against one it does
+  # not. Supply existingSecret, or auth.password, and the render fails
+  # saying so if neither is set.
+  #
+  # existingSecret must carry keys `username` and `password`. The password
+  # reaches the writer and the API as a mounted file (clickhouse_password_file),
+  # never as part of a rendered config or an environment variable.
+  existingSecret: ""
+  auth:
+    username: vantage
+    password: ""
+
+# AS holder names (RIPE's asn.txt, via `make fetch-asnames`) are optional
+# DATA, and placing them on the ClickHouse host is the operator's job.
+#
+# The chart owns both dictionary DEFINITIONS unconditionally --
+# job-schema.yaml applies files/dictionaries/*.sql on every cluster, and
+# with no data behind them both attach at status NOT_LOADED (ClickHouse's
+# dictionaries_lazy_load never reads the source path at apply time) and
+# every ASN renders as a bare number. That is a degraded feature which the
+# UI states on screen, not a broken deploy.
+#
+# The chart cannot carry the data itself -- gzipped it runs 2.18 MiB, over
+# the ~1 MiB ConfigMap ceiling the 37 KB schema.sql travels through
+# comfortably -- and it cannot mount it either, having no ClickHouse pod to
+# mount it into. Put the files on your own ClickHouse host at
+# /var/lib/clickhouse/user_files/asnames, the path both
+# deploy/clickhouse/asnames.sql and asnames_meta.sql read from. See
+# deploy/helm/README.md.
+
+nats:
+  enabled: true
+
+  # Client-side TLS for the collector and the writer.
+  #
+  # Independent of nats.enabled on purpose: pointing vantage at your own
+  # TLS-enabled NATS is a supported configuration, and keying this off the
+  # bundled subchart's switch would have made it render nothing at all --
+  # no nats_tls block, no mounts, and no error.
+  #
+  # ON by default, and the chart never generates a private key (below), so
+  # a default install fails the render until you either supply
+  # certificates -- deploy/nats-tls/gen-certs.sh, or nats.tls.issuerRef for
+  # cert-manager -- or opt out of TLS explicitly. The opt-out with the
+  # bundled NATS is four values, because the server side lives in the
+  # subchart's values, which this chart cannot template:
+  #
+  #   nats: {tls: {enabled: false}, tlsCA: {enabled: false},
+  #          config: {nats: {tls: {enabled: false}},
+  #                   cluster: {tls: {enabled: false}}}}
+  #
+  # Without TLS, any pod that can reach NATS can publish forged routes into
+  # the pipeline and read every router's feed.
+  tls:
+    enabled: true
+
+    # Secrets holding ca.crt, tls.crt and tls.key for each client. This
+    # chart MOUNTS them; it does not create them.
+    #
+    # Nothing here generates a private key, and that is deliberate. Helm's
+    # genCA/genSignedCert regenerate on every render, so a chart that used
+    # them would mint a fresh CA on any `helm upgrade` -- including one
+    # changing an unrelated value -- and the NATS StatefulSet and the two
+    # client workloads roll at different times, so mid-roll a collector
+    # holding the old CA cannot reach a server presenting the new
+    # certificate. `lookup`, the usual way to retain an existing Secret,
+    # returns empty under `helm template`. So the chart consumes, and
+    # deploy/nats-tls/gen-certs.sh produces:
+    #
+    #   deploy/nats-tls/gen-certs.sh --release <release> --namespace <ns>
+    #   kubectl apply -n <ns> -f nats-tls/secrets.yaml
+    #
+    # Same reasoning that keeps ClickHouse out of this chart: a chart should
+    # not mint a credential for a thing it does not own.
+    collectorSecret: ""
+    writerSecret: ""
+
+    # OPTIONAL. If you run cert-manager, set this instead of creating the
+    # Secrets above and the chart issues all three for you, named after the
+    # release. The chart still never creates an Issuer -- that is your trust
+    # root, and a chart that mints one is making a security decision on your
+    # behalf.
+    #
+    #   issuerRef: {name: my-ca-issuer, kind: ClusterIssuer}
+    #
+    # `name` is what selects this path. Setting any other key without it --
+    # `issuerRef: {kind: ClusterIssuer}` -- fails the render rather than
+    # quietly falling back to the Secrets above and then blaming the
+    # issuerRef you did set.
+    issuerRef: {}
+    duration: 2160h    # 90 days
+    renewBefore: 360h  # 15 days
+
+  # Subchart values from here down; they configure the SERVER side. They
+  # cannot be templated -- a parent chart has no .Release.Name inside a
+  # subchart's values -- so the Secret name appears here as a literal and
+  # the render guard asserts that everything else agrees with it.
+  #
+  # The defaults below are the server half of the mTLS default above, and
+  # already agree with what gen-certs.sh prints for a release named
+  # "vantage". For any other release name, set all three secretNames
+  # (tlsCA, config.nats.tls, config.cluster.tls) to the
+  # <release>-nats-server-tls the script prints.
+  tlsCA:
+    enabled: true
+    secretName: vantage-nats-server-tls
+    key: ca.crt
+  config:
+    # Three NATS servers in one JetStream cluster, so one of them can restart
+    # -- a NATS upgrade, a `kubectl drain`, a node failure -- while the other
+    # two keep a quorum and keep taking publishes. With a single server, its
+    # restart takes every stream offline, the collector's publishes time out
+    # after 30s, and it closes its BMP sessions: a gap in the archive on
+    # every NATS restart. Clustering alone does not prevent that; the streams
+    # must also be three-copy, which collector.streams.replicas below takes
+    # care of by default.
+    #
+    # Needs three schedulable nodes (see podTemplate.topologySpreadConstraints
+    # below) and three JetStream volumes. For a single-node cluster or a
+    # homelab, go back to one server with single-copy streams with:
+    #
+    #   nats: {config: {cluster: {enabled: false}}}
+    #
+    # That one value is the whole opt-out: the collector's stream replicas
+    # follow it back to 1, and the spread rule below cannot hold one pod
+    # Pending. deploy/helm/README.md, "NATS clustering", has the details and
+    # the one-time migration for an install that ran one server before.
+    cluster:
+      enabled: true
+      # Odd and at least 3; the render refuses anything else. JetStream needs
+      # a majority of servers up, so two servers stop at the loss of either,
+      # and an even count tolerates no more failures than the odd one below
+      # it. Raising it (to 5) means raising
+      # podTemplate.topologySpreadConstraints."kubernetes.io/hostname".minDomains
+      # below to match: that is a literal the chart cannot derive, and the
+      # render refuses a cluster larger than it.
+      replicas: 3
+      # Routes are dialed by FQDN,
+      # <release>-nats-<i>.<release>-nats-headless.<ns>.svc.<domain>, so that
+      # the route certificate's name is the three-label wildcard
+      # *.<release>-nats-headless.<ns>.svc.<domain>. The subchart's short
+      # form would need *.<release>-nats-headless, a two-label wildcard that
+      # Go accepts but OpenSSL and some certificate issuers refuse. On a
+      # cluster whose domain is not cluster.local, set k8sClusterDomain here
+      # and pass the same domain to gen-certs.sh --cluster-domain; the
+      # cert-manager path reads it from here.
+      routeURLs:
+        useFQDN: true
+        k8sClusterDomain: cluster.local
+      # Routes between the servers are mutual TLS, like client connections.
+      # They reuse the server certificate (the same Secret as
+      # config.nats.tls.secretName, which the render guard enforces), so
+      # that certificate carries the route names (the wildcard above) and
+      # BOTH serverAuth and clientAuth: a route is dialed by one server and
+      # accepted by the other, and each end checks the other's certificate.
+      # gen-certs.sh and the cert-manager path both issue it that way.
+      tls:
+        enabled: true
+        secretName: vantage-nats-server-tls
+        merge:
+          verify: true
+    jetstream:
+      enabled: true
+      fileStore:
+        pvc:
+          enabled: true
+          size: 20Gi
+          # Empty uses the cluster's default StorageClass.
+          storageClassName: ""
+    nats:
+      tls:
+        enabled: true
+        secretName: vantage-nats-server-tls
+        # verify:true is what turns server TLS into mTLS. It is not a named
+        # subchart value; it goes in through the subchart's own documented
+        # merge mechanism.
+        merge:
+          verify: true
+
+  # One NATS server per node, enforced. whenUnsatisfiable: DoNotSchedule
+  # makes this a scheduling rule rather than a preference: with
+  # ScheduleAnyway the scheduler may put two or all three servers on one
+  # node whenever that node looks best, and nothing reports it. That
+  # cluster looks resilient and is not: losing the node loses the quorum
+  # and every stream with it. minDomains: 3 closes the remaining gap, where
+  # on a two-node cluster maxSkew 1 would still allow two servers side by
+  # side (2 and 1 differ by only one); with it, fewer than three eligible
+  # nodes leaves the third server Pending instead, which is visible.
+  #
+  # Draining a node on a cluster of exactly three nodes leaves that node's
+  # server Pending until the node is uncordoned, and the PodDisruptionBudget
+  # (the subchart's, maxUnavailable 1) holds the next drain until it is
+  # back; the other two keep the quorum. A fourth node lets it reschedule
+  # at once, if its volume can follow it.
+  #
+  # With the single-server opt-out above the rule is inert: one pod never
+  # exceeds a skew of 1 on any node count.
+  #
+  # minDomains is a literal: a parent chart cannot template a subchart
+  # value. Keep it equal to config.cluster.replicas; raise both together.
+  #
+  # A map keyed by topologyKey, as the subchart takes it; the subchart adds
+  # the labelSelector matching the NATS pods.
+  podTemplate:
+    topologySpreadConstraints:
+      kubernetes.io/hostname:
+        maxSkew: 1
+        whenUnsatisfiable: DoNotSchedule
+        minDomains: 3
+
+    # The restricted Pod Security Standard, which the subchart's pods do not
+    # meet on their own: its containers set no securityContext, and its
+    # images carry no USER, so they run as root. These go in through the
+    # subchart's merge points (here and in container, reloader and
+    # promExporter below), since a parent chart cannot template them.
+    #
+    # One uid for the whole pod, not one per container: the reloader
+    # signals nats-server through the shared process namespace, and with
+    # every capability dropped a process may signal only its own uid. 1000
+    # because nothing in these images needs root: nats:2.11.6-alpine run as
+    # 1000:1000 with every capability dropped and no-new-privileges starts
+    # JetStream on a group-owned store and takes `--signal reload`.
+    #
+    # fsGroup makes the JetStream volume writable by that uid: kubelet gives
+    # the volume's files to group 1000 when it mounts it. On an install
+    # upgraded from a root-run NATS, the first mount after the upgrade walks
+    # every file already in the store; OnRootMismatch skips that walk on
+    # every mount after it.
+    merge:
+      spec:
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+          fsGroupChangePolicy: OnRootMismatch
+          seccompProfile:
+            type: RuntimeDefault
+
+  # The container half of the restricted profile, for each container the
+  # NATS pod can run. See podTemplate.merge above.
+  container:
+    merge:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+  reloader:
+    merge:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+  promExporter:
+    merge:
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+
+  # Off by default because the mTLS default above breaks it. The subchart
+  # renders nats-box's context with the CA and no client keypair, and its
+  # `helm test` pod connects through that same context, so a verify:true
+  # server refuses both. To keep it, set enabled: true and point
+  # natsBox.contexts.default.tls.secretName at a Secret carrying a
+  # clientAuth certificate from the same CA.
+  natsBox:
+    enabled: false
+
+  externalURL: ""      # set when nats.enabled is false
+
+# NetworkPolicies limiting who can reach this release's pods. They take
+# effect ONLY on a cluster whose CNI enforces NetworkPolicy (Calico, Cilium,
+# Antrea, ...); on one that does not (flannel alone, for example) they are
+# accepted by the API server and do nothing.
+#
+# Two policies, ingress only -- egress is left open:
+#   - The bundled NATS accepts client connections (4222) from the collector
+#     and writer pods only, plus nats-box and the subchart's `helm test` pod
+#     when nats.natsBox.enabled is true. Its cluster-route port is open to
+#     the NATS pods themselves. Its monitor port is closed to other pods
+#     unless metricsFrom names them; kubelet's probes come from the node,
+#     which the enforcing CNIs above admit regardless of policy. Ports for
+#     subchart features this chart does not enable (leafnodes, gateways,
+#     websocket, MQTT) are closed; add them through nats.extraIngress.
+#   - The API pod accepts its HTTP and metrics ports from anywhere, and
+#     nothing else. It is meant to be reached; the policy only closes ports
+#     it does not serve.
+metrics:
+  # Every daemon serves Prometheus metrics at /metrics on its metricsPort
+  # (collector 9469, writer 9472, api 9474), each behind a Service labeled
+  # app.kubernetes.io/component. The metrics are documented in
+  # docs/operating.md.
+  serviceMonitor:
+    # Render one ServiceMonitor per daemon for the Prometheus Operator. Needs
+    # the monitoring.coreos.com CRDs, so it is off by default.
+    enabled: false
+    # Per-component switches, consulted only when enabled is true.
+    collector: true
+    writer: true
+    api: true
+    # NATS is scraped through the NATS subchart's own exporter sidecar and
+    # PodMonitor, which this chart cannot switch on for you (a parent chart
+    # cannot derive a subchart's values). To scrape it, set:
+    #   nats:
+    #     promExporter:
+    #       enabled: true
+    #       podMonitor:
+    #         enabled: true
+    #         merge: {metadata: {labels: {release: <your prometheus>}}}
+    # and, with networkPolicy.enabled, networkPolicy.nats.metricsFrom.
+    # Where the ServiceMonitors go; empty means the release namespace. They
+    # always select Services in the release namespace.
+    namespace: ""
+    # Extra labels, e.g. the one your Prometheus's serviceMonitorSelector
+    # matches (kube-prometheus-stack defaults to release: <its release>).
+    labels: {}
+    # Empty uses Prometheus's own defaults.
+    interval: ""
+    scrapeTimeout: ""
+
+networkPolicy:
+  enabled: true
+  nats:
+    # NetworkPolicyPeers allowed to scrape NATS's monitor port (and the
+    # prometheus exporter's port, if nats.promExporter.enabled), e.g.
+    #   metricsFrom:
+    #     - namespaceSelector:
+    #         matchLabels: {kubernetes.io/metadata.name: monitoring}
+    # Empty renders no such rule -- NOT a rule with an empty `from`, which
+    # would admit everything.
+    metricsFrom: []
+    # Extra NetworkPolicyIngressRules appended to the NATS policy verbatim.
+    extraIngress: []
+
+retention:
+  # How many days of history the archive keeps: every BGP and BGP-LS event,
+  # peer event and stats report, in the ten history tables. The schema Job
+  # sets it as each table's TTL (ALTER TABLE ... MODIFY TTL), so it takes
+  # effect only while schemaJob.apply is true; with the Job off, set the TTL
+  # yourself (docs/deploying.md, Retention). An integer, at least 1.
+  #
+  # Current state -- each peer's session, each route, each link-state object
+  # as it stands now -- lives in separate tables with no TTL and never
+  # expires, however short this is.
+  #
+  # A change applies as ClickHouse merges parts, not at once: rows past a
+  # shorter retention are deleted over the following merges, and rows a
+  # longer one would have kept are gone already.
+  days: 90
+
+schemaJob:
+  # Whether this chart applies vantage's schema and dictionary DDL to your
+  # database.
+  #
+  # On by default, because the schema is vantage's and keeping it in step
+  # with the binaries is what the Job is for -- it also carries the
+  # migrations and re-runs on every upgrade.
+  #
+  # Turn it off if your database is managed by a team that will not grant a
+  # workload chart DDL rights, which is a reasonable position for them to
+  # take. Then apply deploy/clickhouse/*.sql yourself, in the same order,
+  # before upgrading vantage. The daemons do not create tables; they will
+  # fail against a database whose schema is behind them, which is the
+  # intended loud failure rather than a silent one.
+  apply: true
+  image:
+    repository: clickhouse/clickhouse-server
+    tag: 24.8-alpine
+    pullPolicy: IfNotPresent
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {memory: 512Mi}

@@ -1,0 +1,551 @@
+# Release: publishes the three container images, the Helm chart and the
+# `vantage` CLI when a version tag is pushed.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Images go to ghcr.io/<owner>/vantage-{collector,writer,api}, tagged with the
+# version (0.1.0) and the short commit SHA, for linux/amd64 and linux/arm64.
+# The chart goes to oci://ghcr.io/<owner>/charts/vantage at the same version.
+#
+# The tag, the chart's `version` and its `appVersion` must all agree, and the
+# first job refuses to publish anything if they do not. The chart's image
+# `tag` defaults to its appVersion, so that agreement is what makes
+# `helm install oci://ghcr.io/<owner>/charts/vantage --version 0.1.0` pull
+# images that exist, with no overrides.
+#
+# Only a commit already on main is released: a tag pushed on any other
+# commit (an unmerged branch, a fork's history fetched locally) fails the
+# on-main job, and nothing is published.
+#
+# A version is published once. The preflight job fails the release if any
+# image or the chart already exists at this version, and the GitHub Release
+# step refuses a release that is already published. A failed release is
+# fixed by tagging the next patch version, never by publishing different
+# bytes under a version someone may already have pulled.
+#
+# Images: each component is built once, for both platforms, into an OCI
+# archive (the `build` job). The `scan` job runs Grype on that archive for
+# each platform, and a CRITICAL or HIGH vulnerability that has a fix fails
+# the release. `push` needs every scan, so one failing scan blocks every
+# push, and it pushes the same archive the scans read, with its digests
+# preserved; it checks the pushed digest against the archive's. Each image
+# carries BuildKit's build provenance (mode=max) and SBOM, and on a public
+# repository a Sigstore-signed GitHub attestation as well. Builds use the
+# tagged commit's time as SOURCE_DATE_EPOCH with rewrite-timestamp, so a
+# rebuild of the same commit gives the same per-platform image manifests.
+#
+# Attestations: GitHub signs them on the Free plan only for public
+# repositories. The `visibility` job reads the repository's visibility from
+# the API. On a public repository every job that publishes something fails
+# if its attestation step did not run. On a private one the release is still
+# built and published, without GitHub attestations, and says so loudly.
+#
+# The `vantage` CLI is cross-compiled for linux, darwin and windows on amd64
+# and arm64 with plain `go build`, archived as
+# vantage_<version>_<os>_<arch>.tar.gz (.zip for windows) with an SPDX SBOM
+# per archive and a checksums.txt, and attached to a GitHub Release for the
+# tag. The GitHub Release is created last, after the images and the chart,
+# so it never announces a version whose images failed.
+#
+# The Dockerfiles cross-compile (their build stages run on $BUILDPLATFORM),
+# so the arm64 build needs no QEMU.
+#
+# A package's first publish to ghcr can land private. After the first
+# release, check each package's visibility under the owner's Packages tab
+# and set it to public.
+#
+# Actions are pinned by commit SHA because these jobs can write packages
+# and releases.
+#
+# There is no `concurrency:` group: a release must never be canceled by a
+# later run, and each tag is its own run.
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions: {}
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+  visibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Repository metadata is readable with no granted permission.
+    permissions: {}
+    outputs:
+      public: ${{ steps.check.outputs.public }}
+    steps:
+      - name: is this repository public
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          visibility=$(gh api "repos/$GH_REPO" --jq .visibility)
+          echo "visibility=$visibility"
+          if [ "$visibility" = public ]; then
+            echo "public=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "public=false" >> "$GITHUB_OUTPUT"
+            msg="This repository is $visibility: the release is published WITHOUT GitHub attestations, and gh attestation verify will find nothing for it."
+            echo "::warning title=No attestations::$msg"
+            echo "### No attestations" >> "$GITHUB_STEP_SUMMARY"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: tag, chart version and appVersion agree
+        id: check
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          chart=$(awk '/^version:/ {gsub(/"/, "", $2); print $2}' deploy/helm/vantage/Chart.yaml)
+          app=$(awk '/^appVersion:/ {gsub(/"/, "", $2); print $2}' deploy/helm/vantage/Chart.yaml)
+          echo "tag=$version chart=$chart appVersion=$app"
+          if [ "$version" != "$chart" ] || [ "$version" != "$app" ]; then
+            echo "::error::tag $TAG does not match Chart.yaml (version $chart, appVersion $app). Bump both, commit, and tag that commit."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  on-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Every branch, so origin/main is here to test ancestry against.
+          fetch-depth: 0
+          persist-credentials: false
+      - name: the tagged commit is on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$TAG points at $GITHUB_SHA, which is not on main. Tag a commit on main."
+            exit 1
+          fi
+
+  # Nothing at this version may exist yet. A registry that does not have the
+  # tag answers "not found" (or "denied", for a package that does not exist
+  # at all). Any other error fails closed.
+  preflight:
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read  # see private packages at this version
+    steps:
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.18.6
+      - name: no image or chart exists at this version
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
+          absent='not found|manifest unknown|name unknown|denied|403 Forbidden|404 Not Found'
+          taken=0
+          check() {
+            local what=$1 out
+            shift
+            if out=$("$@" 2>&1); then
+              echo "::error::$what already exists. A version is published once: tag the next patch version instead."
+              taken=1
+            elif grep -qiE "$absent" <<<"$out"; then
+              echo "$what: absent"
+            else
+              echo "$out"
+              echo "::error::could not tell whether $what exists"
+              exit 1
+            fi
+          }
+          for c in collector writer api; do
+            ref="${REGISTRY}/vantage-${c}:${VERSION}"
+            check "$ref" docker buildx imagetools inspect "$ref"
+          done
+          check "oci://${REGISTRY}/charts/vantage ${VERSION}" \
+            helm show chart "oci://${REGISTRY}/charts/vantage" --version "$VERSION"
+          exit "$taken"
+
+  build:
+    needs: [version, on-main, preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        component: [collector, writer, api]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - name: commit time
+        id: epoch
+        run: echo "epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+      - name: build both platforms into an OCI archive
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          SOURCE_DATE_EPOCH: ${{ steps.epoch.outputs.epoch }}
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          platforms: linux/amd64,linux/arm64
+          provenance: mode=max
+          sbom: true
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar,rewrite-timestamp=true
+          # .dockerignore excludes .git, so the build cannot compute these
+          # itself; without them every release reports version "dev".
+          build-args: |
+            VERSION=v${{ needs.version.outputs.version }}
+            REVISION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-${{ matrix.component }}
+          path: ${{ runner.temp }}/image.tar
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  scan:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [collector, writer, api]
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ matrix.component }}
+          path: ${{ runner.temp }}/image
+      - uses: anchore/scan-action/download-grype@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        id: grype
+        with:
+          grype-version: v0.118.0
+      - name: scan for fixable CRITICAL and HIGH vulnerabilities
+        env:
+          GRYPE: ${{ steps.grype.outputs.cmd }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          "$GRYPE" "oci-archive:${RUNNER_TEMP}/image/image.tar" --platform "$PLATFORM" \
+            --only-fixed --fail-on high -o table
+
+  push:
+    needs: [version, visibility, scan]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      packages: write      # push the image to ghcr
+      id-token: write      # sign the attestation (Sigstore, via OIDC)
+      attestations: write  # store the attestation
+    strategy:
+      matrix:
+        component: [collector, writer, api]
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ matrix.component }}
+          path: ${{ runner.temp }}/image
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # skopeo is on the runner image. --preserve-digests refuses any copy
+      # that would change a manifest, so the index pushed, its per-platform
+      # images and BuildKit's attestation manifests are the bytes scanned.
+      - name: push the scanned archive
+        id: push
+        env:
+          COMPONENT: ${{ matrix.component }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/image/image.tar"
+          want=$(tar -xOf "$archive" index.json | jq -r '.manifests[0].digest')
+          repo="${REGISTRY}/vantage-${COMPONENT}"
+          auth="$HOME/.docker/config.json"
+          # Checked again here, not only in preflight: re-running this job
+          # does not re-run preflight. The same archive, already pushed, is
+          # left alone; anything else at this version is refused.
+          if have=$(docker buildx imagetools inspect "${repo}:${VERSION}" --format '{{.Manifest.Digest}}' 2>&1); then
+            if [ "$have" = "$want" ]; then
+              echo "${repo}:${VERSION} is already this archive ($want)"
+            else
+              echo "::error::${repo}:${VERSION} already exists as $have, not this archive ($want). A version is published once: tag the next patch version instead."
+              exit 1
+            fi
+          elif ! grep -qiE 'not found|manifest unknown|name unknown|denied|403 Forbidden|404 Not Found' <<<"$have"; then
+            echo "$have"
+            echo "::error::could not tell whether ${repo}:${VERSION} exists"
+            exit 1
+          fi
+          skopeo copy --all --preserve-digests --authfile "$auth" \
+            --digestfile "${RUNNER_TEMP}/pushed" "oci-archive:${archive}" "docker://${repo}:${VERSION}"
+          got=$(cat "${RUNNER_TEMP}/pushed")
+          if [ "$got" != "$want" ]; then
+            echo "::error::pushed $got, but the scanned archive is $want"
+            exit 1
+          fi
+          skopeo copy --all --preserve-digests --authfile "$auth" \
+            "docker://${repo}@${got}" "docker://${repo}:${GITHUB_SHA::7}"
+          echo "digest=$got" >> "$GITHUB_OUTPUT"
+          echo "pushed ${repo}:${VERSION} and :${GITHUB_SHA::7} at $got"
+      # Storage records exist only for organization-owned repositories.
+      - name: attest
+        id: attest
+        if: needs.visibility.outputs.public == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/vantage-${{ matrix.component }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      - name: a public release is attested
+        if: needs.visibility.outputs.public == 'true' && steps.attest.outcome != 'success'
+        run: |
+          echo "::error::the repository is public but the attestation step did not run"
+          exit 1
+
+  chart:
+    # After the images, so the published chart never points at a version
+    # whose images failed to publish.
+    needs: [version, visibility, push]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write      # push the chart to ghcr
+      id-token: write      # sign the attestation (Sigstore, via OIDC)
+      attestations: write  # store the attestation
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.18.6
+      # The subchart download and the packaging run before the registry
+      # login, so the registry credential exists only for the push.
+      - name: package the chart
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          helm dependency build deploy/helm/vantage
+          helm package deploy/helm/vantage --destination "${RUNNER_TEMP}/chart"
+          test -f "${RUNNER_TEMP}/chart/vantage-${VERSION}.tgz"
+      - name: push the chart
+        id: push
+        env:
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -o pipefail
+          echo "$GH_TOKEN" | helm registry login ghcr.io --username "$GH_ACTOR" --password-stdin
+          # Checked again here, not only in preflight: re-running this job
+          # does not re-run preflight, and helm package is not reproducible,
+          # so any chart already at this version is refused.
+          chart="oci://${REGISTRY}/charts/vantage"
+          if out=$(helm show chart "$chart" --version "$VERSION" 2>&1); then
+            echo "::error::$chart $VERSION already exists. A version is published once: tag the next patch version instead."
+            exit 1
+          elif ! grep -qiE 'not found|manifest unknown|name unknown|denied|403 Forbidden|404 Not Found' <<<"$out"; then
+            echo "$out"
+            echo "::error::could not tell whether $chart $VERSION exists"
+            exit 1
+          fi
+          helm push "${RUNNER_TEMP}/chart/vantage-${VERSION}.tgz" "oci://${REGISTRY}/charts" 2>&1 | tee "${RUNNER_TEMP}/push.log"
+          digest=$(awk '/^Digest:/ {print $2}' "${RUNNER_TEMP}/push.log")
+          case "$digest" in
+            sha256:*) echo "digest=$digest" >> "$GITHUB_OUTPUT" ;;
+            *) echo "::error::helm push printed no digest"; exit 1 ;;
+          esac
+      # Stored with GitHub, not pushed beside the chart: `gh attestation
+      # verify oci://ghcr.io/<owner>/charts/vantage:<version>` resolves the
+      # digest from the registry and finds the attestation by it.
+      - name: attest
+        id: attest
+        if: needs.visibility.outputs.public == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ env.REGISTRY }}/charts/vantage
+          subject-digest: ${{ steps.push.outputs.digest }}
+      - name: a public release is attested
+        if: needs.visibility.outputs.public == 'true' && steps.attest.outcome != 'success'
+        run: |
+          echo "::error::the repository is public but the attestation step did not run"
+          exit 1
+
+  cli:
+    needs: [version, on-main, preflight]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.1"
+          # A release builds from a clean module download, never from a
+          # cache another workflow run wrote.
+          cache: false
+      - uses: anchore/sbom-action/download-syft@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        id: syft
+        with:
+          syft-version: v1.51.1
+      # The same flags as the Dockerfiles: static, stripped, and stamped
+      # through buildinfo's Version and Revision. Everything is written under
+      # $RUNNER_TEMP, never into the checkout: an untracked file in the work
+      # tree makes go stamp the binary vcs.modified=true. Archives are built
+      # with a fixed file order, owner and mtime, so the same commit gives
+      # the same bytes.
+      - name: build, archive and describe the CLI
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          SYFT: ${{ steps.syft.outputs.cmd }}
+        run: |
+          set -euo pipefail
+          epoch=$(git log -1 --format=%ct)
+          out="${RUNNER_TEMP}/dist"
+          mkdir -p "$out"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
+            os=${target%/*}
+            arch=${target#*/}
+            name="vantage_${VERSION}_${os}_${arch}"
+            stage="${RUNNER_TEMP}/build/${name}"
+            bin=vantage
+            [ "$os" = windows ] && bin=vantage.exe
+            mkdir -p "$stage"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X github.com/jp2195/vantage/buildinfo.Version=v${VERSION} -X github.com/jp2195/vantage/buildinfo.Revision=${GITHUB_SHA}" \
+              -o "${stage}/${bin}" ./cmd/vantage
+            cp LICENSE README.md "$stage/"
+            touch -d "@${epoch}" "$stage"/*
+            if [ "$os" = windows ]; then
+              archive="${out}/${name}.zip"
+              (cd "$stage" && zip -X -q "$archive" "$bin" LICENSE README.md)
+            else
+              archive="${out}/${name}.tar.gz"
+              tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@${epoch}" \
+                -C "$stage" -cf - "$bin" LICENSE README.md | gzip -n > "$archive"
+            fi
+            "$SYFT" scan "file:${stage}/${bin}" --source-name "$name" --source-version "$VERSION" \
+              -o "spdx-json=${archive}.spdx.json"
+          done
+          linux="${RUNNER_TEMP}/build/vantage_${VERSION}_linux_amd64/vantage"
+          "$linux" -version | grep -F "v${VERSION}"
+          # Every binary, not only the first: one written into the work tree
+          # stamps modified=true on each build after it.
+          for b in "${RUNNER_TEMP}"/build/*/vantage*; do
+            if ! go version -m "$b" | grep -q 'vcs.modified=false'; then
+              echo "::error::$b was not built from a clean work tree"
+              exit 1
+            fi
+          done
+          (cd "$out" && sha256sum -- *.tar.gz *.zip *.spdx.json > checksums.txt)
+          ls -l "$out"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cli
+          path: ${{ runner.temp }}/dist/
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+
+  github-release:
+    # Last, so a GitHub Release exists only for a version whose images,
+    # chart and CLI archives were all published.
+    needs: [version, visibility, chart, cli]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write      # create the GitHub Release and upload its assets
+      id-token: write      # sign the attestation (Sigstore, via OIDC)
+      attestations: write  # store the attestation
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: cli
+          path: ${{ runner.temp }}/dist
+      - name: attest
+        id: attest
+        if: needs.visibility.outputs.public == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/dist/*.tar.gz
+            ${{ runner.temp }}/dist/*.zip
+            ${{ runner.temp }}/dist/checksums.txt
+      - name: a public release is attested
+        if: needs.visibility.outputs.public == 'true' && steps.attest.outcome != 'success'
+        run: |
+          echo "::error::the repository is public but the attestation step did not run"
+          exit 1
+      # No release for the tag: create it. `gh release create` makes a draft,
+      # uploads the assets and then publishes it, so a failed upload leaves a
+      # draft; a re-run finds that draft, replaces its assets and publishes
+      # it. A release that is already published is refused, never changed.
+      - name: create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          assets=("${RUNNER_TEMP}"/dist/*)
+          if draft=$(gh release view "$TAG" --json isDraft -q .isDraft 2>&1); then
+            if [ "$draft" != true ]; then
+              echo "::error::release $TAG is already published. A version is published once: tag the next patch version instead."
+              exit 1
+            fi
+            gh release upload "$TAG" "${assets[@]}" --clobber
+            gh release edit "$TAG" --draft=false
+          elif grep -q 'release not found' <<<"$draft"; then
+            gh release create "$TAG" "${assets[@]}" --verify-tag --generate-notes --title "$TAG"
+          else
+            echo "$draft"
+            exit 1
+          fi
+      - name: note a release without attestations
+        if: needs.visibility.outputs.public != 'true'
+        run: |
+          echo "::warning title=No attestations::released from a private repository: no GitHub attestations exist for this release"

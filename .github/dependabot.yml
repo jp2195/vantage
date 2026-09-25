@@ -1,0 +1,75 @@
+# Weekly dependency updates. Minor and patch updates are grouped into one
+# pull request per ecosystem to keep the volume low; a major update still
+# gets a pull request of its own, since it is the kind that needs reading.
+#
+# cooldown: a version is proposed only once it has been published for 7
+# days, so a compromised release that is caught and pulled within the week
+# never reaches a pull request here. Security updates ignore the cooldown.
+#
+# The docker entry covers the Dockerfile.* base images at the repository
+# root, which are pinned by tag and digest; Dependabot moves the digest when
+# the tag moves. docker-compose covers docker-compose.dev.yml, and helm the
+# chart's NATS dependency (Chart.yaml and Chart.lock). The ClickHouse
+# service image in .github/workflows/ci.yml is pinned by digest and is not
+# something Dependabot updates: bump it by hand.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      gomod-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /ui
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker-compose-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: helm
+    directory: /deploy/helm/vantage
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      helm-minor-and-patch:
+        update-types: [minor, patch]

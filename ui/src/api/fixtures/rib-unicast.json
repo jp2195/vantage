@@ -1,0 +1,68 @@
+{
+    "data": [
+        {
+            "router_sysname": "4a8063e2ed30",
+            "router_ip": "10.0.0.80",
+            "peer_ip": "172.31.0.90",
+            "collector": "vantage-collector-0",
+            "rib": "in_pre",
+            "path_id": 0,
+            "next_hop": "172.31.0.90",
+            "as_path": [],
+            "origin_asn": null,
+            "med": 0,
+            "local_pref": 250,
+            "communities": [
+                "65010:1",
+                "65010:2"
+            ],
+            "large_communities": [
+                "65010:1:1"
+            ],
+            "ext_communities": [],
+            "route_targets": [],
+            "dump_state": "dumping",
+            "family": "ipv4u",
+            "prefix": "10.10.1.0/24"
+        },
+        {
+            "router_sysname": "4a8063e2ed30",
+            "router_ip": "10.0.0.80",
+            "peer_ip": "172.31.0.90",
+            "collector": "vantage-collector-0",
+            "rib": "in_pre",
+            "path_id": 0,
+            "next_hop": "172.31.0.90",
+            "as_path": [],
+            "origin_asn": null,
+            "med": 0,
+            "local_pref": 250,
+            "communities": [
+                "65010:1",
+                "65010:2"
+            ],
+            "large_communities": [
+                "65010:1:1"
+            ],
+            "ext_communities": [],
+            "route_targets": [],
+            "dump_state": "dumping",
+            "family": "ipv4u",
+            "prefix": "10.10.2.0/24"
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [
+            {
+                "code": "session_dumping",
+                "message": "at least one contributing peer is still sending its initial RIB dump, so this answer is a partial view of that peer's routes rather than its full table"
+            },
+            {
+                "code": "paginated_smear",
+                "message": "a paginated walk is a smear over a live table, not a snapshot: the session is pinned, but rows may be added or withdrawn between pages"
+            }
+        ],
+        "total_matched": null
+    }
+}

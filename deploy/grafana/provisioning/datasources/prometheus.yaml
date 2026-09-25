@@ -1,0 +1,31 @@
+# The writer's pipeline-lag panels on the Fleet health dashboard read from
+# Prometheus, not ClickHouse. That split is not an inconsistency: every other
+# panel asks what is IN the archive, and these two ask whether anything failed
+# to reach it. A question about missing data cannot be answered by querying
+# the store that is missing it -- if envelopes were dropped by stream
+# retention before the writer inserted them, there is nothing in ClickHouse to
+# count, which is exactly the failure being detected.
+#
+# NOTE: docker-compose.dev.yml runs no Prometheus, so in the dev stack this
+# datasource resolves to nothing and the two lag panels read "No data". That
+# is deliberate rather than an oversight -- the dev stack exists to exercise
+# the pipeline, not to be a monitoring deployment, and adding a scraper to it
+# would mean maintaining alerting config nobody runs. In a real deployment,
+# point `url` at whatever already scrapes vantage-writer's metrics_listen
+# (default 0.0.0.0:9472) and vantage-collector's (default :9469).
+#
+# To populate the panels locally, run a scraper alongside the stack on the
+# same compose network and named `prometheus`, e.g.:
+#
+#   docker run -d --name prometheus --network vantage_default \
+#     -v "$PWD/deploy/dev/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+#     prom/prometheus
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: vantage-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    jsonData:
+      httpMethod: POST

@@ -1,0 +1,82 @@
+[
+  {
+    "RouterSysName": "parity-r1",
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.1",
+    "NextHop": "10.250.9.1",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "Family": "vpn4",
+    "RD": "65101:1",
+    "Prefix": "192.0.2.0/24",
+    "PathID": 0,
+    "Label": 100,
+    "HasLabel": true,
+    "RouteTargets": [
+      "65101:1"
+    ],
+    "ASPath": [
+      65101,
+      65400
+    ],
+    "OriginASN": 65400,
+    "MED": null,
+    "LocalPref": null,
+    "Communities": [],
+    "LargeCommunities": [],
+    "ExtCommunities": [],
+    "DumpState": "dumping"
+  },
+  {
+    "RouterSysName": "parity-r1",
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.1",
+    "NextHop": "10.250.9.1",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "Family": "vpn4",
+    "RD": "65101:1",
+    "Prefix": "192.0.2.32/27",
+    "PathID": 1,
+    "Label": 101,
+    "HasLabel": true,
+    "RouteTargets": [],
+    "ASPath": [
+      65101,
+      65402
+    ],
+    "OriginASN": 65402,
+    "MED": null,
+    "LocalPref": null,
+    "Communities": [],
+    "LargeCommunities": [],
+    "ExtCommunities": [],
+    "DumpState": "dumping"
+  },
+  {
+    "RouterSysName": "parity-r1",
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.1",
+    "NextHop": "10.250.9.1",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "Family": "vpn4",
+    "RD": "65101:1",
+    "Prefix": "192.0.2.32/27",
+    "PathID": 2,
+    "Label": 102,
+    "HasLabel": true,
+    "RouteTargets": [],
+    "ASPath": [
+      65101,
+      65403
+    ],
+    "OriginASN": 65403,
+    "MED": null,
+    "LocalPref": null,
+    "Communities": [],
+    "LargeCommunities": [],
+    "ExtCommunities": [],
+    "DumpState": "dumping"
+  }
+]

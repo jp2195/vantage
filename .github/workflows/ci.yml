@@ -1,0 +1,896 @@
+# CI: build/test/vet/format, generated-code freshness, and a proto
+# backward-compatibility gate (package vantage.v1 is additive-only, enforced
+# by buf breaking).
+#
+# Tool versions are pinned to exactly what the Makefile documents
+# (buf@v1.50.0, protoc-gen-go@v1.36.11) so CI's codegen/breaking-check output
+# can never silently drift from what a contributor's local `make generate`
+# produces.
+#
+# The token is read-only, and no checkout persists it: every job runs code
+# the change under test controls (npm ci, go install, make generate), and
+# none of it needs to talk to GitHub. Actions are pinned by commit SHA and
+# the ClickHouse service image by digest, so a moved tag cannot change what
+# runs here.
+name: CI
+
+# Pushes to main, and pull requests. A same-repository branch with a pull
+# request open would otherwise run twice, once per event.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same pull request makes the older run's result
+# irrelevant, so it is canceled. Pushes to main are never canceled: each one
+# is the buf-breaking baseline for the next, and its result is the record of
+# what main was.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions: {}
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    # ClickHouse for sink's live tests (see chtest.DSN, dialed via
+    # chtest.Require in clickhouse_test.go's requireClickHouse) and for the
+    # corpus-replay end-to-end test, which needs the same server. Port 9000 is the
+    # native protocol, matching docker-compose.dev.yml's dev stack, so the
+    # exact same DSN (clickhouse://vantage:vantage@127.0.0.1:9000/vantage_test)
+    # reaches a real ClickHouse in both a dev checkout and here. The health
+    # check (a real query, not just a TCP connect) is what setup-go/checkout
+    # ordering can't guarantee on its own: service containers start in
+    # parallel with the job's own container, so without it the schema-apply
+    # step below could run before the server accepts connections.
+    services:
+      clickhouse:
+        # clickhouse/clickhouse-server:24.8-alpine (multi-platform index)
+        image: clickhouse/clickhouse-server@sha256:b002e56ed5c16e224c312527f6fcba7e77216fec5d7a88a7828f59efc614feb5
+        ports:
+          - 9000:9000
+        env:
+          CLICKHOUSE_DB: vantage
+          CLICKHOUSE_USER: vantage
+          CLICKHOUSE_PASSWORD: vantage
+          CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+        options: >-
+          --health-cmd "clickhouse-client --query 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history, not the default shallow single-ref checkout: the
+          # buf-breaking step below diffs the proto module against another
+          # commit (the base branch, or the previous commit on main), which
+          # must be available locally. With fetch-depth 0, checkout fetches
+          # every branch into refs/remotes/origin/*, so origin/main is
+          # already here and that step needs no credentials of its own.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          # Matches go.mod's `toolchain go1.27.1` line exactly -- not its
+          # `go 1.27.0` line, which is the LANGUAGE version floor rather
+          # than the toolchain a build runs on. The two differ now: the go
+          # directive says what the source may use, the toolchain directive
+          # says what compiles it, and this pin has to track the second or
+          # it is pinning nothing.
+          #
+          # Leaving this behind go.mod would not fail the build --
+          # GOTOOLCHAIN defaults to "auto", so go itself would silently
+          # download whatever the toolchain directive names -- it would
+          # just mean this pin is decorative and the toolchain actually
+          # used drifts unpinned between runs. Which is the whole reason
+          # it is written down.
+          go-version: "1.27.1"
+
+      - name: go build
+        run: go build ./...
+
+      # The public repository is built without scripts/internal-paths.txt's
+      # directories and without this history, so a published file must not
+      # point at either. A full clone is needed to resolve cited SHAs.
+      - name: published files stand alone
+        run: make standalone-check
+
+      - name: apply clickhouse schema
+        run: |
+          # The clickhouse service above starts before this job's steps
+          # (including checkout), so deploy/clickhouse/schema.sql can't be
+          # bind-mounted into it the way docker-compose.dev.yml mounts it at
+          # /docker-entrypoint-initdb.d -- that file doesn't exist on the
+          # runner yet at service-start time. Apply it explicitly instead,
+          # now that checkout has put the file on disk and the health check
+          # above has confirmed the server is answering queries.
+          #
+          # The tests no longer read this database: sink's live
+          # tests create and own a `vantage_test` database of their own
+          # (chtest's ensureDatabase, reached through chtest.Require in
+          # clickhouse_test.go's requireClickHouse), so that replaying the
+          # vendor corpus cannot collide with a real archive. This step
+          # stays because it is the only place CI exercises the DDL the way
+          # the dev stack actually applies it -- one clickhouse-client
+          # --multiquery invocation over the whole file -- which is a
+          # different path from the statement-at-a-time one the tests use,
+          # and the one an operator will hit first.
+          #
+          # This goes through clickhouse-client inside the container (via
+          # docker exec), not curl against the HTTP port: ClickHouse's HTTP
+          # interface rejects a semicolon-separated multi-statement body
+          # outright ("Multi-statements are not allowed"), confirmed against
+          # the dev container while writing this step, whereas
+          # clickhouse-client --multiquery runs the whole DDL script as one
+          # invocation, which is what docker-compose.dev.yml's
+          # initdb.d mount relies on the server doing for it locally.
+          container="$(docker ps -q --filter ancestor=clickhouse/clickhouse-server:24.8-alpine)"
+          docker exec -i "$container" clickhouse-client -u vantage --password vantage --multiquery < deploy/clickhouse/schema.sql
+
+      # sink's TestSchemaJobRetentionStepIsIdempotent renders the chart's
+      # schema Job and runs its retention step in the Job's own image
+      # (docker is on the runner), so this job needs helm and the chart's
+      # dependencies as well.
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.18.6
+      - run: helm dependency build deploy/helm/vantage
+
+      # -race, not a plain run. Several tests in this repo only discriminate
+      # under the detector -- natsutil's TestPublisherConcurrentPublishAndDrain
+      # says so in its own doc comment, because the sync.WaitGroup version it
+      # guards against passes most runs without it. That defect was a
+      # reproducible process panic on the daemon's first concurrent flush, so
+      # it is exactly what CI must not let back in. The whole suite runs in a
+      # few seconds under -race, so there is no reason to split it.
+      - name: go test -race
+        # VANTAGE_REQUIRE_CLICKHOUSE turns sink's (and query's) live-ClickHouse
+        # tests from "skip if unreachable" into "fail if unreachable" (see
+        # chtest's requireEnv gate, documented on chtest.Skip). Set here,
+        # and only here: a CI run must never pass by silently skipping the
+        # one test suite that catches an Append argument landing in the
+        # wrong column, which is a failure this suite exists to catch,
+        # while a developer without the dev stack running still gets a
+        # usable `go test ./...` locally.
+        env:
+          VANTAGE_REQUIRE_CLICKHOUSE: "1"
+        run: go test -race ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: gofmt
+        run: |
+          out="$(gofmt -l .)"
+          if [ -n "$out" ]; then
+            echo "gofmt would reformat the following files:"
+            echo "$out"
+            exit 1
+          fi
+
+      - name: install pinned buf/protoc-gen-go
+        run: |
+          go install github.com/bufbuild/buf/cmd/buf@v1.50.0
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: generated code is up to date
+        run: |
+          make generate
+          if ! git diff --exit-code -- schema; then
+            echo "schema is stale: run 'make generate' and commit the result."
+            exit 1
+          fi
+
+      # The proto module is additive-only: a change that would break a
+      # client built against the previous schema fails here. A pull request
+      # is compared with the branch it targets, and a push to main with the
+      # commit main pointed at before the push, so a change that reaches
+      # main without a pull request is still checked. When that commit is
+      # not in the history (a force push replaced it), the previous commit,
+      # HEAD~1, stands in. The comparison ref must contain the proto module:
+      # buf fails on an empty one rather than passing.
+      - name: buf breaking
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BASE_REF" ]; then
+            against="origin/$BASE_REF"
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            against="$BEFORE"
+          else
+            against="HEAD~1"
+          fi
+          against=$(git rev-parse --verify "$against^{commit}")
+          echo "buf breaking against $against"
+          buf breaking --against ".git#ref=$against"
+
+      # `go build ./...` above proves the SOURCE compiles with the toolchain
+      # this workflow pins. It says nothing about the toolchain the images
+      # are built with, which is pinned separately in each Dockerfile's FROM
+      # line -- and that gap has already cost us: go.mod moved to 1.25.0
+      # while both Dockerfiles still said golang:1.24, so every binary in
+      # the dev stack failed to build while CI stayed green. Nothing here
+      # ran docker build, so nothing noticed until the stack was brought up
+      # by hand.
+      #
+      # This step closes that specific class: a Dockerfile whose base image,
+      # build steps or COPY paths no longer match the repo. It is last
+      # because it is the slowest gate in the job, and a source-level break
+      # should surface from the seconds-long steps above rather than from
+      # here.
+      #
+      # No registry, no push, no cache: the artifact is not wanted, only the
+      # exit status. All three images are built because they pin their
+      # toolchains independently and have drifted independently before.
+      # Dockerfile.api joined this list when it grew a second, independently
+      # pinned toolchain of its own (node:22 alongside golang:1.25) plus a
+      # COPY --from=ui path between stages -- exactly the shape of drift this
+      # step exists to catch, and unguarded until now.
+      - name: docker build (image toolchain pins, not just source)
+        run: |
+          docker build -f Dockerfile.collector -t vantage-collector:ci .
+          docker build -f Dockerfile.writer -t vantage-writer:ci .
+          docker build -f Dockerfile.api -t vantage-api:ci .
+
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      # vue-tsc --noEmit, then the production build. It also proves
+      # webui/dist/.gitkeep survives emptyOutDir -- see the ui/public/.gitkeep
+      # step below.
+      - run: npm run build
+      # Nothing else in this workflow notices an empty build. This job never
+      # builds Go, the `ci` job builds Go with no Node (so it embeds an empty
+      # webui/dist on purpose), and the docker build step proves only that
+      # Dockerfile.api's COPY --from=ui resolves a path -- not that the path
+      # had an app in it. A build that emitted assets/ and no index.html would
+      # pass every one of those and ship a daemon whose every page is
+      # webui/webui.go's 503 "run `make ui`". This is the one line that reads
+      # the output the Go binary actually embeds.
+      - name: the build produced an app for the Go binary to embed
+        run: test -f ../webui/dist/index.html
+      - run: npm test
+      # emptyOutDir wipes webui/dist before every build, .gitkeep included;
+      # ui/public/.gitkeep is what Vite copies back in afterward (publicDir
+      # is copied into outDir AFTER it is emptied). If that ever stops
+      # working -- a Vite upgrade that skips dotfiles, someone deleting
+      # ui/public/.gitkeep -- this is what catches it: webui/dist/.gitkeep
+      # is committed and load-bearing (see webui/webui.go's package doc),
+      # and a build that fails to restore it would otherwise only show up
+      # as a dirty git status nobody happened to run.
+      - name: webui/dist/.gitkeep survived the build
+        run: |
+          if ! git diff --exit-code -- ../webui/dist; then
+            echo "the build changed webui/dist/.gitkeep -- see ui/public/.gitkeep and vite.config.ts's build.emptyOutDir"
+            exit 1
+          fi
+      # The same property the buf check gives the protobuf code: the
+      # committed client is the contract's client. Without this, editing
+      # api/openapi.yaml and forgetting to regenerate leaves the UI typed
+      # against endpoints the daemon no longer serves, and nothing notices
+      # until a blank cell in production.
+      - name: generated client is up to date
+        run: |
+          npm run generate
+          if ! git diff --exit-code -- src/api/generated; then
+            echo "ui/src/api/generated is stale -- run 'make ui-gen' and commit the result"
+            exit 1
+          fi
+
+  helm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # NATS mutual TLS is on by default and the chart never mints keys, so a
+    # render with no certificate configuration fails by design. Steps that
+    # test something else supply stand-in client Secret names (TLS_CERTS);
+    # steps about the plaintext opt-out use PLAINTEXT, which must turn off
+    # both the client side and the bundled server's three TLS switches
+    # (client-facing, the CA bundle, and the cluster routes).
+    env:
+      TLS_CERTS: --set nats.tls.collectorSecret=c-tls --set nats.tls.writerSecret=w-tls
+      PLAINTEXT: --set nats.tls.enabled=false --set nats.tlsCA.enabled=false --set nats.config.nats.tls.enabled=false --set nats.config.cluster.tls.enabled=false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.18.6
+      # Dependencies must be fetched before lint: a chart with unfetched
+      # subchart dependencies fails lint for a reason unrelated to the chart.
+      - run: helm dependency build deploy/helm/vantage
+      - run: helm lint deploy/helm/vantage
+      # template is the real check. lint accepts a chart whose templates
+      # produce invalid YAML; template does not.
+      # The chart requires the operator's own ClickHouse coordinates, so the
+      # smoke render supplies them. There is no default that renders: a chart
+      # that does not deploy a database cannot invent a host or a credential
+      # for one, and both guards are asserted individually below.
+      - run: |
+          helm template vantage deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch.example.internal \
+            --set clickhouse.auth.password=ci $TLS_CERTS > /dev/null
+      # The run above (and helm lint) only ever renders under the release
+      # name "vantage" -- the one release name that hides a helper mismatch,
+      # because vantage.fullname collapses "<release>-vantage" down to just
+      # ClickHouse is not deployed by this chart, so there is no Service to
+      # agree with any more. The check that replaced the old one asserts
+      # what actually matters now: the host the daemons dial is the
+      # operator's configured externalHost, verbatim, and a render that
+      # names none fails loudly instead of dialing something invented.
+      #
+      # The old check compared CH_HOST against the rendered
+      # service-clickhouse.yaml name, which caught a real bug once --
+      # vantage.clickhouseHost hardcoded "<release>-clickhouse" while the
+      # Service was "<fullname>-clickhouse", and those agree only for
+      # release name "vantage". Both the helper branch and the Service are
+      # gone; this is its successor, not its deletion.
+      - name: 'helm template: clickhouse host is the configured external host'
+        run: |
+          rendered_host="$(helm template foo deploy/helm/vantage --namespace vantage $TLS_CERTS \
+            --set clickhouse.externalHost=ch.example.internal \
+            --set clickhouse.auth.password=ci \
+            --show-only templates/job-schema.yaml \
+            | grep -A1 'name: CH_HOST' | grep 'value:' | sed -E 's/.*value: "(.*)".*/\1/')"
+          if [ "$rendered_host" != "ch.example.internal" ]; then
+            echo "vantage.clickhouseHost resolved to '$rendered_host', not the configured clickhouse.externalHost"
+            exit 1
+          fi
+      - name: helm template refuses to render without clickhouse.externalHost
+        run: |
+          if helm template foo deploy/helm/vantage --namespace vantage $TLS_CERTS \
+               --set clickhouse.auth.password=ci > /dev/null 2>&1; then
+            echo "chart rendered with no clickhouse.externalHost -- the daemons would dial nothing"
+            exit 1
+          fi
+      - name: helm template refuses to invent a ClickHouse password
+        run: |
+          if helm template foo deploy/helm/vantage --namespace vantage $TLS_CERTS \
+               --set clickhouse.externalHost=ch.example.internal > /dev/null 2>&1; then
+            echo "chart rendered with no clickhouse credential -- it used to mint a random one, which cannot authenticate against a database it does not own"
+            exit 1
+          fi
+      - name: 'helm template: schemaJob.apply=false drops the schema Job'
+        run: |
+          if helm template foo deploy/helm/vantage --namespace vantage $TLS_CERTS \
+               --set clickhouse.externalHost=ch.example.internal \
+               --set clickhouse.auth.password=ci \
+               --set schemaJob.apply=false \
+               --show-only templates/job-schema.yaml > /dev/null 2>&1; then
+            echo "schemaJob.apply=false still rendered a schema Job"
+            exit 1
+          fi
+      # The schema Job sets retention.days as the TTL of the history tables
+      # and of nothing else. The expected tables are DERIVED from the
+      # chart's own 000-schema.sql -- every table whose TTL is on
+      # ts_collector -- not restated, so the check cannot drift from the
+      # DDL. The current-state tables have no TTL and must never be
+      # altered: exact set equality fails a Job that alters one of them as
+      # well as one that misses a history table. sink's
+      # TestSchemaJobRetentionStepIsIdempotent runs the rendered step
+      # against a real ClickHouse.
+      - name: 'helm template: retention.days sets the TTL of the ten history tables and no other'
+        run: |
+          want="$(awk '/^CREATE TABLE IF NOT EXISTS /{t=$6; sub(/^vantage\./,"",t)} /^TTL toDateTime\(ts_collector\)/{print t}' \
+            deploy/helm/vantage/files/schema/000-schema.sql | sort)"
+          if [ "$(wc -l <<<"$want")" -ne 10 ]; then
+            echo "000-schema.sql has $(wc -l <<<"$want") tables with a ts_collector TTL, want 10:"
+            echo "$want"
+            exit 1
+          fi
+          render() {
+            helm template foo deploy/helm/vantage --namespace vantage $TLS_CERTS \
+              --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+              --show-only templates/job-schema.yaml "$@"
+          }
+          for days in 90 30; do
+            if [ "$days" = 90 ]; then job="$(render)"; else job="$(render --set retention.days=$days)"; fi
+            altered="$(grep -oE 'ALTER TABLE [^ ]+' <<<"$job" | sed -E 's/.*\.//' | sort)"
+            if [ "$altered" != "$want" ]; then
+              echo "retention.days=$days: the Job alters"
+              echo "$altered"
+              echo "want exactly the history tables"
+              echo "$want"
+              exit 1
+            fi
+            for t in $want; do
+              stmt="ALTER TABLE \$CH_DB.$t MODIFY TTL toDateTime(ts_collector) + INTERVAL $days DAY SETTINGS materialize_ttl_after_modify = 0"
+              grep -qF -- "$stmt" <<<"$job" || { echo "retention.days=$days: missing: $stmt"; exit 1; }
+            done
+            # The idempotence check must name the same number of days.
+            grep -qF -- "toIntervalDay($days)" <<<"$job" || { echo "retention.days=$days: the skip check does not test for toIntervalDay($days)"; exit 1; }
+          done
+          # A changed retention must rename the Job, or an upgrade reuses
+          # the completed one and the TTL never moves.
+          a="$(render | grep -m1 -E '^  name:')"
+          b="$(render --set retention.days=30 | grep -m1 -E '^  name:')"
+          if [ "$a" = "$b" ]; then
+            echo "retention.days=30 renders the same Job name as the default ($a)"
+            exit 1
+          fi
+      - name: helm template rejects a retention.days that is not a whole number of days, at least 1
+        run: |
+          # The fraction goes through a values file: --set parses only
+          # integers as numbers and would hand the template the string
+          # "1.5", which the string check refuses before the fraction check
+          # is reached.
+          printf 'retention:\n  days: 1.5\n' > /tmp/retention-fraction-values.yaml
+          for bad in '--set retention.days=0' '-f /tmp/retention-fraction-values.yaml' '--set-string retention.days=30'; do
+            if helm template foo deploy/helm/vantage --namespace vantage $TLS_CERTS \
+                 --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+                 $bad > /dev/null 2>&1; then
+              echo "helm template accepted $bad -- vantage.retentionDays is not firing"
+              exit 1
+            fi
+          done
+      # The two runs above only ever see the chart's default values, which
+      # carry one valid token, so none of _helpers.tpl's fail-fast guards
+      # (vantage.requireAPITokens, vantage.validateAPITokenName,
+      # vantage.requireUniqueAPITokenNames) is ever exercised. Assert all
+      # three trip on the input they exist for. A bare
+      # `helm template ... || true` would assert nothing here -- these fail
+      # the job if the disallowed input is unexpectedly accepted (the
+      # render succeeds).
+      - name: helm template rejects zero tokens
+        run: |
+          if helm template vantage deploy/helm/vantage --namespace vantage $TLS_CERTS --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --set-json 'api.tokens=[]' > /dev/null 2>&1; then
+            echo "helm template accepted api.tokens=[] -- vantage.requireAPITokens is not firing"
+            exit 1
+          fi
+      - name: helm template rejects an unsafe token name
+        run: |
+          if helm template vantage deploy/helm/vantage --namespace vantage $TLS_CERTS --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --set 'api.tokens[0].name=my-token' > /dev/null 2>&1; then
+            echo "helm template accepted api.tokens[0].name=my-token -- vantage.validateAPITokenName is not firing"
+            exit 1
+          fi
+      # vantage.requireUniqueAPITokenNames is case-insensitive by design
+      # (deployment-api.yaml derives each token's env var with `.name |
+      # upper`), so "lab" and "Lab" both render as $TOKEN_LAB even though
+      # neither name individually trips vantage.validateAPITokenName above.
+      - name: helm template rejects colliding token names
+        run: |
+          if helm template vantage deploy/helm/vantage --namespace vantage $TLS_CERTS --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --set-json 'api.tokens=[{"name":"lab","token":"x"},{"name":"Lab","token":"y"}]' > /dev/null 2>&1; then
+            echo "helm template accepted api.tokens named 'lab' and 'Lab' -- vantage.requireUniqueAPITokenNames is not firing"
+            exit 1
+          fi
+      - name: 'helm template: proxy_protocol renders off by default and required when set'
+        run: |
+          # The two ClickHouse flags are not incidental. This step rendered
+          # without them until 2026-09-21, when the chart stopped shipping
+          # its own ClickHouse and made clickhouse.auth.password required,
+          # after which both invocations below died inside
+          # secret-clickhouse.yaml and this step failed on every run -- and a
+          # failed step aborts the job, so every gate after it stopped
+          # executing. Keep them.
+          default="$(helm template vantage deploy/helm/vantage --namespace vantage $TLS_CERTS --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --show-only templates/configmap-collector.yaml | grep -E '^\s+proxy_protocol:' | awk '{print $2}')"
+          if [ "$default" != '"off"' ]; then
+            echo "default proxy_protocol rendered as $default, want \"off\""
+            exit 1
+          fi
+          set_to="$(helm template vantage deploy/helm/vantage --namespace vantage $TLS_CERTS --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --set collector.proxyProtocol=required --show-only templates/configmap-collector.yaml | grep -E '^\s+proxy_protocol:' | awk '{print $2}')"
+          if [ "$set_to" != '"required"' ]; then
+            echo "proxyProtocol=required rendered as $set_to"
+            exit 1
+          fi
+      # vantage.validateProxyProtocol, in the same fail-fast family as the
+      # three token guards above and with the same polarity: a render that
+      # SUCCEEDS on a value the collector would refuse fails the step.
+      - name: helm template rejects an invalid proxy_protocol
+        run: |
+          if helm template vantage deploy/helm/vantage --namespace vantage --set collector.proxyProtocol=enabled > /dev/null 2>&1; then
+            echo "helm template accepted collector.proxyProtocol=enabled -- vantage.validateProxyProtocol is not firing"
+            exit 1
+          fi
+      # The boolean case is the one that actually happens. Helm parses values
+      # files with YAML 1.1 semantics, so an operator's own values file
+      # carrying an unquoted `proxyProtocol: off` -- the obvious thing to
+      # write while rolling the feature back -- becomes false and renders
+      # proxy_protocol: "false", which Config.validate rejects at startup.
+      # Written as a values file, not --set: --set values are always strings
+      # and never reproduce the coercion.
+      - name: helm template rejects an unquoted proxyProtocol off
+        run: |
+          printf 'collector:\n  proxyProtocol: off\n' > /tmp/proxy-off-values.yaml
+          if helm template vantage deploy/helm/vantage --namespace vantage -f /tmp/proxy-off-values.yaml > /dev/null 2>&1; then
+            echo "helm template accepted an unquoted 'proxyProtocol: off' -- YAML 1.1 coerces it to false and the collector would CrashLoop on proxy_protocol: \"false\""
+            exit 1
+          fi
+      # NATS TLS. Every assertion below is a RENDER assertion: there is no
+      # cluster and no cert-manager in CI, so none of these establishes that
+      # cert-manager accepts these Certificate resources or that a live NATS
+      # accepts the rendered server config. The certificates themselves are
+      # covered by natstls/gencerts_test.go, which runs the shipped
+      # deploy/nats-tls/gen-certs.sh and completes a real handshake with its
+      # output.
+      #
+      # Every one renders under release name "foo", not "vantage".
+      # vantage.fullname collapses "<release>-vantage" to "vantage" exactly
+      # when the release name already contains the chart name, which is the
+      # one name that hides a constructed-versus-mounted mismatch -- the same
+      # collapse the deleted clickhouse-host check existed to catch.
+      - name: 'helm template: the NATS TLS opt-out renders no nats_tls and no Certificates'
+        run: |
+          out="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci $PLAINTEXT)"
+          # A herestring (<<<), not a pipe into grep. This shell runs with
+          # `-o pipefail`, and `grep -q` exits the instant it matches without
+          # draining stdin -- so `printf '%s' "$out" | grep -q PATTERN` can
+          # hand the writing end (printf) a SIGPIPE and finish the pipeline
+          # with grep's own exit code masked by printf's 141, even though
+          # grep matched. A herestring has no pipe, so there is nothing for
+          # pipefail to catch: use one for every "grep against a variable"
+          # check in this job instead of piping into grep.
+          if grep -q 'nats_tls' <<<"$out"; then
+            echo "the plaintext opt-out emitted nats_tls -- the daemons would look for files nothing mounts"
+            exit 1
+          fi
+          if grep -q 'kind: Certificate' <<<"$out"; then
+            echo "the plaintext opt-out issued cert-manager Certificates on a cluster that may not have cert-manager"
+            exit 1
+          fi
+      - name: 'helm template: bring-your-own Secrets are mounted and no Certificate is issued'
+        run: |
+          out="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.tls.enabled=true --set nats.tls.collectorSecret=c-tls \
+            --set nats.tls.writerSecret=w-tls \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true)"
+          # Counted, not merely present. Each of these four strings is
+          # IDENTICAL in the collector and the writer, so `grep -q` is
+          # satisfied by either daemon alone: deleting configmap-writer.yaml's
+          # whole nats_tls block, or statefulset-collector.yaml's volumeMount
+          # entry, left this gate green. Both are a daemon that cannot reach
+          # NATS -- one dialing a verify:true server in plaintext, one opening
+          # a file nothing mounted. The count is 2, one per daemon.
+          for want in 'ca_file: "/etc/nats-tls/ca.crt"' 'cert_file: "/etc/nats-tls/tls.crt"' 'key_file: "/etc/nats-tls/tls.key"' 'mountPath: "/etc/nats-tls"'; do
+            n="$(printf '%s' "$out" | grep -c -- "$want" || true)"
+            if [ "$n" -ne 2 ]; then
+              echo "$want appears $n times, want 2 (collector and writer)"
+              exit 1
+            fi
+          done
+          # These two differ per daemon, so presence is the right test.
+          for want in 'secretName: c-tls' 'secretName: w-tls'; do
+            grep -q -- "$want" <<<"$out" || { echo "missing: $want"; exit 1; }
+          done
+          if grep -q 'kind: Certificate' <<<"$out"; then
+            echo "issued a Certificate with no issuerRef set"
+            exit 1
+          fi
+      # The mutation that makes this step necessary is the only one in the
+      # NATS TLS family that produces a WORKING cluster with a weaker security
+      # property: delete nats.config.nats.tls.merge.verify and the server
+      # still starts, still speaks TLS, and accepts any client presenting no
+      # certificate at all. tls.enabled and tlsCA.enabled both stay true, so
+      # vantage.validateNatsTLS is satisfied and nothing at install time would
+      # ever surface it. Mutual TLS is the whole property this work was bought
+      # for, so it gets an assertion of its own.
+      - name: 'helm template: the bundled NATS requires client certificates'
+        run: |
+          conf="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.tls.enabled=true --set nats.tls.collectorSecret=c-tls \
+            --set nats.tls.writerSecret=w-tls \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+            --show-only charts/nats/templates/config-map.yaml)"
+          # Anchored to the CLIENT-FACING tls block, for the same reason the
+          # server-Certificate step below is: the subchart emits a "verify" key
+          # inside EVERY tls block it renders, so a whole-render grep passes on
+          # somebody else's. nats.conf's top-level keys sit at six spaces inside
+          # `nats.conf: |`, which makes /^      "tls": {/../^      }/ exactly the
+          # client-facing block; a route-TLS block is nested one level deeper
+          # (its "verify" at ten spaces) and cannot satisfy this. Measured: with
+          # nats.config.nats.tls.merge nulled and cluster TLS on carrying
+          # merge.verify=true, the old whole-render grep printed green while
+          # every client connected with no certificate at all.
+          got="$(printf '%s' "$conf" | awk '/^      "tls": \{/,/^      \}/' \
+            | grep -c '^        "verify": true$' || true)"
+          if [ "$got" -ne 1 ]; then
+            echo "the bundled NATS no longer requires client certificates -- this is server-side TLS, not mTLS"
+            exit 1
+          fi
+      - name: 'helm template: cert-manager Secret names match the mounts, and both paths issue equivalent certificates'
+        run: |
+          out="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.tls.enabled=true --set nats.tls.issuerRef.name=my-ca \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true)"
+          for svc in collector writer; do
+            n="$(printf '%s' "$out" | grep -c "secretName: foo-vantage-nats-$svc-tls" || true)"
+            if [ "$n" -ne 2 ]; then
+              echo "foo-vantage-nats-$svc-tls appears as a secretName $n times, want 2 (the Certificate and the pod volume)"
+              exit 1
+            fi
+          done
+          # cert-manager's `usages` REPLACES its "digital signature, key
+          # encipherment" default rather than adding to it, so a Certificate
+          # naming only an EKU yields a leaf with no KeyUsage bits -- valid to
+          # Go, non-conformant with RFC 5280, and unequal to what
+          # gen-certs.sh issues. Counted per line across all three
+          # Certificates: all 3 leaves carry both bits, exactly one is
+          # serverAuth (the server's), and all three are clientAuth -- the
+          # two daemons', and the server's, which is also the cluster route
+          # certificate and is presented as a client certificate by the
+          # server that dials a route.
+          for pair in '3:digital signature' '3:key encipherment' '1:server auth' '3:client auth'; do
+            count="${pair%%:*}"; want="${pair#*:}"
+            n="$(printf '%s' "$out" | grep -c -- "    - $want" || true)"
+            if [ "$n" -ne "$count" ]; then
+              echo "usages: '$want' appears $n times, want $count -- the two issuance paths would not produce equivalent certificates"
+              exit 1
+            fi
+          done
+      # Both halves are asserted separately and deliberately. Grepping the
+      # WHOLE render for "renamed-tls" would pass for the wrong reason: the
+      # NATS subchart reads nats.config.nats.tls.secretName itself, so the
+      # name appears four more times in its StatefulSet, its nats-box
+      # Deployment and its test pod whatever the parent's Certificate says.
+      # Measured: replacing the Certificate's secretName with a constructed
+      # "<fullname>-nats-server-tls" -- the exact release-name-collapse bug
+      # this step exists for -- left a whole-render grep green.
+      - name: 'helm template: the server Certificate targets the Secret the subchart mounts'
+        run: |
+          cert="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.tls.enabled=true --set nats.tls.issuerRef.name=my-ca \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+            --set nats.config.nats.tls.secretName=renamed-tls \
+            --set nats.tlsCA.secretName=renamed-tls \
+            --set nats.config.cluster.tls.secretName=renamed-tls \
+            --show-only templates/certificate-nats.yaml)"
+          got="$(printf '%s' "$cert" \
+            | awk '/^  name: foo-vantage-nats-server$/,/^  usages:$/' \
+            | grep -E '^  secretName:' | awk '{print $2}')"
+          if [ "$got" != "renamed-tls" ]; then
+            echo "the server Certificate targets Secret '$got', not the 'renamed-tls' the subchart was told to mount"
+            exit 1
+          fi
+          sts="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.tls.enabled=true --set nats.tls.issuerRef.name=my-ca \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+            --set nats.config.nats.tls.secretName=renamed-tls \
+            --set nats.tlsCA.secretName=renamed-tls \
+            --set nats.config.cluster.tls.secretName=renamed-tls \
+            --show-only charts/nats/templates/stateful-set.yaml)"
+          grep -q 'secretName: renamed-tls' <<<"$sts" || {
+            echo "the NATS StatefulSet does not mount renamed-tls after all"; exit 1; }
+      # The three-server default: routes over mutual TLS on the server
+      # certificate, and a cert-manager server Certificate that covers the
+      # route names in the domain the routes are dialed in. The Go test
+      # sink/helm_chart_test.go asserts the rest (replicas, the spread rule,
+      # stream copies, the single-server opt-out); this step is the
+      # cert-manager half it does not render.
+      - name: 'helm template: cluster routes use mutual TLS, and the cert-manager Certificate covers them'
+        run: |
+          conf="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci $TLS_CERTS \
+            --show-only charts/nats/templates/config-map.yaml)"
+          grep -q '"tls://foo-nats-0.foo-nats-headless.vantage.svc.cluster.local:6222"' <<<"$conf" || {
+            echo "routes are not dialed as tls:// by FQDN"; exit 1; }
+          # The route tls block sits inside "cluster", one level below the
+          # client-facing one, so its keys are at ten spaces.
+          route_tls="$(awk '/^      "cluster": \{/,/^      \}/' <<<"$conf")"
+          grep -q '^          "verify": true' <<<"$route_tls" || {
+            echo "cluster route TLS does not verify its peer"; exit 1; }
+          grep -q '"cert_file": "/etc/nats-certs/cluster/tls.crt"' <<<"$route_tls" || {
+            echo "cluster route TLS presents no certificate"; exit 1; }
+          cert="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.tls.issuerRef.name=my-ca \
+            --set nats.config.cluster.routeURLs.k8sClusterDomain=corp.local \
+            --show-only templates/certificate-nats.yaml)"
+          server="$(awk '/^  name: foo-vantage-nats-server$/,/^---/' <<<"$cert")"
+          grep -q -- '- "\*.foo-nats-headless.vantage.svc.corp.local"' <<<"$server" || {
+            echo "the server Certificate does not cover the route names in the routes' cluster domain"; exit 1; }
+          grep -q -- '- client auth' <<<"$server" || {
+            echo "the server Certificate lacks client auth; routes cannot present it"; exit 1; }
+      - name: helm template refuses a half-enabled NATS TLS
+        run: |
+          base="--set clickhouse.externalHost=ch --set clickhouse.auth.password=ci"
+          # Clients want TLS, bundled server offers none.
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.enabled=true --set nats.tls.collectorSecret=c --set nats.tls.writerSecret=w \
+               --set nats.config.nats.tls.enabled=false > /dev/null 2>&1; then
+            echo "rendered with client TLS on and the bundled server plaintext"; exit 1
+          fi
+          # Server demands client certs, clients present none.
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+               --set nats.tls.enabled=false > /dev/null 2>&1; then
+            echo "rendered with the server requiring client certificates the daemons will not present"; exit 1
+          fi
+          # CA bundle off.
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.enabled=true --set nats.tls.collectorSecret=c --set nats.tls.writerSecret=w \
+               --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=false > /dev/null 2>&1; then
+            echo "rendered with tlsCA.enabled=false while the server demands client certificates"; exit 1
+          fi
+          # The two server Secret names disagree.
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.enabled=true --set nats.tls.collectorSecret=c --set nats.tls.writerSecret=w \
+               --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+               --set nats.tlsCA.secretName=different > /dev/null 2>&1; then
+            echo "rendered with tlsCA.secretName != config.nats.tls.secretName"; exit 1
+          fi
+          # Clients want TLS, the CA bundle is mounted, but the server was
+          # never told to speak TLS. Since TLS defaults on, case one above
+          # reaches the same check; this one keeps the CA bundle explicitly
+          # on so the case does not depend on that default.
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.enabled=true --set nats.tls.collectorSecret=c --set nats.tls.writerSecret=w \
+               --set nats.tlsCA.enabled=true --set nats.config.nats.tls.enabled=false > /dev/null 2>&1; then
+            echo "rendered with the clients demanding TLS from a bundled server that offers none"; exit 1
+          fi
+      # Three cases, not one. Either `required` alone fails the render, so the
+      # neither-Secret case cannot tell which of the two is still there: with
+      # only the first case, deleting the collector's `required` leaves this
+      # step green. The half-supplied cases pin each one individually.
+      - name: helm template refuses NATS TLS with neither Secrets nor an issuer
+        run: |
+          base="--set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+                --set nats.tls.enabled=true \
+                --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true"
+          if helm template foo deploy/helm/vantage --namespace vantage $base > /dev/null 2>&1; then
+            echo "rendered with no client Secrets and no issuerRef -- the pods would mount nothing"
+            exit 1
+          fi
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.collectorSecret=c-tls > /dev/null 2>&1; then
+            echo "rendered with a collector Secret but no writer Secret -- vantage.natsWriterSecret is not requiring one"
+            exit 1
+          fi
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.writerSecret=w-tls > /dev/null 2>&1; then
+            echo "rendered with a writer Secret but no collector Secret -- vantage.natsCollectorSecret is not requiring one"
+            exit 1
+          fi
+      # The negative case below supplies BOTH client Secrets on purpose. Without
+      # them the render would fail on vantage.natsCollectorSecret's `required`
+      # instead, and this step would pass whether or not the issuerRef check
+      # exists -- a gate green for the wrong reason. With them supplied, the
+      # only thing that can fail the render is the check this step is about.
+      - name: helm template refuses an issuerRef with no name
+        run: |
+          base="--set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true --set nats.tls.enabled=true --set nats.tls.collectorSecret=c-tls --set nats.tls.writerSecret=w-tls"
+          if helm template foo deploy/helm/vantage --namespace vantage $base \
+               --set nats.tls.issuerRef.kind=ClusterIssuer > /dev/null 2>&1; then
+            echo "rendered with an issuerRef carrying a kind but no name -- the chart would silently take the bring-your-own path and then blame the issuerRef the operator did set"
+            exit 1
+          fi
+          # The empty issuerRef default is the COMMON case and must stay legal:
+          # it is how every bring-your-own install renders.
+          helm template foo deploy/helm/vantage --namespace vantage $base > /dev/null || {
+            echo "the default empty issuerRef no longer renders -- the bring-your-own path is broken"; exit 1; }
+          # A complete issuerRef must still take the cert-manager path. Note
+          # this drops the two client Secrets: naming both an issuerRef and a
+          # Secret is itself refused, by the step below.
+          out="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+            --set nats.tls.enabled=true \
+            --set nats.tls.issuerRef.name=my-ca --set nats.tls.issuerRef.kind=ClusterIssuer)"
+          grep -q 'kind: Certificate' <<<"$out" || {
+            echo "a complete issuerRef no longer issues Certificates"; exit 1; }
+      # Both issuance paths named at once. The chart branches on issuerRef
+      # first, so before this guard existed an operator who set both got the
+      # cert-manager Secret mounted and their own Secret silently ignored --
+      # the pods presenting a certificate they did not create, with no message
+      # anywhere. Every other ambiguity in this chart is refused with a
+      # sentence; this one is too.
+      - name: helm template refuses both issuance paths at once
+        run: |
+          base="--set clickhouse.externalHost=ch --set clickhouse.auth.password=ci --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true --set nats.tls.enabled=true --set nats.tls.issuerRef.name=my-ca"
+          for both in nats.tls.collectorSecret nats.tls.writerSecret; do
+            if helm template foo deploy/helm/vantage --namespace vantage $base \
+                 --set $both=mine > /dev/null 2>&1; then
+              echo "rendered with an issuerRef AND $both -- the chart would mount the issued Secret and ignore the named one, silently"
+              exit 1
+            fi
+          done
+          # Each path ALONE must still render; this guard must not make the
+          # two supported configurations illegal.
+          helm template foo deploy/helm/vantage --namespace vantage $base > /dev/null || {
+            echo "the cert-manager path alone no longer renders"; exit 1; }
+          helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.config.nats.tls.enabled=true --set nats.tlsCA.enabled=true \
+            --set nats.tls.enabled=true \
+            --set nats.tls.collectorSecret=c-tls --set nats.tls.writerSecret=w-tls > /dev/null || {
+            echo "the bring-your-own path alone no longer renders"; exit 1; }
+      - name: 'helm template: external NATS with TLS renders the client side'
+        run: |
+          out="$(helm template foo deploy/helm/vantage --namespace vantage \
+            --set clickhouse.externalHost=ch --set clickhouse.auth.password=ci \
+            --set nats.enabled=false --set nats.externalURL=nats://nats.example:4222 \
+            --set nats.tls.enabled=true --set nats.tls.collectorSecret=c-tls \
+            --set nats.tls.writerSecret=w-tls)"
+          grep -q 'ca_file: "/etc/nats-tls/ca.crt"' <<<"$out" || {
+            echo "pointing vantage at an external TLS NATS rendered no nats_tls block"; exit 1; }
+          grep -q 'secretName: c-tls' <<<"$out" || {
+            echo "external NATS with TLS mounted no client certificate"; exit 1; }
+      # The secure defaults: mutual TLS unless certificates are supplied or
+      # the operator opts out explicitly, NetworkPolicies on, nats-box off, and
+      # the BMP Service narrowed to the collector's own allowlist.
+      - name: 'helm template: secure defaults and the BMP allowlist'
+        run: |
+          base="--set clickhouse.externalHost=ch --set clickhouse.auth.password=ci"
+          f=0; fail() { echo "FAIL: $*"; f=1; }
+          out="$(helm template vantage deploy/helm/vantage -n vantage $base 2>&1)" && fail "a render with no certificates succeeded"
+          grep -q "gen-certs.sh --release vantage --namespace vantage" <<<"$out" || fail "the no-certificates message does not name gen-certs.sh"
+          grep -q "nats.tls.issuerRef.name" <<<"$out" || fail "the no-certificates message does not name issuerRef"
+          grep -q "nats.tls.enabled=false" <<<"$out" || fail "the no-certificates message does not name the opt-out"
+          out="$(helm template vantage deploy/helm/vantage -n vantage $base $TLS_CERTS 2>&1)" || fail "a render with certificates failed: $out"
+          grep -q '"verify": true' <<<"$out" || fail "the bundled NATS does not require client certificates"
+          [ "$(grep -c '^kind: NetworkPolicy' <<<"$out")" = 2 ] || fail "expected two NetworkPolicies"
+          grep -q "charts/nats/templates/nats-box" <<<"$out" && fail "nats-box rendered by default"
+          helm template vantage deploy/helm/vantage -n vantage $base $PLAINTEXT > /dev/null 2>&1 || fail "the plaintext opt-out failed to render"
+          out="$(helm template vantage deploy/helm/vantage -n vantage $base --set nats.tls.enabled=false 2>&1)" && fail "a client-only opt-out rendered with the server still on TLS"
+          grep -q "nats.tlsCA.enabled=false" <<<"$out" || fail "the partial opt-out message does not name tlsCA"
+          svc="$(helm template vantage deploy/helm/vantage -n vantage $base $TLS_CERTS --set 'collector.allowedSources={10.0.0.0/8}' --show-only templates/service-collector-bmp.yaml)"
+          grep -A1 "loadBalancerSourceRanges:" <<<"$svc" | grep -q "10.0.0.0/8" || fail "the LoadBalancer does not default to allowedSources"
+          svc="$(helm template vantage deploy/helm/vantage -n vantage $base $TLS_CERTS --set collector.proxyProtocol=required --set 'collector.trustedProxies={192.0.2.5/32}' --show-only templates/service-collector-bmp.yaml)"
+          grep -A1 "loadBalancerSourceRanges:" <<<"$svc" | grep -q "192.0.2.5/32" || fail "with proxy_protocol required the LoadBalancer does not default to trustedProxies"
+          svc="$(helm template vantage deploy/helm/vantage -n vantage $base $TLS_CERTS --set collector.service.type=ClusterIP --show-only templates/service-collector-bmp.yaml)"
+          grep -q "externalTrafficPolicy:\|loadBalancerSourceRanges:" <<<"$svc" && fail "a ClusterIP Service carries LoadBalancer-only fields"
+          cm="$(helm template vantage deploy/helm/vantage -n vantage $base $TLS_CERTS --set 'collector.allowedSources={10.0.0.0/8}' --set collector.maxConnections=64 --show-only templates/configmap-collector.yaml)"
+          grep -A1 "allowed_sources:" <<<"$cm" | grep -q '"10.0.0.0/8"' || fail "allowed_sources did not reach the collector config"
+          grep -q "max_connections: 64" <<<"$cm" || fail "max_connections did not reach the collector config"
+          helm template vantage deploy/helm/vantage -n vantage $base $TLS_CERTS --set 'collector.trustedProxies={10.0.0.1/32}' > /dev/null 2>&1 && fail "trustedProxies rendered with proxy_protocol off"
+          exit $f
+      # Off by default (the CRDs exist only with the Prometheus Operator);
+      # when on, one ServiceMonitor per daemon, each selecting exactly one
+      # Service that carries a port named metrics.
+      - name: 'helm template: ServiceMonitors are optional and each finds its Service'
+        run: |
+          base="--set clickhouse.externalHost=ch --set clickhouse.auth.password=ci"
+          out="$(helm template v deploy/helm/vantage $base $TLS_CERTS)"
+          if grep -q '^kind: ServiceMonitor' <<<"$out"; then
+            echo "a default render emitted a ServiceMonitor"; exit 1
+          fi
+          out="$(helm template v deploy/helm/vantage $base $TLS_CERTS --set metrics.serviceMonitor.enabled=true)"
+          python3 - "$out" <<'PY'
+          import sys, yaml
+          docs = [d for d in yaml.safe_load_all(sys.argv[1]) if d]
+          svcs = [d for d in docs if d["kind"] == "Service"]
+          sms = [d for d in docs if d["kind"] == "ServiceMonitor"]
+          if len(sms) != 3:
+              sys.exit(f"expected 3 ServiceMonitors, got {len(sms)}")
+          for sm in sms:
+              sel = sm["spec"]["selector"]["matchLabels"]
+              hits = [s["metadata"]["name"] for s in svcs
+                      if all(s["metadata"].get("labels", {}).get(k) == v for k, v in sel.items())
+                      and any(p.get("name") == "metrics" for p in s["spec"]["ports"])]
+              if len(hits) != 1:
+                  sys.exit(f'{sm["metadata"]["name"]} matches {hits}, want exactly one metrics Service')
+          PY
+          out="$(helm template v deploy/helm/vantage $base $TLS_CERTS --set metrics.serviceMonitor.enabled=true --set metrics.serviceMonitor.writer=false)"
+          if grep -q 'name: v-vantage-writer$' <<<"$(grep -A3 '^kind: ServiceMonitor' <<<"$out")"; then
+            echo "metrics.serviceMonitor.writer=false still rendered the writer's ServiceMonitor"; exit 1
+          fi
+          [ "$(grep -c '^kind: ServiceMonitor' <<<"$out")" = 2 ] || { echo "turning off one component did not leave two ServiceMonitors"; exit 1; }

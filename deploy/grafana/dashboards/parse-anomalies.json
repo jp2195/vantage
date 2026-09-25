@@ -1,0 +1,223 @@
+{
+  "uid": "vantage-parse-anomalies",
+  "title": "Parse anomalies",
+  "description": "Standing view of parse anomalies, previously represented only by a single panel on Fleet health. Parse flags are how vendor quirks announce themselves: the collector never drops a message it cannot fully parse, it flags it and carries on, so these counts are the record of everything understood imperfectly.\n\nEvery panel here unions the ten tables that carry a parse_flags column. ls_prefixes and eor_events are the ninth and tenth and both were absent until a test asserted the unions were complete -- ls_prefixes had never been read here at all, though it carries 61 flagged rows in the archive. On eor_events: all 56 End-of-RIB markers in the archive carry flags, and they were route_unicast rows these panels already counted before the split moved them. It reads through SELECT DISTINCT rather than FINAL because it is a plain MergeTree, which ClickHouse refuses FINAL on -- and which has no deduplication of its own, so DISTINCT is what keeps a redelivered marker from counting twice.",
+  "tags": [
+    "vantage",
+    "quirks"
+  ],
+  "timezone": "",
+  "editable": true,
+  "graphTooltip": 0,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Flag by platform — the new-quirk detector",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 14,
+        "x": 0,
+        "y": 0
+      },
+      "description": "Which platform a parse flag is actually widespread on -- the new-quirk detector. Ranked by `affected`, NOT by message count.\n\n`affected` counts DISTINCT things the flag was raised about -- a prefix, a VPN route, a MAC, a link, a peering. `events` counts MESSAGES, as uniqExact((stream, stream_seq)): one BMP UPDATE carrying fifty flagged NLRIs is one message and not fifty, the same measure fleet-health's \"Parse flags\" panel uses. It counted rows until 2026-09-19, which over-reported every wide update -- on this archive by 1.4x on route_unicast and 2.65x on ls_prefixes. They differ from `affected` because every router here re-dumps its whole table when a BMP session restarts, so a single flagged prefix on a router that resets every nine minutes is re-reported dozens of times. For ls_events the two are equal by construction: that table is an event log, so each row genuinely is its own occurrence.\n\nRanking on `events` inverts the answer on this archive: one XR router raises PARSE_FLAG_VERSION_UNPARSED in 141 messages across 47 sessions on 27 objects, while one NX-OS router raises it in 113 messages across 3 sessions on 65. Sorted by message count the router with two and a half times the affected routes ranks second, and the one that merely restarts often ranks first. `events` and `sessions` are kept as columns so that skew stays visible instead of being sorted on.\n\n`last_seen` is when the flag was last raised, and it is the column that separates a quirk that is happening from one that was fixed. parse_flags record the decoder as it was when a row was written: fix the cause and the flag stops appearing on new rows while every row that already carries it keeps it forever, so a retired quirk holds its whole `affected` count and goes on outranking a live one. Sort by `last_seen` when the question is \"is this still happening\".",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "affected",
+            "desc": true
+          }
+        ],
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "editorType": "sql",
+          "rawSql": "SELECT flag, if(router_sysname = '', '(no sysName TLV)', router_sysname) AS platform, toString(router_ip) AS router, uniqExact(object) AS affected, uniqExact(session_id) AS sessions, uniqExact((stream, stream_seq)) AS events, uniqExact(src) AS in_tables, max(ts_collector) AS last_seen FROM ( SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags) AS flag, prefix AS object, 'route_unicast' AS src, 'ROUTES' AS stream, stream_seq FROM vantage.route_unicast FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(rd, '|', prefix), 'route_vpn', 'ROUTES', stream_seq FROM vantage.route_vpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(toString(route_type), '|', rd, '|', mac, '|', ip, '|', prefix), 'route_evpn', 'ROUTES', stream_seq FROM vantage.route_evpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), toString(stream_seq), 'ls_events', 'LS', stream_seq FROM vantage.ls_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), toString(node_key), 'ls_nodes', 'LS', stream_seq FROM vantage.ls_nodes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(toString(local_node_key), '|', toString(remote_node_key)), 'ls_links', 'LS', stream_seq FROM vantage.ls_links FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(toString(node_key), '|', prefix, '/', toString(prefix_len)), 'ls_prefixes', 'LS', stream_seq FROM vantage.ls_prefixes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(toString(router_ip), '|', toString(peer_ip)), 'peer_events', 'PEER', stream_seq FROM vantage.peer_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(toString(router_ip), '|', toString(peer_ip)), 'stats_events', 'STATS', stream_seq FROM vantage.stats_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), concat(toString(peer_ip), '|', toString(rib), '|', family), 'eor_events', 'ROUTES', stream_seq FROM (SELECT DISTINCT * FROM vantage.eor_events) ) WHERE $__timeFilter(ts_collector) GROUP BY flag, platform, router ORDER BY affected DESC, sessions DESC, events DESC, flag"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "piechart",
+      "title": "Flag mix",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 10,
+        "x": 14,
+        "y": 0
+      },
+      "description": "The proportion of flagged MESSAGES each flag accounts for -- counted as uniqExact((stream, stream_seq)), so one UPDATE carrying many flagged NLRIs is one message. It counted rows until 2026-09-19, which skewed this pie by the WIDTH of each update as well as by re-dump volume: a proportion over-counting ls_prefixes 2.65x and route_vpn 1.09x reorders the slices, not merely inflates them. This is deliberately a volume view and is skewed by session re-dumps: a flag on a route from a router that resets every nine minutes is counted on every re-dump. Read \"Flag by platform\" above for how widespread a flag actually is; this panel answers \"what is filling the pipe\", which is a question about messages.",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ],
+          "showLegend": true
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "pieType": "donut"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "editorType": "sql",
+          "rawSql": "SELECT flag, uniqExact((stream, stream_seq)) AS events FROM ( SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags) AS flag, 'route_unicast' AS src, 'ROUTES' AS stream, stream_seq FROM vantage.route_unicast FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'route_vpn', 'ROUTES', stream_seq FROM vantage.route_vpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'route_evpn', 'ROUTES', stream_seq FROM vantage.route_evpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_events', 'LS', stream_seq FROM vantage.ls_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_nodes', 'LS', stream_seq FROM vantage.ls_nodes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_links', 'LS', stream_seq FROM vantage.ls_links FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_prefixes', 'LS', stream_seq FROM vantage.ls_prefixes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'peer_events', 'PEER', stream_seq FROM vantage.peer_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'stats_events', 'STATS', stream_seq FROM vantage.stats_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'eor_events', 'ROUTES', stream_seq FROM (SELECT DISTINCT * FROM vantage.eor_events) ) WHERE $__timeFilter(ts_collector) GROUP BY flag ORDER BY events DESC"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Flags over time, by flag",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "description": "Flagged messages over time, counted as uniqExact((stream, stream_seq)) so a single wide UPDATE is one arrival rather than one per NLRI. A session restart re-dumps a router's whole table, so a step change here usually means a router reconnected rather than a new quirk appearing -- the shape to check against \"Flag by platform\" before concluding anything. Time is filtered on ts_collector, not ts_router: ts_router comes from the BMP per-peer header and a router with a zero clock reports 1970 (the QK_TS_ZERO quirk).",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "lineWidth": 0,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(ts_collector) AS t, flag, uniqExact((stream, stream_seq)) AS events FROM ( SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags) AS flag, 'route_unicast' AS src, 'ROUTES' AS stream, stream_seq FROM vantage.route_unicast FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'route_vpn', 'ROUTES', stream_seq FROM vantage.route_vpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'route_evpn', 'ROUTES', stream_seq FROM vantage.route_evpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_events', 'LS', stream_seq FROM vantage.ls_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_nodes', 'LS', stream_seq FROM vantage.ls_nodes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_links', 'LS', stream_seq FROM vantage.ls_links FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_prefixes', 'LS', stream_seq FROM vantage.ls_prefixes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'peer_events', 'PEER', stream_seq FROM vantage.peer_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'stats_events', 'STATS', stream_seq FROM vantage.stats_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'eor_events', 'ROUTES', stream_seq FROM (SELECT DISTINCT * FROM vantage.eor_events) ) WHERE $__timeFilter(ts_collector) GROUP BY t, flag ORDER BY t"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Where the flags land",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "description": "Which table each flag lands in -- a locator for where to go looking, so a message count is the right measure here -- uniqExact((stream, stream_seq)), so a wide UPDATE counts once for the table its rows landed in. Note that one flag appearing in several tables is normal: a quirk in the per-peer header is stamped on every row parsed from that message, whatever stream it belongs to.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "sortBy": [
+          {
+            "displayName": "events",
+            "desc": true
+          }
+        ],
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "editorType": "sql",
+          "rawSql": "SELECT flag, src AS table_, uniqExact((stream, stream_seq)) AS events FROM ( SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags) AS flag, 'route_unicast' AS src, 'ROUTES' AS stream, stream_seq FROM vantage.route_unicast FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'route_vpn', 'ROUTES', stream_seq FROM vantage.route_vpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'route_evpn', 'ROUTES', stream_seq FROM vantage.route_evpn FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_events', 'LS', stream_seq FROM vantage.ls_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_nodes', 'LS', stream_seq FROM vantage.ls_nodes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_links', 'LS', stream_seq FROM vantage.ls_links FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'ls_prefixes', 'LS', stream_seq FROM vantage.ls_prefixes FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'peer_events', 'PEER', stream_seq FROM vantage.peer_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'stats_events', 'STATS', stream_seq FROM vantage.stats_events FINAL UNION ALL SELECT ts_collector, router_ip, router_sysname, session_id, arrayJoin(parse_flags), 'eor_events', 'ROUTES', stream_seq FROM (SELECT DISTINCT * FROM vantage.eor_events) ) WHERE $__timeFilter(ts_collector) GROUP BY flag, table_ ORDER BY events DESC"
+        }
+      ]
+    }
+  ]
+}

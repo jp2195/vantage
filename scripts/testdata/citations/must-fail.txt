@@ -1,0 +1,21 @@
+// The decoder was Task 7's job, and task-8 tested it.
+// Settled before Task zero began.
+// Tasks 2 and 4 share this helper.
+// The numbers are in widget-report.md.
+// Ruling 3 keeps the older half.
+// This closes finding 12 of the widget audit.
+// The phase-2b registry names each widget.
+// Raw bytes survive (amendment A3).
+// Measured on the dev archive last week.
+// Sized per the k8s notes.
+// The 2030-01-02 widget audit found this.
+// Added at the whole-branch review.
+// TestWidgetRoundTrips is I7's covering test.
+// Covered by a fix round.
+// This pins MINOR 9.
+// It is I5 (final review), made precise.
+// Per the coordinator, widgets are blue.
+// Spaced the way the design handoff shows it.
+// This is §5 of the widget plan, end to end.
+// Read the liveness design for why.
+// It is spec criterion 2.

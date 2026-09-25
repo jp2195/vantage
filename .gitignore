@@ -1,0 +1,67 @@
+/bin/
+*.test
+
+# GoLand / IntelliJ project files. Per-developer, never part of the
+# repository.
+.idea/
+
+# Local git worktrees for isolated task execution
+.worktrees/
+
+# containerlab writes root-owned per-lab state next to the topology file
+lab/**/clab-*/
+.tls/
+
+# Subagent-driven development scratch: ledgers, briefs, reports and review
+# packages for in-flight plans. Never part of the repository.
+.superpowers/
+
+# Helm dependency archives. `helm dependency update` fetches these fresh from
+# Chart.lock; committing the binaries themselves only bloats history.
+deploy/helm/*/charts/*.tgz
+
+# Archives. A zip in git is a binary blob that diffs as one line, so review
+# cannot see inside it and every revision stores a whole new copy. The design
+# handoff arrived as one alongside the directory it already contained, which
+# is how this rule earned its place: commit the extracted files instead.
+*.zip
+
+# Vite build output. webui/dist/.gitkeep is committed so //go:embed always
+# has a directory to compile against on a checkout with no Node installed.
+/webui/dist/*
+!/webui/dist/.gitkeep
+
+# Playwright MCP scratch: console logs and page snapshots written by the
+# browser tool on every UI verification run. It was committed once by
+# accident (2026-08-25) and then looked exactly like what it is -- scratch --
+# to every agent that met it, five of which have deleted from or written
+# into it believing that. The files stay on disk; git just stops claiming
+# they are source.
+.playwright-mcp/
+
+# RIPE's AS-holder-name list, fetched by `make fetch-asnames`: the raw file
+# (6.2 MB, 2.18 MiB gzipped), its refreshed-daily sidecar date, the parsed
+# TSV the names dictionary reads, and a one-row TSV the same date's
+# companion dictionary reads. A fetched artifact, not source -- committing
+# it would bloat history with a new near-6 MB blob on every refresh.
+deploy/dev/asnames/
+
+# deploy/nats-tls/gen-certs.sh's output. Its default --out is ./nats-tls,
+# resolved against the CALLER's working directory -- a repo-root invocation
+# (the one the README shows) lands at nats-tls/, a sibling of deploy/, but
+# cd'ing into the script's own directory first (at least as natural) lands
+# at deploy/nats-tls/nats-tls/. These patterns therefore match the FILES at
+# any depth rather than a directory. An earlier `**/nats-tls/` was measured
+# to ALSO match deploy/nats-tls/ itself -- a tracked source directory, whose
+# gen-certs.sh and README.md survived only because they were already in the
+# index, and where `git add` on the next file added beside them would have
+# silently skipped it. These are private keys and the Secrets that carry
+# them in the clear -- a committed one is the one mistake here a revert
+# cannot undo.
+**/nats-tls/*.key
+**/nats-tls/*.crt
+**/nats-tls/*.srl
+**/nats-tls/secrets.yaml
+
+# Python bytecode from running the lab and fixture tools.
+__pycache__/

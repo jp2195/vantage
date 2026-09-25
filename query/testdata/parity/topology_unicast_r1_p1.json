@@ -1,0 +1,135 @@
+{
+  "Nodes": [
+    {
+      "ASN": 65101,
+      "Routes": 6,
+      "Origin": false,
+      "Transit": true,
+      "Peer": true,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "ASN": 65200,
+      "Routes": 1,
+      "Origin": false,
+      "Transit": true,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "ASN": 65201,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:32Z"
+    },
+    {
+      "ASN": 65202,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:33Z"
+    },
+    {
+      "ASN": 65203,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:35Z"
+    },
+    {
+      "ASN": 65204,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:37Z"
+    },
+    {
+      "ASN": 65205,
+      "Routes": 1,
+      "Origin": false,
+      "Transit": true,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:37Z"
+    },
+    {
+      "ASN": 65206,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:40Z"
+    },
+    {
+      "ASN": 65300,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    }
+  ],
+  "Edges": [
+    {
+      "Src": 65101,
+      "Dst": 65200,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65201,
+      "Routes": 1,
+      "LiveRoutes": 0,
+      "FirstSeen": "2030-01-01T00:00:32Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65202,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:33Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65203,
+      "Routes": 1,
+      "LiveRoutes": 0,
+      "FirstSeen": "2030-01-01T00:00:35Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65205,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:37Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65206,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:40Z"
+    },
+    {
+      "Src": 65200,
+      "Dst": 65300,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "Src": 65205,
+      "Dst": 65204,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:37Z"
+    }
+  ],
+  "Routes": 6
+}

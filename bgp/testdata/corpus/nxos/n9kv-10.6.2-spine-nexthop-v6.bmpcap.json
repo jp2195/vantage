@@ -1,0 +1,10 @@
+{
+  "router": "10.0.103.66",
+  "sys_descr": "Nexus9000 C9300v Chassis, Software Version 10.6(2)I9(1)",
+  "vendor": "cisco",
+  "os": "nxos",
+  "version": "10.6.2",
+  "captured_at": "2026-08-28T19:06:44.914095197Z",
+  "message_count": 6,
+  "mode": "window"
+}

@@ -1,0 +1,43 @@
+# deploy/dev/collector2.yaml is a SECOND vantage-collector for
+# docker-compose.dev.yml, so the dev stack has a genuinely dual-homed router
+# rather than only a hand-built two-collector test fixture.
+#
+# Why this exists: every dashboard in this repo resolves the current BMP
+# session per collector, and the whole of that work was verified against
+# sink.insertDualHomedFixture -- rows inserted directly into ClickHouse. It
+# was never seen against two real collectors watching one real router,
+# because the dev stack only ever ran one. This file is the second one.
+#
+# It differs from collector.yaml in exactly one field that matters,
+# collector_id, plus the listen ports it must not share with its sibling.
+# Everything else is deliberately identical: two collectors watching one
+# router are supposed to disagree about NOTHING except which session id they
+# minted, and any other difference here would make that comparison useless.
+nats_url: "nats://nats:4222"
+collector_id: "dev-c2"
+
+# The sibling binds the compose-default 11019; inside its own container this
+# one could too, but keeping them distinct means a stray `bmp connect` to the
+# wrong port fails loudly rather than silently landing on the other collector.
+listen: "0.0.0.0:11119"
+metrics_listen: "0.0.0.0:9569"
+admin_listen: "0.0.0.0:9470"
+
+# Identical to collector.yaml's table on purpose. Vendor identity is a
+# property of the router, not of who is watching it, so two collectors that
+# disagreed here would mint different vendor anchors for one device and the
+# per-collector dashboards would be comparing apples to oranges.
+#
+# Comments naming each entry's own lab hostname have been omitted, as in
+# collector.yaml: they would point at a private lab's topology, and only
+# the vendor/OS pairing matters to this file.
+routers:
+  10.0.103.61: { vendor: cisco, os: iosxr }
+  10.0.103.62: { vendor: cisco, os: iosxr }
+  10.0.103.63: { vendor: cisco, os: iosxr }
+  10.0.103.64: { vendor: cisco, os: iosxr }
+  10.0.103.65: { vendor: cisco, os: iosxr }
+  10.0.103.66: { vendor: cisco, os: nxos }
+  10.0.103.67: { vendor: cisco, os: nxos }
+  10.0.103.68: { vendor: cisco, os: nxos }
+  10.0.103.74: { vendor: cisco, os: nxos }

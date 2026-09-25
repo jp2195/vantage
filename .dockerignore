@@ -1,0 +1,71 @@
+# What `docker build` must not send to the daemon as build context. Two of
+# these entries are correctness, not speed, and both are about Dockerfile.api.
+#
+# ui/node_modules -- Dockerfile.api installs the UI's dependencies inside
+# node:22 (COPY package.json + package-lock.json, RUN npm ci) and only then
+# copies the rest of ui/ over the result. Without this line that second COPY
+# replaces the tree npm ci just built with whatever the host has, which on a
+# machine where `make ui` has run means esbuild's and rollup's
+# platform-specific binaries from the host's OS and architecture. On a
+# non-linux/amd64 host that fails the build outright; everywhere it defeats
+# the package.json-first layer split, whose whole point is that a source
+# change does not reinstall the dependency tree. CI has only ever passed
+# because a fresh checkout has no node_modules to send.
+#
+# webui/dist -- the Go stage does `COPY . .` and then
+# `COPY --from=ui /webui/dist ./webui/dist`, and a COPY into an existing
+# directory MERGES rather than replaces. So the host's last local build
+# would survive into the image beside the fresh one: content-hashed assets
+# from an older bundle, referenced by nothing, embedded in the binary and
+# shipped. Excluding it means the directory the ui stage produces is the
+# only one there is.
+#
+# The pattern excludes the build output but not webui/dist/.gitkeep, and
+# that exception is load-bearing rather than tidiness: webui/webui.go's
+# //go:embed all:dist fails to COMPILE, not merely to run, against a
+# directory that does not exist, and .gitkeep is the only thing that keeps
+# the directory present -- and go build ./... working -- on a checkout
+# where Node was never installed. Dockerfile.api's ui stage always repopulates
+# the directory before the Go stage's COPY above, so the negation costs
+# nothing here; it is what keeps a future build context (a Dockerfile for
+# cmd/vantage, or a go vet ./... step) from failing on a directory this
+# entry deleted for no reason of its own.
+ui/node_modules
+**/node_modules
+webui/dist/*
+!webui/dist/.gitkeep
+
+# Private keys and local state, below this line. The Go stages do
+# `COPY . .`, so anything left in the context is in a build layer -- visible
+# to anyone with the build cache or a `docker history` of an intermediate
+# image, even though no final stage copies it. These mirror .gitignore's
+# entries for material that is local or secret; no Dockerfile here reads any
+# of them.
+#
+# gen-certs.sh output (CA and client private keys, and the Secrets carrying
+# them in the clear) at any depth. The whole directory rather than the
+# .gitignore's per-file patterns: git needs deploy/nats-tls/gen-certs.sh
+# tracked, but no image build needs the script either.
+**/nats-tls
+.tls/
+# Agent, editor and browser-tool scratch: session notes, ledgers, page
+# snapshots. Local to one machine and never source.
+.superpowers/
+.remember/
+.playwright-mcp/
+.claude/
+.idea/
+.worktrees/
+# The fetched RIPE AS-name data (about 12 MiB); the ClickHouse host reads
+# it, not any image.
+deploy/dev/asnames/
+# Lab state: containerlab's root-owned per-lab directories, CML lab ids,
+# router captures and capture logs. No image imports anything under lab/.
+lab/
+__pycache__/
+
+# Size only, below this line. Nothing in any Dockerfile here reads either --
+# no build embeds a git revision, and bin/ holds host-built binaries the Go
+# stage recompiles from source anyway.
+.git
+bin

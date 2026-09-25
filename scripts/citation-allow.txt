@@ -1,0 +1,9 @@
+# Published lines scripts/check-citations.sh would report but which are
+# ordinary prose, not citations. One entry per line:
+#
+#   path:regex
+#
+# path is the file exactly as the guard reports it, and regex (grep -E) is
+# matched against the reported text. Keep the regex specific to the one
+# sentence, so the entry cannot excuse a real citation added beside it
+# later, and prefer rewording the sentence over adding an entry.

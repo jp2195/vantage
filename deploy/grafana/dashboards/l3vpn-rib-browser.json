@@ -1,0 +1,221 @@
+{
+  "description": "What each router is advertising inside each VRF: the MPLS label, the next hop, and how current that knowledge is. Companion to the L3VPN looking glass, which answers the same question for one address rather than for a whole VRF.",
+  "editable": false,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "type": "stat",
+      "title": "What we know",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 2,
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Scale of the labeled-route table for the current VRF, Family and RIB stream.\n\n`routes` counts DISTINCT (family, RD, prefix, router) routes, not rows. Every BMP session re-dumps the whole table, so on the live archive 164 observations are 31 routes and a count() here would be reporting session restarts.\n\n`vrfs` excludes the empty Route Distinguisher, so an lu4-only selection reads 0 rather than 1: labeled unicast has no VRF to count. `targets` counts distinct route targets across every route's array, not distinct arrays.\n\n`no_route_target` is the field that explains the holes in the panel below it, and it counts OBSERVATIONS rather than routes because that is what varies. 34 of the archive's 90 vpn4 rows carry no route target at all -- not because the VRF has none, but because they were captured before this deployment's decoder learned to parse extended communities; rows captured afterward carry them, and the same (RD, prefix) appears both ways. lu4 rows are excluded from this count: labeled unicast carries no route target by definition, and counting it would report a decoder gap that does not exist.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2a78d6",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT uniqExact((family, rd, prefix, router_ip)) AS routes,\n       uniqExactIf(rd, rd != '') AS vrfs,\n       uniqExactArray(route_targets) AS targets,\n       uniqExact(router_ip) AS routers,\n       countIf(family != 'lu4' AND empty(route_targets)) AS no_route_target\nFROM vantage.route_vpn FINAL\nWHERE $__timeFilter(ts_collector)\n  AND match(toString(rib), '^($rib)$')\n  AND match(family, '^($family)$')\n  AND match(rd, '^($rd)$')",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Routes",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "id": 1,
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "One row per (family, RD, prefix, router): the label a router is advertising for a prefix in a VRF, and the next hop it points at. Nothing else in the dashboard set shows the label, which is on every row of route_vpn.\n\n`label`, `next_hop`, `origin_asn` and `state` all come from the NEWEST observation on the collector clock, not from any observation. That matters because a label is reallocated when a session restarts: 11 of the 31 (RD, prefix, router) keys in the live archive carry more than one label over their lifetime, and every one of those changes lands on a session boundary. There is deliberately no count of labels beside this column -- on this data it would be a count of BMP session restarts rather than a churn count.\n\n`sessions` is how many BMP sessions carried the route, which on route_vpn is also how many times it was observed: no labeled route in the archive is ever re-advertised inside one session. A withdrawn route keeps its row and is marked in `state` rather than dropped, because a missing row reads as a route that never existed. Time is filtered on ts_collector, not ts_router -- ts_router comes from the BMP per-peer header and a router with a zero clock reports 1970 (the QK_TS_ZERO quirk), so filtering on it would silently drop rows from the window an operator selected. Top 500.\n\nThe rendered Route Distinguisher is aliased `vrf` rather than `rd` on purpose. ClickHouse resolves SELECT aliases inside WHERE, so naming it `rd` would make match(rd, '^($rd)$') filter the fallback STRING instead of the column, and selecting the VRF with no Route Distinguisher would match nothing.\n\nTwo columns report absence rather than a number that looks like data. A withdrawn labeled route carries 524288 (0x800000 >> 4) in place of a label -- the RFC 3107 / RFC 8277 withdraw sentinel, which the proto defining the field calls \"not a real label, and must be ignored\". It is stripped, because rendering it puts a protocol constant in a column of real MPLS labels. It cannot be recognized by value alone (a genuine label of 524288 is legal and arrives identically shifted), so is_withdraw is what distinguishes them. `origin_asn` is blank rather than 0 when the route carries no AS path: 142 of the archive's 164 labeled rows are iBGP and have none, and AS 0 is reserved -- no router originates it.\n\nONE COLLECTOR'S VIEW PER ROUTER, and on this panel that is about more than counting. `state`, `label`, `next_hop` and `origin_asn` are resolved with argMax over ts_collector, which is each COLLECTOR's own wall clock -- so on a dual-homed router every one of them used to be decided by whichever collector's clock ran ahead rather than by which collector saw the route best. A lagging collector's stale withdrawal then reads as the route's current state, and an operator sees a route the network is really carrying marked gone. This selection exists to prevent exactly that failure from reaching this column.\n\nThe rows of the collector that saw each (route, router) most are kept whole, so all four columns and `sessions` come from ONE vantage point. `last_seen` is that collector's too, deliberately: taking the newest timestamp across collectors would render \"advertised, one minute ago\" on a row whose collector last saw the route half an hour back, which reads a stale claim as fresh evidence. route_vpn is dual-collector on the live archive today (178 rows to 14), where this removed 14 phantom sessions and moved no route.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT family,\n       if(rd = '', '(none: this family carries no RD)', rd) AS vrf,\n       prefix,\n       label,\n       next_hop,\n       origin_asn,\n       state,\n       router,\n       sessions,\n       last_seen\nFROM (\n  SELECT family, rd, prefix, router_ip, router, label, next_hop, origin_asn,\n         state, sessions,\n         last_seen,\n         (observations, collector_id)                                            AS mine,\n         max(mine) OVER (PARTITION BY family, rd, prefix, router_ip, router)      AS best\n  FROM (\n    SELECT family,\n           rd,\n           prefix,\n           router_ip,\n           router_sysname AS router,\n           collector_id,\n           arrayStringConcat(arrayMap(l -> toString(l), argMax(\n               if(is_withdraw = 1, arrayFilter(l -> l != 524288, labels), labels),\n               ts_collector)), ', ') AS label,\n           argMax(next_hop, ts_collector) AS next_hop,\n           argMax(if(empty(as_path), '', toString(as_path[-1])), ts_collector) AS origin_asn,\n           argMax(if(is_withdraw = 1, 'withdrawn', 'advertised'), ts_collector) AS state,\n           uniqExact(session_id) AS sessions,\n           count()               AS observations,\n           max(ts_collector)     AS last_seen\n    FROM vantage.route_vpn FINAL\n    WHERE $__timeFilter(ts_collector)\n      AND match(toString(rib), '^($rib)$')\n      AND match(family, '^($family)$')\n      AND match(rd, '^($rd)$')\n    GROUP BY family, rd, prefix, router_ip, router, collector_id\n  )\n)\nWHERE mine = best\nORDER BY rd, prefix, router\nLIMIT 500",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Route targets",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "id": 3,
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Which route target reaches which VRFs, prefixes and routers -- the question route targets exist to answer, and the one an import/export mistake shows up in.\n\nThe array is expanded in a SUBQUERY, deliberately. arrayJoin sits in the FROM clause rather than beside the aggregates because a route carries a variable number of route targets and an arrayJoin in a SELECT list silently DROPS every row whose array is empty -- which would corrupt any other aggregate computed alongside it. A route carrying two targets appears under both.\n\nThis table cannot show a route that carries no route target, and on the live archive that is 34 of the 90 vpn4 rows -- see `no_route_target` in the panel above for why. The gap is real and reported rather than papered over: read this table as \"what the route targets we decoded cover\", not as the whole VPN table.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT rt,\n       uniqExactIf(rd, rd != '') AS vrfs,\n       uniqExact(prefix) AS prefixes,\n       uniqExact(router_ip) AS routers,\n       max(ts_collector) AS last_seen\nFROM (\n  SELECT arrayJoin(route_targets) AS rt, rd, prefix, router_ip, ts_collector\n  FROM vantage.route_vpn FINAL\n  WHERE $__timeFilter(ts_collector)\n    AND match(toString(rib), '^($rib)$')\n    AND match(family, '^($family)$')\n    AND match(rd, '^($rd)$')\n)\nGROUP BY rt\nORDER BY prefixes DESC, rt\nLIMIT 100",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "vantage",
+    "routes",
+    "l3vpn"
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "family",
+        "label": "Family",
+        "description": "Narrows the browser to one address family. vantage.route_vpn is really \"labeled routes\" discriminated by this column: vpn4/vpn6 are L3VPN and carry a Route Distinguisher, lu4 is labeled unicast and carries none. Defaults to All.",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "query": "SELECT DISTINCT family FROM vantage.route_vpn FINAL ORDER BY family",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "refresh": 1,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "custom",
+        "name": "rib",
+        "label": "RIB stream",
+        "description": "Which of the RFC 8671 adj-RIB streams to browse, or loc_rib for RFC 9069 Loc-RIB -- the router's own table after best-path selection. Defaults to All.",
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "query",
+        "name": "rd",
+        "label": "VRF (Route Distinguisher)",
+        "description": "Which VRF to browse, narrowed by the Family and RIB stream chosen to its left. The list carries one entry with an EMPTY value, shown as \"(none: this family carries no RD)\": labeled unicast has no Route Distinguisher, and 74 of the archive's 164 labeled routes are lu4. Selecting All keeps them; a picker built on rd != '' would hide them without saying so. Defaults to All.",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "query": "SELECT DISTINCT rd AS value,\n       if(rd = '', '(none: this family carries no RD)', rd) AS label\nFROM vantage.route_vpn FINAL\nWHERE match(toString(rib), '^($rib)$')\n  AND match(family, '^($family)$')\nORDER BY value",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "refresh": 1,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "L3VPN RIB browser",
+  "uid": "vantage-l3vpn-rib-browser",
+  "version": 1
+}

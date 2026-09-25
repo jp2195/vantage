@@ -1,0 +1,10 @@
+{
+  "router": "172.22.0.x",
+  "sys_descr": "FRRouting 10.3_git",
+  "vendor": "frr",
+  "os": "frr",
+  "version": "10.3",
+  "captured_at": "2026-08-27T23:35:00Z",
+  "mode": "full-session",
+  "note": "IPv6-addressed peer; ipv4u+ipv6u with communities, large communities, local-pref, ext-comm, aggregate"
+}

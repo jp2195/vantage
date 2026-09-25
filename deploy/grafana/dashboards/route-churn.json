@@ -1,0 +1,381 @@
+{
+  "description": "What actually changed: BGP re-advertisements and withdrawals over time, with each BMP session's table dump counted as its own series rather than added to them.",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "none",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "readvertise"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2a78d6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "withdraw"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#eb6834",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_dump"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#898781",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    6
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 2,
+          "queryType": "sql",
+          "rawSql": "WITH classified AS (\n  SELECT $__timeInterval(ts_collector) AS t,\n         router_ip,\n         collector_id,\n         is_withdraw,\n         is_withdraw = 0 AND (seq, stream_seq) = min((seq, stream_seq)) OVER (\n           PARTITION BY collector_id, router_ip, peer_ip, rib, session_id, family, prefix, path_id\n         ) AS is_session_dump\n  FROM vantage.route_unicast FINAL\n  WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n),\nper_bucket AS (\n  SELECT t, router_ip, collector_id,\n         countIf(NOT is_session_dump AND is_withdraw = 0) AS readvertise,\n         countIf(is_withdraw = 1)                         AS withdraw,\n         countIf(is_session_dump)                         AS session_dump,\n         readvertise + withdraw + session_dump            AS total\n  FROM classified\n  GROUP BY t, router_ip, collector_id\n),\nover_window AS (\n  SELECT *, sum(total) OVER (PARTITION BY router_ip, collector_id) AS window_total\n  FROM per_bucket\n)\nSELECT t,\n       sum(readvertise)  AS readvertise,\n       sum(withdraw)     AS withdraw,\n       sum(session_dump) AS session_dump\nFROM (\n  SELECT *, max((window_total, collector_id)) OVER (PARTITION BY router_ip) AS best\n  FROM over_window\n)\nWHERE (window_total, collector_id) = best\nGROUP BY t\nORDER BY t",
+          "refId": "A"
+        }
+      ],
+      "title": "Re-advertisements, session dumps and withdrawals",
+      "type": "timeseries",
+      "description": "What changed in each bucket, with the collection artifact drawn separately instead of mixed in.\n\nEach row is classified on its own, before any bucketing: an advertisement that is the FIRST observation of its route inside its BMP session is the session's table dump -- the router restating what it already held -- and lands in `session_dump`. Every other advertisement is a genuine re-advertisement and lands in `readvertise`. The route's identity is the one query/rib.go uses (collector, router, peer, rib, family, prefix, path_id) and the order within a session is (seq, stream_seq), never ts_router.\n\n`withdraw` is every withdrawal, uncorrected, and that is deliberate rather than an oversight: a table dump advertises, it never withdraws, so no withdrawal in this archive is a session artifact and there is nothing to subtract. Correcting it symmetrically would delete real withdrawals -- 12 of the 1,619 in a lab archive are the first thing said about their route in their session, and every one of them is a router withdrawing something it never re-announced to us.\n\nThis panel previously plotted countIf(is_withdraw = 0) AS announce, which is message volume and cannot tell a re-dump from a change: a 2.06M-row test rig showed a bucket that was 100% session re-dump and a bucket that was 100% genuine churn both reporting the identical number. Correcting it by bucket instead -- count() - uniqExact(session_id), which is what the table below does per prefix -- was measured and rejected: it subtracts the sessions VISIBLE IN THE BUCKET, so on a prefix genuinely re-advertised 99 times it captured 99 of 99 at one-day buckets and 0 of 99 at one-minute buckets. $__timeInterval picks the bucket width from the time range, so that remedy would have changed its meaning silently as an operator zoomed. The per-row classification above is independent of bucket width and returned 99 at every width tested.\n\nThe classification is bounded by the panel's own time range, so a route first dumped BEFORE the window opens has its earliest in-window observation counted as the dump: at the left edge only, up to one re-advertisement per route per session is not counted. Widening the range recovers it.\n\nFINAL is load-bearing here, not decoration. An at-least-once re-delivery of a re-advertisement is a second row with the same (seq, stream_seq), so neither copy is the session minimum and both count: in that same test, an archive whose observations were each delivered twice reported 198 changes where the truth was 99. Time is filtered on ts_collector, not ts_router. ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (see the QK_TS_ZERO quirk), so filtering on it would silently drop rows from the window an operator selected.\n\nEVERY NUMBER HERE IS ONE COLLECTOR'S. Two collectors watching one router both write down the same events, and these three series name things the ROUTER did -- it re-advertised a route, it re-dumped after a session reset, it withdrew one -- so summing the observers would make a fabric look busier for being watched twice. The collector is chosen PER ROUTER as the one that saw the most, and that collector's series is what is plotted. A collector that has fallen behind looks like nothing at all here; the other one wins. Summing across ROUTERS is still addition -- they are disjoint network entities -- so a collector watching part of the fleet does not blank the routers it never sees.\n\nThe choice is made ONCE OVER THE WHOLE TIME RANGE, not per bucket, and that is not a detail. A per-bucket choice defends against two copies of one event only when both land in the same bucket, and the column the bucketing reads -- ts_collector -- is precisely the column two collectors disagree about. So it failed exactly where duplication is most likely: a collector that joins, leaves, restarts or is replayed to at a different time has its copies compared against nothing and added. Measured on a lab archive on 2026-09-20, router 172.22.0.8 held 20 rows under dev-c1 and 8 under dev-c2 carrying the SAME two ts_router values -- one captured session replayed to a second collector two days later -- and a per-bucket choice reported all 28. Choosing once over the range also stops consecutive points being drawn by different observers, which put a step in the chart that no router caused."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 2,
+          "queryType": "sql",
+          "rawSql": "WITH classified AS (\n  SELECT $__timeInterval(ts_collector) AS t,\n         router_ip,\n         peer_ip,\n         collector_id,\n         is_withdraw = 0 AND (seq, stream_seq) = min((seq, stream_seq)) OVER (\n           PARTITION BY collector_id, router_ip, peer_ip, rib, session_id, family, prefix, path_id\n         ) AS is_session_dump\n  FROM vantage.route_unicast FINAL\n  WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n),\nper_bucket AS (\n  SELECT t, router_ip, peer_ip, collector_id,\n         countIf(NOT is_session_dump) AS changes,\n         count()                      AS total\n  FROM classified\n  GROUP BY t, router_ip, peer_ip, collector_id\n),\nover_window AS (\n  SELECT *, sum(total) OVER (PARTITION BY router_ip, peer_ip, collector_id) AS window_total\n  FROM per_bucket\n)\nSELECT t, toString(peer_ip) AS peer_ip, sum(changes) AS changes\nFROM (\n  SELECT *, max((window_total, collector_id)) OVER (PARTITION BY router_ip, peer_ip) AS best\n  FROM over_window\n)\nWHERE (window_total, collector_id) = best\nGROUP BY t, peer_ip\nORDER BY t",
+          "refId": "A"
+        }
+      ],
+      "title": "Changes by peer",
+      "transformations": [
+        {
+          "id": "partitionByValues",
+          "options": {
+            "fields": [
+              "peer_ip"
+            ],
+            "keepFields": false,
+            "naming": {
+              "asLabels": false
+            }
+          }
+        }
+      ],
+      "type": "timeseries",
+      "description": "Route changes per peer over time, with the session table dump excluded rather than counted.\n\nEach row is classified before bucketing: an advertisement that is the first observation of its route inside its BMP session is that session's dump and is not a change; every other advertisement, and every withdrawal, is. A peer that reconnects and re-dumps a table nothing happened to now draws a flat zero rather than a spike, which is the whole point of the panel.\n\nThe series was named `updates` until 2026-09-10, because count() over route_unicast is message volume and a session restart is indistinguishable from churn to it -- the panel could not honestly claim the word `changes` in its own title. It can now: the count is countIf(NOT is_session_dump), keyed on the route identity query/rib.go uses (collector, router, peer, rib, family, prefix, path_id) within session_id, ordered by (seq, stream_seq).\n\nA bucket where a peer sent only dump traffic reports 0, and a bucket where it sent nothing at all reports no point at all; the two look different on purpose. See the panel above for the full argument, including why bucketing count() - uniqExact(session_id) was measured and rejected, and why the classification is one re-advertisement short at the left edge of the time range. Time is filtered on ts_collector, not ts_router. ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (see the QK_TS_ZERO quirk), so filtering on it would silently drop rows from the window an operator selected.\n\nEVERY NUMBER HERE IS ONE COLLECTOR'S. Two collectors watching one router both write down the same events, and this series names things the ROUTER did -- it re-advertised a route, it re-dumped after a session reset, it withdrew one -- so summing the observers would make a fabric look busier for being watched twice. The collector is chosen PER PEER as the one that saw the most, and that collector's series is what is plotted. A collector that has fallen behind looks like nothing at all here; the other one wins. Summing across ROUTERS is still addition -- they are disjoint network entities -- so a collector watching part of the fleet does not blank the peers it never sees.\n\nThe choice is made ONCE OVER THE WHOLE TIME RANGE, not per bucket, and that is not a detail. A per-bucket choice defends against two copies of one event only when both land in the same bucket, and the column the bucketing reads -- ts_collector -- is precisely the column two collectors disagree about. So it failed exactly where duplication is most likely: a collector that joins, leaves, restarts or is replayed to at a different time has its copies compared against nothing and added. Measured on a lab archive on 2026-09-20, router 172.22.0.8 held 20 rows under dev-c1 and 8 under dev-c2 carrying the SAME two ts_router values -- one captured session replayed to a second collector two days later -- and a per-bucket choice reported all 28. Choosing once over the range also stops consecutive points being drawn by different observers, which put a step in the chart that no router caused."
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2a78d6",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "withdraws"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "continuous-blues"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT prefix,\n       argMax(changes, (total, collector_id))      AS changes,\n       argMax(observations, (total, collector_id)) AS observations,\n       argMax(routes, (total, collector_id))       AS routes,\n       argMax(sessions, (total, collector_id))     AS sessions,\n       argMax(withdraws, (total, collector_id))    AS withdraws\nFROM (\n  SELECT prefix,\n         collector_id,\n         countIf(NOT is_session_dump) AS changes,\n         count() AS observations,\n         count() AS total,\n         uniqExact((router_ip, peer_ip, rib, family, path_id)) AS routes,\n         uniqExact(session_id) AS sessions,\n         countIf(is_withdraw = 1) AS withdraws\n  FROM (\n    SELECT collector_id, router_ip, peer_ip, rib, family, prefix, path_id,\n           session_id, is_withdraw,\n           is_withdraw = 0 AND (seq, stream_seq) = min((seq, stream_seq)) OVER (\n             PARTITION BY collector_id, router_ip, peer_ip, rib, session_id, family, prefix, path_id\n           ) AS is_session_dump\n    FROM vantage.route_unicast FINAL\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n  )\n  GROUP BY prefix, collector_id\n)\nGROUP BY prefix\nORDER BY changes DESC, withdraws DESC, observations DESC, prefix\nLIMIT 50",
+          "refId": "A"
+        }
+      ],
+      "title": "Most-changed prefixes",
+      "type": "table",
+      "description": "Which prefixes actually changed, most first.\n\n`changes` is the ranking column and the only one that means churn. Every row is classified on its own, before anything is grouped: an advertisement that is the FIRST observation of its route inside its BMP session is that session's table dump -- the router restating what it already held -- and is not a change. Every other advertisement is, and so is every withdrawal. The route's identity is the one query/rib.go uses (collector, router, peer, rib, family, prefix, path_id) and the order within a session is (seq, stream_seq), never ts_router.\n\nThe classification happens per route and the answer is then summed up to the prefix, which is what keeps this a ranking of prefixes: an operator scanning for an unstable destination thinks in prefixes, and one busy prefix would otherwise take six of the fifty rows. `routes` is how you tell the two apart -- it is the number of distinct routes carrying this prefix, so a prefix with a high `observations` and a high `routes` but a low `changes` is busy because many peers carry it, not because anything moved. 489 of the 541 prefixes in a lab archive carry more than one route, so that is the normal case here rather than a corner.\n\n`observations` is the raw message count kept for comparison, and observations minus changes is how many of them were session dumps. `sessions` is descriptive now rather than an operand: until 2026-09-10 this panel ranked on count() - uniqExact(session_id), which is wrong twice over. It grouped by prefix alone, so a prefix dumped by two peers inside one session produced two dump rows and subtracted only one session and scored 1 where the truth is 0; and a withdrawal that is the first thing said about its route in its session scored 0, because a subtraction cannot see that a table dump advertises and never withdraws. Measured on a lab archive: 486 of 541 prefixes disagreed with the per-row rule, and the panel reported 6,206 resends against 4,728 real changes -- 31% over. And before THAT it ranked on a bare count(), which is message volume and put this archive's four most stable prefixes at the top as changing 48 times each; when that was fixed, 159 of the archive's 167 unicast prefixes had a count exactly equal to their session count. Both figures are of their date -- the archive carries 541 prefixes now.\n\nThe withdrawal column is deliberately uncorrected, and is the reason the classification carries an explicit is_withdraw = 0 guard. Nothing synthesizes a withdrawal (a Peer Down becomes a peer_events row), so no withdrawal is a collection artifact and there is nothing to subtract; a symmetric rule would have deleted the 12 first-in-session withdrawals among this archive's 1,619.\n\nThe classification is bounded by the panel's own time range, so a route first dumped BEFORE the window opens has its earliest in-window observation counted as the dump: at the left edge only, up to one change per route per session is not counted. Widening the range recovers it. FINAL is load-bearing rather than decoration -- an at-least-once re-delivery is a second row with the same (seq, stream_seq), so without it neither copy is the session minimum and both count as changes. Time is filtered on ts_collector, not ts_router. ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (see the QK_TS_ZERO quirk), so filtering on it would silently drop rows from the window an operator selected. Top 50."
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "vantage"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "description": "Which RIB view to show: one of the four RFC 8671 adj-RIB streams, or loc_rib for RFC 9069 Loc-RIB -- the router's own table after best-path selection, which is not a direction and was never received from a peer. Defaults to All: most routes this fleet has recorded are in_pre, so selecting any other single value can empty every panel on the dashboard, which reads as 'the fleet is silent' rather than 'the filter matched nothing'. Selecting loc_rib is the way to answer 'what does the router itself believe' separately from 'what were we sent'; loc_rib and in_pre used to be combined and are now recorded separately. Panels over peer_events do not use it -- a session going up or down is not a member of a RIB stream.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "RIB stream",
+        "multi": false,
+        "name": "rib",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "in_pre",
+            "value": "in_pre"
+          },
+          {
+            "selected": false,
+            "text": "in_post",
+            "value": "in_post"
+          },
+          {
+            "selected": false,
+            "text": "out_pre",
+            "value": "out_pre"
+          },
+          {
+            "selected": false,
+            "text": "out_post",
+            "value": "out_post"
+          },
+          {
+            "selected": false,
+            "text": "loc_rib",
+            "value": "loc_rib"
+          }
+        ],
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Route churn",
+  "uid": "vantage-route-churn",
+  "version": 6,
+  "links": [
+    {
+      "asDropdown": false,
+      "icon": "external link",
+      "includeVars": false,
+      "keepTime": true,
+      "tags": [],
+      "targetBlank": false,
+      "title": "Top L3VPN prefixes",
+      "tooltip": "VPN routes are ranked on their own dashboard. This one measures churn, and route_vpn re-dumps every observation on a fresh BMP session, so no count taken here could mean churn.",
+      "type": "link",
+      "url": "/d/vantage-top-l3vpn-prefixes"
+    }
+  ]
+}
