@@ -2,10 +2,10 @@
 # these entries are correctness, not speed, and both are about Dockerfile.api.
 #
 # ui/node_modules -- Dockerfile.api installs the UI's dependencies inside
-# node:22 (COPY package.json + package-lock.json, RUN npm ci) and only then
+# node:24 (COPY package.json + package-lock.json, RUN npm ci) and only then
 # copies the rest of ui/ over the result. Without this line that second COPY
 # replaces the tree npm ci just built with whatever the host has, which on a
-# machine where `make ui` has run means esbuild's and rollup's
+# machine where `make ui` has run means esbuild's and rolldown's
 # platform-specific binaries from the host's OS and architecture. On a
 # non-linux/amd64 host that fails the build outright; everywhere it defeats
 # the package.json-first layer split, whose whole point is that a source
