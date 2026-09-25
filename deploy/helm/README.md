@@ -94,9 +94,11 @@ set `api.existingSecret` (one key per token name, e.g. `lab`), or pin
 ## Fetch the chart dependencies first
 
 The NATS subchart is a dependency, not a vendored copy: `Chart.lock` pins its
-version and `.gitignore` excludes the fetched `.tgz` from `charts/`, so a
-fresh clone has `Chart.yaml` and `Chart.lock` but no `charts/nats-*.tgz`.
-Every `helm install`/`upgrade`/`template`/`lint` command fails until you run:
+version (the NATS chart's major and minor version follow the nats-server
+release it ships, so chart 2.14.x runs nats-server 2.14) and `.gitignore`
+excludes the fetched `.tgz` from `charts/`, so a fresh clone has
+`Chart.yaml` and `Chart.lock` but no `charts/nats-*.tgz`. Every
+`helm install`/`upgrade`/`template`/`lint` command fails until you run:
 
     helm repo add nats https://nats-io.github.io/k8s/helm/charts/
     helm dependency build deploy/helm/vantage
@@ -670,7 +672,9 @@ from disk as orphans (`Detected orphaned stream` in its log). The writer's
 durable consumers go the same way. Measured with nats-server 2.11.6: 100
 messages in a single-server stream, then the same store restarted as one of
 three clustered servers, gave "stream not found", the orphan line 30 seconds
-later, and an empty stream once the collector recreated it.
+later, and an empty stream once the collector recreated it. nats-server 2.14.6
+does the same: the clustered servers listed no streams, and the orphan line
+followed 30 seconds after the cluster formed.
 
 So the move is a one-time, planned gap, and **routers are disconnected for
 all of it**: from stopping the collector in step 1 until it starts again in
@@ -1108,19 +1112,22 @@ config. The images themselves run as the same uid (distroless `:nonroot`), so
 they are non-root outside Kubernetes too.
 
 The NATS pods run as uid 1000, with the same seccomp profile, no privilege
-escalation and no capabilities. The subchart's images declare no user of
-their own, so the chart sets one through the subchart's merge values
+escalation and no capabilities. The subchart's images declare no user of their
+own, so the chart sets one through the subchart's merge values
 (`nats.podTemplate.merge`, `nats.container.merge`, `nats.reloader.merge` and
 `nats.promExporter.merge`), and `fsGroup: 1000` makes the JetStream volume
-writable by it. A CSI driver that applies group ownership itself at mount
-time (the `VOLUME_MOUNT_GROUP` capability) may not honor
-`fsGroupChangePolicy` the same way kubelet does; check the storage class's
-driver if the JetStream volume is not group-writable after an upgrade.
-Upgrading an install whose NATS ran as root restarts the
-NATS pods once, and on that first mount kubelet gives every file already in
-the JetStream store to group 1000; nothing is copied or lost. nats-box
-(`nats.natsBox.enabled`) is not covered: its pods set no security context,
-and a namespace enforcing `restricted` refuses them.
+writable by it. All containers share that one uid because the reloader signals
+nats-server across the pod's shared process namespace, and that signal is how
+the NATS config changes: the subchart does not restart the pods when only
+`nats.conf` changes, so such an upgrade reloads the NATS servers in place. A
+CSI driver that applies group ownership itself at mount time (the
+`VOLUME_MOUNT_GROUP` capability) may not honor `fsGroupChangePolicy` the same
+way kubelet does; check the storage class's driver if the JetStream volume is
+not group-writable after an upgrade. Upgrading an install whose NATS ran as
+root restarts the NATS pods once, and on that first mount kubelet gives every
+file already in the JetStream store to group 1000; nothing is copied or lost.
+nats-box (`nats.natsBox.enabled`) is not covered: its pods set no security
+context, and a namespace enforcing `restricted` refuses them.
 
 ## What the render refuses
 
