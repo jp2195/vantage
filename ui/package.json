@@ -23,7 +23,7 @@
     "@hey-api/openapi-ts": "^0.99.0",
     "@playwright/test": "1.63.0",
     "@types/d3-force": "^3.0.10",
-    "@types/node": "22.20.3",
+    "@types/node": "24.13.5",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^30.1.0",

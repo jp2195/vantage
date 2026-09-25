@@ -236,7 +236,7 @@ jobs:
       # exit status. All three images are built because they pin their
       # toolchains independently and have drifted independently before.
       # Dockerfile.api joined this list when it grew a second, independently
-      # pinned toolchain of its own (node:22 alongside golang:1.25) plus a
+      # pinned toolchain of its own (node:24 alongside golang:1.25) plus a
       # COPY --from=ui path between stages -- exactly the shape of drift this
       # step exists to catch, and unguarded until now.
       - name: docker build (image toolchain pins, not just source)
@@ -259,7 +259,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
           cache-dependency-path: ui/package-lock.json
       - run: npm ci
