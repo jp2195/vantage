@@ -1,0 +1,155 @@
+# Values for ghcr.io/clickhouse/clickhouse-cluster-helm. Pin --version to the
+# SAME version as the operator chart (tested with 0.0.7 for both) -- these
+# charts' values are generated straight from the CRD OpenAPI schemas of the
+# operator they ship alongside, so a version skew between the two charts is a
+# mismatch, not a supported combination. The field names below were confirmed
+# against the v0.0.7 CRDs with `kubectl explain`, not assumed; re-check them
+# if you run a newer operator. See README.md.
+#
+# Set for YOUR cluster before installing (README.md, "Prerequisites"):
+#   - storageClassName, on both volumes below (unset = the cluster default)
+#   - the vantage user's networks: your pod CIDR and Service CIDR
+#   - containerTemplate.resources and the volume sizes
+#
+# Install:
+#
+#   helm install vantage-ch oci://ghcr.io/clickhouse/clickhouse-cluster-helm \
+#     --version 0.0.7 -n "$NS" -f deploy/clickhouse/k8s/clickhouse-values.yaml \
+#     --set clickhouse.spec.settings.extraUsersConfig.users.vantage.password_sha256_hex="$CHPASS_SHA256" \
+#     --set clickhouse.spec.settings.extraUsersConfig.users.default.password_sha256_hex="$DEFAULT_SHA256" \
+#     --wait --wait-for-jobs --timeout 15m
+#
+# CHPASS_SHA256 must be the sha256 hex digest (`printf '%s' "$CHPASS" | sha256sum | cut -d' ' -f1`)
+# of the SAME password stored in the "vantage-clickhouse-external" Secret
+# (see README.md step 2) -- that Secret holds the plaintext, which is what
+# the vantage chart's clickhouse.existingSecret then supplies to
+# clickhouse-client (the client sends plaintext over the wire either way;
+# only the server-side comparison is against a hash, never a plaintext
+# password.xml field). DEFAULT_SHA256 is the digest of any locally-generated
+# password for the loopback-only `default` user -- nothing outside the
+# ClickHouse pod needs to know it (see the `default` user below for why). Do NOT commit
+# either real password or digest: the placeholders below are only ever
+# applied with --set overriding them.
+
+# Pins BOTH the ClickHouse server and Keeper images to 24.8-alpine: the same
+# image docker-compose.dev.yml, CI and the vantage chart's schema Job run, and
+# the only version every schema decision, migration and query in this
+# repository has been measured against. The chart's own default (its
+# Chart.yaml appVersion is literally "latest") would silently pull whatever
+# is newest on install -- never leave this unset.
+imageTag: "24.8-alpine"
+
+clickhouse:
+  enabled: true
+  spec:
+    # Single-node shape: one shard, one replica.
+    replicas: 1
+    shards: 1
+    dataVolumeClaimSpec:
+      accessModes: ["ReadWriteOnce"]
+      # Unset uses the cluster's default StorageClass. This volume holds the
+      # route archive; a class with reclaimPolicy Retain is worth choosing.
+      # storageClassName: <your-storage-class>
+      resources:
+        requests:
+          storage: 50Gi
+    # The operator's own default when containerTemplate.resources is unset is
+    # a 512Mi request AND limit (operator v0.0.7) -- measured: applying
+    # 000-schema.sql's ReplacingMergeTree/LowCardinality tables against that
+    # default hit MEMORY_LIMIT_EXCEEDED partway through (background merge of
+    # a compact part needed ~502MiB against a 460.80MiB tracked ceiling).
+    # 4Gi is comfortable headroom for a single node; size it for your own
+    # nodes, but do not leave it unset.
+    containerTemplate:
+      resources:
+        requests:
+          cpu: 500m
+          memory: 2Gi
+        limits:
+          memory: 4Gi
+    settings:
+      # Free-form pass-through, merged into ClickHouse's own users config
+      # (internal/controller/clickhouse/config.go writes this verbatim to
+      # 99-extra-users-config.yaml) -- this is native ClickHouse users.yaml
+      # syntax, not an operator-specific shape. Confirmed against
+      # ClickHouse/clickhouse-operator's own examples/custom_configuration.yaml
+      # rather than assumed.
+      extraUsersConfig:
+        users:
+          # The operator's own base config (users.yaml, loaded before this
+          # file) ships `default` with `no_password:` and no `networks`
+          # restriction, which ClickHouse resolves to "reachable from
+          # anywhere, no password" (host_ip: ['::/0']) -- measured on a live
+          # install of operator v0.0.7: `clickhouse-client --user default --query
+          # "SELECT currentUser()"` succeeded with no password from outside
+          # the pod. That is unauthenticated superuser SQL on the route
+          # archive for anything that can reach the ClickHouse Service.
+          # `no_password` has to be explicitly removed (ClickHouse rejects a
+          # user with more than one password kind configured, and a later
+          # config file's same-named child key does not implicitly replace
+          # a *different* key -- `no_password` and `password_sha256_hex` are
+          # different tags, so both would otherwise coexist), then restricted
+          # to loopback only. Nothing on this operator version authenticates as
+          # `default` over the network: the operator reconciles as its own
+          # dedicated `operator` user, and the version-probe Job runs
+          # `clickhouse local` (standalone, no server connection at all) --
+          # confirmed by reading both live before making this change, not
+          # assumed. Loopback access (needed for `kubectl exec ... --
+          # clickhouse-client` with no --host, which defaults to `default`
+          # per the image's own /etc/clickhouse-client/config.yaml) still
+          # works, now password-protected.
+          default:
+            no_password:
+              "@remove": "1"
+            # Placeholder -- overwritten at install time by --set
+            # clickhouse.spec.settings.extraUsersConfig.users.default.password_sha256_hex
+            # (see the install command above). This password only ever
+            # needs to be known to whoever already has exec access to the
+            # pod (loopback-only, below) -- it is not a secret worth
+            # tracking outside this one install, but is still never
+            # committed as a real value on principle.
+            password_sha256_hex: "REPLACE_ME_VIA_HELM_SET_SHA256"
+            networks:
+              ip:
+                - "127.0.0.1"
+                - "::1"
+          vantage:
+            # Placeholder sha256 digest -- overwritten at install time by
+            # --set clickhouse.spec.settings.extraUsersConfig.users.vantage.password_sha256_hex
+            # (see the install command above). password_sha256_hex, not
+            # plaintext password: the rendered ClickHouse config is a
+            # ConfigMap any cluster-reader can see, so the config itself
+            # must not hold a reversible credential. Never commit the real
+            # digest.
+            password_sha256_hex: "REPLACE_ME_VIA_HELM_SET_SHA256"
+            # Replace with YOUR cluster's pod and Service CIDRs. These are
+            # common defaults, not a claim about your cluster; a mismatch
+            # shows up as AUTHENTICATION_FAILED for the writer and API
+            # (README.md step 5). Loopback is deliberately not listed.
+            networks:
+              ip:
+                - "10.244.0.0/16"   # pod CIDR
+                - "10.96.0.0/12"    # service CIDR
+            profile: default
+            quota: default
+
+keeper:
+  enabled: true
+  spec:
+    # keeperClusterRef is a REQUIRED field on ClickHouseCluster.spec -- Keeper
+    # cannot be turned off, even for a single-replica evaluation cluster.
+    # (Confirmed via `kubectl explain clickhousecluster.spec --recursive`,
+    # and stated directly in the operator's own docs: "Every ClickHouse
+    # cluster must reference a KeeperCluster for coordination.") 1 is the
+    # smallest replica count that keeps a live Keeper pod; the CRD's enum
+    # also allows 0 (no Keeper pods at all) but that is untested here and
+    # not what the docs describe as the supported minimum.
+    replicas: 1
+    dataVolumeClaimSpec:
+      accessModes: ["ReadWriteOnce"]
+      # storageClassName: <your-storage-class>
+      # Keeper stores only coordination metadata, not route data; 5Gi
+      # matches the operator's own storage-guide example for a Keeper PVC.
+      resources:
+        requests:
+          storage: 5Gi

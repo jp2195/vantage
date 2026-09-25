@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vantage.fullname" . }}-api
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+data:
+  api.yaml: |
+    # 0.0.0.0, NOT the 127.0.0.1 default in api/config.go: a loopback listener
+    # is unreachable from its own Service.
+    listen: "0.0.0.0:{{ .Values.api.port }}"
+    metrics_listen: "0.0.0.0:{{ .Values.api.metricsPort }}"
+    {{- include "vantage.logConfig" (dict "root" $ "c" .Values.api "name" "api") | nindent 4 }}
+    # The password is the mounted Secret key, not part of clickhouse_dsn: the
+    # render-config init container writes a DSN carrying only the username.
+    clickhouse_password_file: {{ printf "%s/password" (include "vantage.clickhousePasswordDir" .) | quote }}
+    {{- with .Values.api.defaultPage }}
+    default_page: {{ . }}
+    {{- end }}
+    {{- with .Values.api.maxPage }}
+    max_page: {{ . }}
+    {{- end }}
+    {{- with .Values.api.maxUnscopedSince }}
+    max_unscoped_since: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.api.staleAfter }}
+    {{- if not (regexMatch "^([0-9]+(\\.[0-9]*)?(ns|us|µs|ms|s|m|h))+$" (toString .)) }}
+    {{- fail (printf "api.staleAfter %q is not a Go duration: give it a unit, e.g. 90s or 5m" (toString .)) }}
+    {{- end }}
+    stale_after: {{ . | quote }}
+    {{- end }}
+    {{- if .Values.api.collectorsOverride }}
+    # Hand-written, replacing the generated list below entirely -- see
+    # api.collectorsOverride's comment in values.yaml for when this is the
+    # right call and what its ids must satisfy.
+    collectors:
+      {{- range .Values.api.collectorsOverride }}
+      - id: {{ .id | quote }}
+        url: {{ .url | quote }}
+      {{- end }}
+    {{- else if gt (int .Values.collector.replicas) 0 }}
+    # Generated, not hand-written: one entry per collector.replicas pod.
+    # Pod N's collector_id is "<fullname>-collector-N" -- POD_NAME from the
+    # downward API, statefulset-collector.yaml's render-config init
+    # container -- and its per-pod DNS name is
+    # "<fullname>-collector-N.<fullname>-collector", resolved by the
+    # headless Service in service-collector-metrics.yaml. So the id below
+    # matches collector_id BY CONSTRUCTION and the url is per-pod BY
+    # CONSTRUCTION, and this list re-renders correctly whenever
+    # collector.replicas changes.
+    #
+    # Never hand-write this as the bare headless name (http://{{ include "vantage.fullname" . }}-collector:{{ .Values.collector.metricsPort }}):
+    # with more than one replica that name resolves to ALL pod IPs
+    # round-robin, so a poll lands on a random pod each time and the card
+    # behind that entry flips identity between refreshes -- see
+    # api/config.go's Collectors doc comment. Set api.collectorsOverride to
+    # replace this generated list wholesale, for collectors outside this
+    # chart.
+    collectors:
+      {{- $fullname := include "vantage.fullname" $ }}
+      {{- range $i := until (int $.Values.collector.replicas) }}
+      - id: {{ printf "%s-collector-%d" $fullname $i | quote }}
+        url: {{ printf "http://%s-collector-%d.%s-collector:%v" $fullname $i $fullname $.Values.collector.metricsPort | quote }}
+      {{- end }}
+    {{- end }}

@@ -1,0 +1,66 @@
+[
+  {
+    "Collector": "parity-c1",
+    "Routers": [
+      {
+        "SysName": "parity-r1",
+        "IP": "10.250.1.1",
+        "PeersUp": 2,
+        "PeersDown": 1,
+        "PeersViewLost": 1,
+        "PeersStale": 0,
+        "SysDescr": "parity router one",
+        "LastSeen": "2030-01-01T00:00:30Z"
+      },
+      {
+        "SysName": "parity-r2",
+        "IP": "10.250.1.2",
+        "PeersUp": 1,
+        "PeersDown": 0,
+        "PeersViewLost": 0,
+        "PeersStale": 0,
+        "SysDescr": "",
+        "LastSeen": "2030-01-01T00:01:10Z"
+      },
+      {
+        "SysName": "parity-r3",
+        "IP": "10.250.1.3",
+        "PeersUp": 2,
+        "PeersDown": 0,
+        "PeersViewLost": 0,
+        "PeersStale": 0,
+        "SysDescr": "",
+        "LastSeen": "2030-01-01T00:01:23Z"
+      }
+    ],
+    "PeersUp": 5,
+    "PeersDown": 1,
+    "PeersViewLost": 1,
+    "PeersStale": 0,
+    "LastRowAt": "2030-01-01T00:01:51Z",
+    "LastBeatAt": "2200-01-01T00:00:00Z",
+    "StartedAt": "1970-01-01T00:00:00Z"
+  },
+  {
+    "Collector": "parity-c2",
+    "Routers": [
+      {
+        "SysName": "parity-r2",
+        "IP": "10.250.1.2",
+        "PeersUp": 1,
+        "PeersDown": 0,
+        "PeersViewLost": 0,
+        "PeersStale": 0,
+        "SysDescr": "",
+        "LastSeen": "2030-01-01T00:01:18Z"
+      }
+    ],
+    "PeersUp": 1,
+    "PeersDown": 0,
+    "PeersViewLost": 0,
+    "PeersStale": 0,
+    "LastRowAt": "2030-01-01T00:01:19Z",
+    "LastBeatAt": "2200-01-01T00:00:00Z",
+    "StartedAt": "1970-01-01T00:00:00Z"
+  }
+]

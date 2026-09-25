@@ -1,0 +1,4 @@
+# npm's install tree. package-lock.json is the real pin and is committed;
+# node_modules/ itself is reconstructed from it by `npm ci`, which every
+# target that touches this directory runs first (see the Makefile).
+node_modules/

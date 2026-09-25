@@ -1,0 +1,60 @@
+{
+  "Nodes": [
+    {
+      "ASN": 65300,
+      "Routes": 3,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "ASN": 65103,
+      "Routes": 2,
+      "Origin": false,
+      "Transit": true,
+      "Peer": true,
+      "FirstSeen": "2030-01-01T00:00:43Z"
+    },
+    {
+      "ASN": 65101,
+      "Routes": 1,
+      "Origin": false,
+      "Transit": true,
+      "Peer": true,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "ASN": 65200,
+      "Routes": 1,
+      "Origin": false,
+      "Transit": true,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    }
+  ],
+  "Edges": [
+    {
+      "Src": 65103,
+      "Dst": 65300,
+      "Routes": 2,
+      "LiveRoutes": 2,
+      "FirstSeen": "2030-01-01T00:00:43Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65200,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    },
+    {
+      "Src": 65200,
+      "Dst": 65300,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:31Z"
+    }
+  ],
+  "Routes": 3
+}

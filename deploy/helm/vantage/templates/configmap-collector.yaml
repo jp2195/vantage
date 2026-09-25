@@ -1,0 +1,63 @@
+{{- include "vantage.validateProxyProtocol" . }}
+{{- include "vantage.validateNatsCluster" . }}
+{{- include "vantage.validateStreamReplicas" . }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vantage.fullname" . }}-collector
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+data:
+  collector.yaml: |
+    listen: ":{{ .Values.collector.bmpPort }}"
+    proxy_protocol: {{ .Values.collector.proxyProtocol | quote }}
+    {{- with .Values.collector.allowedSources }}
+    allowed_sources:
+      {{- range . }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.collector.trustedProxies }}
+    trusted_proxies:
+      {{- range . }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    {{- with .Values.collector.maxConnections }}
+    max_connections: {{ . }}
+    {{- end }}
+    nats_url: {{ include "vantage.natsURL" . | quote }}
+    {{- if .Values.nats.tls.enabled }}
+    nats_tls:
+      ca_file: {{ printf "%s/ca.crt" (include "vantage.natsTLSDir" .) | quote }}
+      cert_file: {{ printf "%s/tls.crt" (include "vantage.natsTLSDir" .) | quote }}
+      key_file: {{ printf "%s/tls.key" (include "vantage.natsTLSDir" .) | quote }}
+    {{- end }}
+    metrics_listen: "0.0.0.0:{{ .Values.collector.metricsPort }}"
+    # Loopback, deliberately. The admin API arms traffic mirroring, has no
+    # authentication and no cap on how many mirrors may be armed, so anything
+    # that can reach this port can flood the shared raw stream.
+    admin_listen: "127.0.0.1:9470"
+    {{- include "vantage.logConfig" (dict "root" $ "c" .Values.collector "name" "collector") | nindent 4 }}
+    {{- with .Values.collector.routers }}
+    routers: {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- /* See vantage.streamReplicas: explicit, else 3 on a clustered bundled NATS, else unrendered. */}}
+    {{- $replicas := include "vantage.streamReplicas" . }}
+    {{- if or .Values.collector.streams.partitions $replicas .Values.collector.streams.lsReplicas .Values.collector.streams.routesMaxBytes .Values.collector.streams.rawMaxBytes }}
+    streams:
+      {{- with .Values.collector.streams.partitions }}
+      partitions: {{ . }}
+      {{- end }}
+      {{- with $replicas }}
+      replicas: {{ . }}
+      {{- end }}
+      {{- with .Values.collector.streams.lsReplicas }}
+      ls_replicas: {{ . }}
+      {{- end }}
+      {{- with .Values.collector.streams.routesMaxBytes }}
+      routes_max_bytes: {{ . }}
+      {{- end }}
+      {{- with .Values.collector.streams.rawMaxBytes }}
+      raw_max_bytes: {{ . }}
+      {{- end }}
+    {{- end }}

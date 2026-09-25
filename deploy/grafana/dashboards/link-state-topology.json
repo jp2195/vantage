@@ -1,0 +1,323 @@
+{
+  "uid": "vantage-ls-topology",
+  "title": "Link-state topology",
+  "tags": [
+    "vantage",
+    "link-state"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "",
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "router",
+        "label": "Advertising router",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "multi": false,
+        "includeAll": false,
+        "refresh": 1,
+        "query": "SELECT IPv6NumToString(router_ip) AS __value, router_sysname AS __text FROM (SELECT router_sysname, router_ip FROM vantage.ls_nodes_current UNION DISTINCT SELECT router_sysname, router_ip FROM vantage.ls_links_current UNION DISTINCT SELECT router_sysname, router_ip FROM vantage.ls_nodes UNION DISTINCT SELECT router_sysname, router_ip FROM vantage.ls_links) GROUP BY router_sysname, router_ip ORDER BY router_sysname"
+      },
+      {
+        "name": "peer",
+        "label": "BMP peer",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "multi": false,
+        "includeAll": false,
+        "refresh": 2,
+        "query": "SELECT DISTINCT IPv6NumToString(peer_ip) FROM (SELECT peer_ip, router_ip FROM vantage.ls_nodes_current UNION DISTINCT SELECT peer_ip, router_ip FROM vantage.ls_links_current UNION DISTINCT SELECT peer_ip, router_ip FROM vantage.ls_nodes UNION DISTINCT SELECT peer_ip, router_ip FROM vantage.ls_links) WHERE router_ip = toIPv6('$router') ORDER BY 1"
+      },
+      {
+        "name": "state",
+        "label": "Object state",
+        "type": "custom",
+        "multi": false,
+        "includeAll": false,
+        "query": "active : 0, withdrawn too : 0\\, 1",
+        "current": {
+          "text": "active",
+          "value": "0"
+        },
+        "options": [
+          {
+            "text": "active",
+            "value": "0",
+            "selected": true
+          },
+          {
+            "text": "withdrawn too",
+            "value": "0, 1",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "focus",
+        "label": "Focus node",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "multi": false,
+        "includeAll": true,
+        "allValue": "0",
+        "refresh": 2,
+        "query": "WITH current_session AS (\n    SELECT collector_id, max(session_id) AS sid\n    FROM vantage.peer_current\n    WHERE router_ip = toIPv6('$router')\n    GROUP BY collector_id\n),\nnodeset AS (\n    SELECT k,\n           argMin(name, collector_id) AS name,\n           argMin(router_id, collector_id) AS router_id,\n           argMin(router_id_v4, collector_id) AS router_id_v4\n    FROM (\n        SELECT collector_id, node_key AS k,\n               argMax(name, (seq, stream_seq)) AS name,\n               router_id,\n               argMax(router_id_v4, (seq, stream_seq)) AS router_id_v4,\n               argMax(is_withdraw, (seq, stream_seq)) AS wd\n        FROM vantage.ls_nodes_current\n        WHERE router_ip = toIPv6('$router')\n          AND peer_ip = toIPv6('$peer')\n          AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)\n        GROUP BY collector_id, protocol, identifier, asn, bgpls_id, area, router_id, node_key\n    )\n    WHERE wd IN ($state)\n    GROUP BY k\n)\nSELECT toString(k) AS __value,\n       multiIf(name != '', name,\n               router_id_v4 != '', router_id_v4,\n               length(router_id) = 8, IPv4NumToString(reinterpretAsUInt32(reverse(unhex(router_id)))),\n               router_id) AS __text\nFROM nodeset\nORDER BY __text"
+      },
+      {
+        "name": "collector",
+        "label": "Collector",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "multi": true,
+        "includeAll": true,
+        "refresh": 2,
+        "query": "SELECT DISTINCT collector_id FROM vantage.peer_current WHERE router_ip = toIPv6('$router') ORDER BY collector_id"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "nodeGraph",
+      "title": "Topology",
+      "description": "The current BMP session's graph, drawn from two frames: edges from ls_links_current, and nodes from ls_nodes_current unioned with every endpoint the edges reference. That union is what puts an advertised node with no adjacency on the graph, and an endpoint that was never advertised as a node -- Grafana silently drops an edge whose endpoint is missing from the node frame. A node marked \"endpoint only\" is the second case: seen at the far end of somebody's link, never advertised in its own right.\n\nIt ignores $collector deliberately, and merges rather than repeats. Both collectors' current sessions feed one graph rather than two. ls_nodes.node_key is cityHash64(protocol, identifier, asn, bgpls_id, area, router_id) and carries no collector_id, so two collectors watching one router mint identical node ids: drawing them separately would render the same topology twice under colliding ids. What was wrong here was never the merge -- it was max(session_id) picking one collector's session arbitrarily before the merge happened. is_withdraw is evaluated inside each collector's own session and the results are then unioned, so an object stays on the graph while ANY collector's current session still puts it in $state: the alternative lets one collector's withdrawal erase another collector's live object, decided by an argMax over (ts_collector, stream_seq), which schema.sql says is monotonic only within a session and is therefore clock skew between two pods rather than an ordering. When two collectors do both hold an object, the label, the metrics and the SRGB shown are the LEXICALLY FIRST collector's -- a choice made by this panel, not by the network, and made on the collector id rather than on a timestamp so that it is the same on every refresh. Click a node or an edge to see WHICH collectors hold it: keeping an object while any collector still advertises it is the right call, but it means a collector whose session is still nominally current yet has stopped receiving updates will keep an object drawn on its own. An object listing one collector where you expect two is either a genuinely single-homed view or a session that has gone quiet without going down -- check that collector's session age.",
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "nodes",
+          "rawSql": "WITH current_session AS (\n    SELECT collector_id, max(session_id) AS sid\n    FROM vantage.peer_current\n    WHERE router_ip = toIPv6('$router')\n    GROUP BY collector_id\n),\nedges AS (\n    SELECT local_node_key, remote_node_key,\n           argMin(local_rid, collector_id) AS local_rid,\n           argMin(remote_rid, collector_id) AS remote_rid\n    FROM (\n        SELECT collector_id, local_node_key, remote_node_key,\n               argMax(local_router_id, (seq, stream_seq)) AS local_rid,\n               argMax(remote_router_id, (seq, stream_seq)) AS remote_rid,\n               argMax(is_withdraw, (seq, stream_seq)) AS wd\n        FROM vantage.ls_links_current\n        WHERE router_ip = toIPv6('$router')\n          AND peer_ip = toIPv6('$peer')\n          AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)\n          AND (toUInt64('$focus') = 0\n               OR local_node_key = toUInt64('$focus')\n               OR remote_node_key = toUInt64('$focus'))\n        GROUP BY collector_id, protocol, identifier,\n                 local_asn, local_bgpls_id, local_area, local_router_id,\n                 remote_asn, remote_bgpls_id, remote_area, remote_router_id,\n                 local_ifaddr, remote_ifaddr, link_local_id, link_remote_id,\n                 local_node_key, remote_node_key\n    )\n    WHERE wd IN ($state)\n    GROUP BY local_node_key, remote_node_key\n),\nendpoints AS (\n    SELECT local_node_key AS k, local_rid AS rid FROM edges\n    UNION DISTINCT\n    SELECT remote_node_key AS k, remote_rid AS rid FROM edges\n),\nnodeset AS (\n    SELECT k,\n           argMin(name, collector_id) AS name,\n           argMin(router_id, collector_id) AS router_id,\n           argMin(router_id_v4, collector_id) AS router_id_v4,\n           argMin(srgb_base, collector_id) AS srgb_base,\n           argMin(srgb_size, collector_id) AS srgb_size,\n           argMin(is_pseudonode, collector_id) AS is_pseudonode,\n           arrayStringConcat(arraySort(groupUniqArray(collector_id)), ', ') AS collectors\n    FROM (\n        SELECT collector_id, node_key AS k,\n               argMax(name, (seq, stream_seq)) AS name,\n               router_id,\n               argMax(router_id_v4, (seq, stream_seq)) AS router_id_v4,\n               argMax(srgb_base, (seq, stream_seq)) AS srgb_base,\n               argMax(srgb_size, (seq, stream_seq)) AS srgb_size,\n               ((protocol IN (1, 2) AND length(router_id) = 14) OR (protocol IN (3, 6) AND length(router_id) = 16)) AS is_pseudonode,\n               argMax(is_withdraw, (seq, stream_seq)) AS wd\n        FROM vantage.ls_nodes_current\n        WHERE router_ip = toIPv6('$router')\n          AND peer_ip = toIPv6('$peer')\n          AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)\n          AND (toUInt64('$focus') = 0\n               OR node_key = toUInt64('$focus')\n               OR node_key IN (SELECT k FROM endpoints))\n        GROUP BY collector_id, protocol, identifier, asn, bgpls_id, area, router_id, node_key\n    )\n    WHERE wd IN ($state)\n    GROUP BY k\n),\nunioned AS (\n    SELECT k, max(rid) AS rid FROM (\n        SELECT k, rid FROM endpoints\n        UNION ALL\n        SELECT k, '' AS rid FROM nodeset\n    ) GROUP BY k\n)\nSELECT\n    toString(u.k) AS id,\n    multiIf(n.name != '', n.name,\n            n.router_id_v4 != '', n.router_id_v4,\n            length(if(n.k != 0, n.router_id, u.rid)) = 8,\n                IPv4NumToString(reinterpretAsUInt32(reverse(unhex(if(n.k != 0, n.router_id, u.rid))))),\n            if(n.k != 0, n.router_id, u.rid)) AS title,\n    multiIf(n.k = 0, 'endpoint only', n.is_pseudonode, 'pseudonode (LAN)', 'node') AS subtitle,\n    if(n.srgb_size > 0, concat('SRGB ', toString(n.srgb_base), '-', toString(n.srgb_base + n.srgb_size - 1)), '') AS mainstat,\n    '' AS secondarystat,\n    if(n.k != 0, n.router_id, u.rid) AS detail__router_id,\n    toUInt8(n.k != 0) AS detail__advertised,\n    n.collectors AS detail__collectors\nFROM unioned AS u\nLEFT JOIN nodeset AS n ON u.k = n.k\nORDER BY title"
+        },
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "edges",
+          "rawSql": "WITH current_session AS (\n    SELECT collector_id, max(session_id) AS sid\n    FROM vantage.peer_current\n    WHERE router_ip = toIPv6('$router')\n    GROUP BY collector_id\n)\nSELECT\n    id,\n    source,\n    target,\n    argMin(mainstat, collector_id) AS mainstat,\n    argMin(secondarystat, collector_id) AS secondarystat,\n    arrayStringConcat(arraySort(groupUniqArray(collector_id)), ', ') AS detail__collectors\nFROM (\n    SELECT\n        collector_id,\n        toString(cityHash64(protocol, identifier,\n            local_asn, local_bgpls_id, local_area, local_router_id,\n            remote_asn, remote_bgpls_id, remote_area, remote_router_id,\n            local_ifaddr, remote_ifaddr, link_local_id, link_remote_id)) AS id,\n        toString(local_node_key) AS source,\n        toString(remote_node_key) AS target,\n        argMax(igp_metric, (seq, stream_seq)) AS mainstat,\n        argMax(te_metric, (seq, stream_seq)) AS secondarystat,\n        argMax(is_withdraw, (seq, stream_seq)) AS wd\n    FROM vantage.ls_links_current\n    WHERE router_ip = toIPv6('$router')\n      AND peer_ip = toIPv6('$peer')\n      AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)\n      AND (toUInt64('$focus') = 0\n           OR local_node_key = toUInt64('$focus')\n           OR remote_node_key = toUInt64('$focus'))\n    GROUP BY collector_id, protocol, identifier,\n             local_asn, local_bgpls_id, local_area, local_router_id,\n             remote_asn, remote_bgpls_id, remote_area, remote_router_id,\n             local_ifaddr, remote_ifaddr, link_local_id, link_remote_id,\n             local_node_key, remote_node_key\n)\nWHERE wd IN ($state)\nGROUP BY id, source, target\nORDER BY source, target"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Current session age — $collector",
+      "description": "How long the selected router's current BMP session has been established, measured from the session's first event rather than its most recent one -- a session whose BGP peers are still flapping is not a new session. This measures the BMP transport, not what it carried, so it ignores $peer, $state and $focus. A dual-homed router has one BMP session per collector and they came up at different moments, so this repeats: one tile per collector, each measuring its own session.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 16
+      },
+      "repeat": "collector",
+      "repeatDirection": "h",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "WITH current_session AS (\n    SELECT collector_id, max(session_id) AS sid\n    FROM vantage.peer_current\n    WHERE router_ip = toIPv6('$router')\n    GROUP BY collector_id\n)\nSELECT toUInt64(greatest(dateDiff('second', min(ts_collector), now()), 0)) AS age\nFROM vantage.peer_current\nWHERE router_ip = toIPv6('$router')\n  AND collector_id = '$collector'\n  AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Reconnects in range — $collector",
+      "description": "Distinct BMP sessions from the selected router inside the dashboard's time range. Counted on the router's address rather than its sysname, because two sysnames can share one address and would otherwise be credited with each other's reconnects. This measures the BMP transport, not what it carried, so it ignores $peer, $state and $focus. It repeats per collector because session ids from two collectors are disjoint: counted across both, a dual-homed router that has never reconnected reports one reconnect per collector watching it, which is a count of collectors rather than of router events.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 16
+      },
+      "repeat": "collector",
+      "repeatDirection": "h",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT countDistinct(session_id) AS sessions\nFROM vantage.peer_events\nWHERE router_ip = toIPv6('$router')\n  AND collector_id = '$collector'\n  AND $__timeFilter(ts_collector)"
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Objects in current session — $collector",
+      "description": "Nodes and edges the current session holds for the selected $peer -- the denominator for everything else on this dashboard. It counts what the session carries, not what is drawn, so it ignores $state and $focus: focusing a single node shrinks the graph above while these two numbers stay where they are. It repeats per collector: each collector holds its own session for this router, and the graph above draws both at once, so a single merged number would be the denominator for neither.",
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "repeat": "collector",
+      "repeatDirection": "h",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "WITH current_session AS (\n    SELECT collector_id, max(session_id) AS sid\n    FROM vantage.peer_current WHERE router_ip = toIPv6('$router')\n    GROUP BY collector_id\n)\nSELECT\n    (SELECT countDistinct(node_key) FROM vantage.ls_nodes_current\n     WHERE router_ip = toIPv6('$router') AND peer_ip = toIPv6('$peer')\n       AND collector_id = '$collector'\n       AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)) AS nodes,\n    (SELECT countDistinct((local_node_key, remote_node_key)) FROM vantage.ls_links_current\n     WHERE router_ip = toIPv6('$router') AND peer_ip = toIPv6('$peer')\n       AND collector_id = '$collector'\n       AND (collector_id, session_id) IN (SELECT collector_id, sid FROM current_session)) AS edges"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "View completeness by router",
+      "description": "Objects the current session carries, against objects seen across the whole window, for every router in the archive. The current-session columns read the current-state tables and are not bounded by the time range, so a session that has been up and unchanged for longer than history retention still shows what it carries; the window columns and `sessions` are history in the time range. A router whose current column sits far below its window column has not re-dumped since its last reconnect, so its topology is structurally partial rather than merely stale. XRd nodes can do this; whether that reflects IOS-XR itself or an under-resourced container is unsettled, so do not read it as a platform limitation (measured 2026-08-18: five XRd nodes reset their BMP sessions together every 9m06s while an NX-OS node on the same host held one session throughout). This is a fleet view by design and the only panel here that is not scoped to your selection: it ignores $router, $peer, $state and $focus, and its counts blend every BMP peer of a router. It ignores $collector as well: session identity is (collector_id, router_ip), so a router two collectors both monitor gets one row per collector, in a leading collector column, rather than one row built from whichever collector's session id happened to be larger -- which reported the other collector's live view as objects that had aged out.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true,
+        "footer": {
+          "show": false,
+          "reducer": [
+            "sum"
+          ],
+          "countRows": false,
+          "fields": ""
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "WITH per_router AS (\n    SELECT collector_id, router_sysname, router_ip, max(session_id) AS sid\n    FROM (\n        SELECT collector_id, router_sysname, router_ip, session_id FROM vantage.peer_current\n        UNION ALL\n        SELECT collector_id, router_sysname, router_ip, session_id FROM vantage.peer_events\n    )\n    GROUP BY collector_id, router_sysname, router_ip\n),\nsessions_in_window AS (\n    SELECT collector_id, router_sysname, router_ip,\n           countDistinct(session_id) AS sessions\n    FROM vantage.peer_events\n    WHERE $__timeFilter(ts_collector)\n    GROUP BY collector_id, router_sysname, router_ip\n),\nlinks_current AS (\n    SELECT collector_id, router_sysname, router_ip,\n           countDistinct((local_node_key, remote_node_key)) AS edges_current_session\n    FROM vantage.ls_links_current\n    WHERE (collector_id, router_sysname, router_ip, session_id) IN\n          (SELECT collector_id, router_sysname, router_ip, sid FROM per_router)\n    GROUP BY collector_id, router_sysname, router_ip\n),\nlinks_in_window AS (\n    SELECT collector_id, router_sysname, router_ip,\n           countDistinct((local_node_key, remote_node_key)) AS edges_in_window\n    FROM vantage.ls_links\n    WHERE $__timeFilter(ts_collector)\n    GROUP BY collector_id, router_sysname, router_ip\n),\nnodes_current AS (\n    SELECT collector_id, router_sysname, router_ip,\n           countDistinct(node_key) AS nodes_current_session\n    FROM vantage.ls_nodes_current\n    WHERE (collector_id, router_sysname, router_ip, session_id) IN\n          (SELECT collector_id, router_sysname, router_ip, sid FROM per_router)\n    GROUP BY collector_id, router_sysname, router_ip\n),\nnodes_in_window AS (\n    SELECT collector_id, router_sysname, router_ip,\n           countDistinct(node_key) AS nodes_in_window\n    FROM vantage.ls_nodes\n    WHERE $__timeFilter(ts_collector)\n    GROUP BY collector_id, router_sysname, router_ip\n)\nSELECT\n    r.collector_id AS collector,\n    r.router_sysname AS router,\n    IPv6NumToString(r.router_ip) AS router_ip,\n    coalesce(s.sessions, 0) AS sessions,\n    coalesce(nc.nodes_current_session, 0) AS nodes_current_session,\n    coalesce(nw.nodes_in_window, 0) AS nodes_in_window,\n    coalesce(lc.edges_current_session, 0) AS edges_current_session,\n    coalesce(lw.edges_in_window, 0) AS edges_in_window\nFROM per_router AS r\nLEFT JOIN sessions_in_window AS s ON s.collector_id = r.collector_id\n    AND s.router_ip = r.router_ip AND s.router_sysname = r.router_sysname\nLEFT JOIN links_current AS lc ON lc.collector_id = r.collector_id\n    AND lc.router_ip = r.router_ip AND lc.router_sysname = r.router_sysname\nLEFT JOIN links_in_window AS lw ON lw.collector_id = r.collector_id\n    AND lw.router_ip = r.router_ip AND lw.router_sysname = r.router_sysname\nLEFT JOIN nodes_current AS nc ON nc.collector_id = r.collector_id\n    AND nc.router_ip = r.router_ip AND nc.router_sysname = r.router_sysname\nLEFT JOIN nodes_in_window AS nw ON nw.collector_id = r.collector_id\n    AND nw.router_ip = r.router_ip AND nw.router_sysname = r.router_sysname\nORDER BY r.collector_id, r.router_sysname"
+        }
+      ]
+    }
+  ]
+}

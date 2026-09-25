@@ -1,0 +1,144 @@
+/* The two typefaces --font-ui and --font-data name, self-hosted.
+ *
+ * Self-hosted and not fonts.googleapis.com: this is an on-prem network tool
+ * that has to work on a management network with no route to the internet,
+ * and a stylesheet fetched from Google's CDN is a runtime dependency on a
+ * third party plus a request that tells them who is looking at what. The
+ * @fontsource packages are the idiomatic way to say that -- the same
+ * Google Fonts files, pinned in package-lock.json, bundled by Vite into
+ * webui/dist and embedded in the binary, with no request leaving the box.
+ *
+ * The weights are exactly the set this project's own reference page
+ * loads (its <link> asks for Public Sans 400;500;600;700 and JetBrains
+ * Mono 400;500;700). A weight used in CSS but missing here is not an
+ * error anywhere -- the browser synthesizes it from the nearest face
+ * and it merely looks wrong -- so the full weight set is imported
+ * rather than trimmed to what today's two components happen to use.
+ *
+ * These must stay above :root: @import is only valid before other rules. */
+@import '@fontsource/public-sans/400.css';
+@import '@fontsource/public-sans/500.css';
+@import '@fontsource/public-sans/600.css';
+@import '@fontsource/public-sans/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+:root {
+  --ink: #16181d;
+  --ink-2: #3a4050;
+  /* Darker than the earlier #6f7686, which measured 4.36:1 on --surface-2
+     and 4.07:1 on --neutral-chip, under the 4.5:1 WCAG AA asks of small
+     text, and every use of this token is small text. This clears 4.5:1 on
+     all three backgrounds it sits on; tokens.test.ts holds that. */
+  --muted: #666d7d;
+  --muted-2: #8a91a0;
+  --faint: #9aa1b1;
+  --line-faint: #f0f1f4;
+  --line: #e4e6ea;
+  --line-2: #d9dce2;
+  --divider: #eef0f2;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --chrome: #14161b;
+  --chrome-2: #262a33;
+  --chrome-text: #e6e8ee;
+  /* The muted half of the chrome's text, which this project's token
+     table lists beside --chrome-text: resting nav items and the right
+     cluster's metadata. Named here because a component with a raw
+     #9aa1b1 in it is a defect the design-token test catches. */
+  --chrome-text-2: #9aa1b1;
+  /* Foreground for anything sitting ON a dark surface -- --ink chips and
+     buttons, and the active nav item on --chrome-2. Pure white rather than
+     --chrome-text (#e6e8ee) because these are the elements meant to read as
+     selected: the nav's resting text is --chrome-text, and the active item
+     has to be brighter than its neighbors, not the same. Named for the role
+     rather than the value so a later theme can move it. */
+  --on-dark: #ffffff;
+  --accent: #e8b53e;
+  --accent-ink: #8a6a12;
+  --accent-ink-2: #7a5a0e;
+  --accent-tint: #fffbf0;
+  --good: #0b7c5e;
+  --good-tint: #e6f4ee;
+  --bad: #b1451f;
+  --bad-2: #8a2f14;
+  --bad-tint: #fdf0ec;
+  --neutral-chip: #f1f2f5;
+  --live: #4ade80;
+
+  --font-ui: 'Public Sans', system-ui, -apple-system, sans-serif;
+  --font-data: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* The one place the UI typeface applies to everything by default. Without
+   this, only a component that names var(--font-ui) itself gets it -- every
+   other element falls back to the browser's default serif. That was visible
+   in a screenshot of the running app, on the placeholder screens router.ts
+   carried at the time, since replaced with real ones.
+   Set once here rather than repeated in every component. */
+body {
+  font-family: var(--font-ui);
+}
+
+/* Tabular figures everywhere data is shown: a column of numbers that
+   shifts as digits change is unreadable at a glance, which is the only way
+   these tables are ever read. */
+.mono {
+  font-family: var(--font-data);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Form controls, once, globally.
+ *
+ * Every screen was rendering the browser's native select and input chrome --
+ * gray gradients, system fonts, 2px inset borders -- inside a UI whose
+ * tables and cards follow this project's own design to the pixel. That
+ * mismatch reads as unfinished more loudly than any missing column:
+ * this project specifies bordered fields (1px --line-2, 6px radius,
+ * 12px Public Sans) and exactly one elevation anywhere in the product,
+ * the accent focus ring (`0 0 0 3px rgba(232,181,62,.15)` with a 1.5px
+ * --accent border) on the Looking glass query field.
+ *
+ * Here rather than in each component for the same reason DataTable owns its
+ * grid: ScopePicker plus six screens declare their own controls, and a
+ * seventh would have inherited the native look again. appearance:none is
+ * required for the select -- without it, Chrome keeps its own background and
+ * arrow and ignores the border-radius. */
+select,
+input[type='text'],
+input[type='search'] {
+  appearance: none;
+  -webkit-appearance: none;
+  font: 400 12px var(--font-ui);
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line-2);
+  border-radius: 6px;
+  padding: 6px 9px;
+}
+
+/* Room for the caret glyph, drawn as a background image because
+ * appearance:none removes the platform one. --muted, inline SVG so it needs
+ * no asset (none is shipped) and no network request. */
+select {
+  padding-right: 26px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23666d7d' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+
+select:hover,
+input[type='text']:hover,
+input[type='search']:hover {
+  border-color: var(--muted-2);
+}
+
+/* The product's one elevation. */
+select:focus-visible,
+input[type='text']:focus-visible,
+input[type='search']:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(232, 181, 62, 0.15);
+}

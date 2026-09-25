@@ -1,0 +1,28 @@
+# Dockerfile.collector builds vantage-collector's container image for
+# docker-compose.dev.yml (and as the starting point for a production image).
+# The build stage runs on the build machine's own platform and
+# cross-compiles for the target, so a multi-platform build never runs the Go
+# compiler under emulation. Only the final stage is per-platform.
+FROM --platform=$BUILDPLATFORM golang:1.27@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 AS build
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# .dockerignore keeps .git out of the context, so the version cannot be read
+# here; `make images` and the release workflow pass both as build args.
+# Declared just before the build, not at the top of the stage: every RUN
+# after an ARG misses the cache when its value changes, and the module
+# download above should survive a new commit.
+ARG VERSION=dev
+ARG REVISION=unknown
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/jp2195/vantage/buildinfo.Version=${VERSION} -X github.com/jp2195/vantage/buildinfo.Revision=${REVISION}" -o /out/vantage-collector ./cmd/vantage-collector
+
+# :nonroot runs as uid 65532, the same uid the Helm chart's securityContext
+# sets, so the image is non-root outside Kubernetes too (docker run,
+# docker-compose). The daemons need no privilege: every listener is above
+# 1024 and nothing writes outside a mounted volume.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+COPY --from=build /out/vantage-collector /vantage-collector
+EXPOSE 11019 9469
+ENTRYPOINT ["/vantage-collector"]

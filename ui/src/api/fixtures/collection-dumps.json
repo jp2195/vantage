@@ -1,0 +1,105 @@
+{
+    "data": [
+        {
+            "router_ip": "172.22.0.1",
+            "router_sysname": "bmpgen-iosxr",
+            "archived": 9970,
+            "dumps": 6552,
+            "changes": 3418
+        },
+        {
+            "router_ip": "10.0.103.74",
+            "router_sysname": "nx-p3",
+            "archived": 2460,
+            "dumps": 36,
+            "changes": 2424
+        },
+        {
+            "router_ip": "10.0.103.73",
+            "router_sysname": "",
+            "archived": 1969,
+            "dumps": 186,
+            "changes": 1783
+        },
+        {
+            "router_ip": "10.0.103.63",
+            "router_sysname": "xr-pe2",
+            "archived": 720,
+            "dumps": 701,
+            "changes": 19
+        },
+        {
+            "router_ip": "10.0.103.62",
+            "router_sysname": "xr-pe1",
+            "archived": 580,
+            "dumps": 571,
+            "changes": 9
+        },
+        {
+            "router_ip": "10.0.103.65",
+            "router_sysname": "xr-p2",
+            "archived": 206,
+            "dumps": 201,
+            "changes": 5
+        },
+        {
+            "router_ip": "10.0.103.66",
+            "router_sysname": "nx-spine1",
+            "archived": 171,
+            "dumps": 50,
+            "changes": 121
+        },
+        {
+            "router_ip": "10.0.103.68",
+            "router_sysname": "nx-leaf2",
+            "archived": 90,
+            "dumps": 23,
+            "changes": 67
+        },
+        {
+            "router_ip": "10.0.103.67",
+            "router_sysname": "nx-leaf1",
+            "archived": 89,
+            "dumps": 13,
+            "changes": 76
+        },
+        {
+            "router_ip": "172.22.0.201",
+            "router_sysname": "7181fde60af4",
+            "archived": 78,
+            "dumps": 20,
+            "changes": 58
+        },
+        {
+            "router_ip": "172.22.0.7",
+            "router_sysname": "9dd321a572fe",
+            "archived": 36,
+            "dumps": 28,
+            "changes": 8
+        },
+        {
+            "router_ip": "10.0.103.61",
+            "router_sysname": "xr-rr1",
+            "archived": 29,
+            "dumps": 29,
+            "changes": 0
+        },
+        {
+            "router_ip": "10.0.103.69",
+            "router_sysname": "",
+            "archived": 24,
+            "dumps": 6,
+            "changes": 18
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": 13,
+        "dump_totals": {
+            "archived": 16422,
+            "dumps": 8416,
+            "changes": 8006
+        }
+    }
+}

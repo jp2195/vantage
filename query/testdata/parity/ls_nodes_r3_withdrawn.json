@@ -1,0 +1,25 @@
+[
+  {
+    "RouterSysName": "parity-r3",
+    "RouterIP": "10.250.1.3",
+    "PeerIP": "10.250.2.6",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "Protocol": 2,
+    "Identifier": 0,
+    "ASN": 65250,
+    "BGPLSID": 0,
+    "Area": 0,
+    "RouterID": "0afa00c3",
+    "NodeKey": 5604454442757206416,
+    "RouterIDv4": "",
+    "Name": "parity-ls-c",
+    "SRGBBase": 16000,
+    "SRGBSize": 8000,
+    "SRLBBase": 15000,
+    "SRLBSize": 1000,
+    "SRAlgorithms": "AA==",
+    "IsWithdraw": true,
+    "DumpState": "complete"
+  }
+]

@@ -1,0 +1,30 @@
+# Scrape config for the optional local Prometheus described in
+# deploy/grafana/provisioning/datasources/prometheus.yaml.
+#
+# docker-compose.dev.yml deliberately does not run Prometheus -- the dev stack
+# exists to exercise the pipeline, not to be a monitoring deployment -- so the
+# Fleet health dashboard's two lag panels read "No data" out of the box. Run a
+# scraper alongside the stack, on the same compose network and named
+# `prometheus` so the provisioned datasource's URL resolves:
+#
+#   docker run -d --name prometheus --network vantage_default \
+#     -v "$PWD/deploy/dev/prometheus.yml:/etc/prometheus/prometheus.yml:ro" \
+#     -p 127.0.0.1:9090:9090 prom/prometheus
+#
+# Then restart Grafana once so it reloads provisioning:
+#
+#   docker compose -f docker-compose.dev.yml restart grafana
+#
+# Targets are compose service names on that network, not published host ports:
+# both daemons bind their metrics listeners on all interfaces inside their own
+# container, while the host only sees 9472 on loopback.
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: vantage-writer
+    static_configs:
+      - targets: ["writer:9472"]
+  - job_name: vantage-collector
+    static_configs:
+      - targets: ["collector:9469"]

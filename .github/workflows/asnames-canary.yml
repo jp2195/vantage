@@ -1,0 +1,158 @@
+# A weekly canary on RIPE's asn.txt format, not a build step.
+#
+# Our AS-holder-name lookup (`make fetch-asnames`, deploy/clickhouse's
+# asnames dictionary) rests on invariants that belong to RIPE, not to us,
+# and that were MEASURED rather than assumed against the file as it stood on
+# 2026-09-18: every line ends ", XX" with a two-letter country code, there
+# are zero duplicate ASNs, every first field is a bare integer, and the
+# parse drops no line (122,442 of 122,442 matched). See
+# scripts/check-asnames-format.sh for how that was verified, including
+# four deliberate breaks of those exact invariants.
+#
+# The failure mode is silent: a parser that skips a non-matching line does
+# not error when the format drifts, it just builds a dictionary with fewer
+# ASNs, and nothing on any screen says so -- an operator meets it as names
+# that quietly stopped appearing. `make fetch-asnames` already refuses to
+# write a mismatched TSV, so drift is a hard failure today -- but only for
+# whoever happens to run it next, which could be months away. This workflow
+# runs that same check on a schedule so drift is caught within a week
+# instead.
+#
+# This is a SEPARATE workflow, deliberately never a step in ci.yml. ci.yml
+# runs on every push to every branch and every PR (ci.yml's own `on:`), so a
+# step here would make ftp.ripe.net's uptime a dependency of every commit in
+# this repo -- a third party outage would block work that has nothing to do
+# with AS names. A weekly schedule plus workflow_dispatch (for an on-demand
+# run) keeps that dependency off the commit path entirely.
+name: AS names format canary
+
+on:
+  schedule:
+    # Weekly, Monday just after 06:00 UTC. Offset from the hour on purpose:
+    # GitHub warns that schedules pinned to :00 queue behind everyone else's
+    # top-of-hour cron and can be delayed or dropped under load.
+    - cron: "13 6 * * 1"
+  workflow_dispatch: {}
+
+# Read-only: the job's token can only read this repository, for the
+# checkout. It fetches a public file into the runner's own ephemeral
+# workspace and inspects it. It has no reason to write to this repository,
+# and never does -- see "no artifacts, nothing committed" below.
+permissions: {}
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The mechanism for telling "RIPE is unreachable" apart from "the
+      # format changed" without opening a single log: this reachability
+      # probe is its OWN step, first, before `make fetch-asnames` touches
+      # anything. `make fetch-asnames` exits 1 both for a download failure
+      # and for a parse-invariant mismatch (see the Makefile's
+      # fetch-asnames recipe) -- its exit code alone carries no
+      # distinction, and a single "fetch and validate" step would conflate
+      # the two. Splitting the network check into a step of its own means
+      # the two failure modes get two different names in the run's step
+      # list: if ONLY "Confirm RIPE is reachable" is red, the network is
+      # the story, not the parser. If it is green and a LATER step is red,
+      # the network is not the story -- read that step's log with fetch-time
+      # or content in mind, not connectivity.
+      #
+      # This duplicates the download `make fetch-asnames` does moments
+      # later (a HEAD request here, not the redundant full GET, to keep the
+      # extra cost small); that duplication is deliberate, not an oversight
+      # -- it is the price of the distinction above. The URL is read out of
+      # `make -n fetch-asnames` rather than copied as a literal, so this
+      # step can never point at a different host than the Makefile actually
+      # fetches from.
+      #
+      # Known gap, accepted rather than engineered around: if RIPE goes
+      # unreachable in the few seconds between this probe succeeding and
+      # `make fetch-asnames`'s own curl running, the summary below will call
+      # it "format may have changed" when the real cause was still the
+      # network. That step's log always has the true error either way; this
+      # probe buys a fast, usually-correct triage, not a perfect one.
+      - name: Confirm RIPE is reachable
+        id: reachability
+        run: |
+          url=$(make -n fetch-asnames | grep -oE 'https://[^ ]+asn\.txt' | head -1)
+          if [ -z "$url" ]; then
+            echo "could not find a download URL in 'make -n fetch-asnames' output -- the fetch-asnames recipe may have changed shape; see the Makefile" >&2
+            exit 1
+          fi
+          echo "probing $url"
+          curl -fsSI --max-time 30 -o /dev/null "$url"
+
+      # The real command, unmodified -- the same target an operator runs.
+      - name: Fetch AS names (make fetch-asnames)
+        id: fetch
+        run: make fetch-asnames
+
+      # Reads the artifact fetch-asnames just wrote and asserts the four
+      # measured invariants against it. No artifacts are published and
+      # nothing is committed: deploy/dev/asnames/ is gitignored (see
+      # .gitignore), this job never runs `git add`/`git commit`/`git push`
+      # or actions/upload-artifact, and the runner's whole workspace,
+      # fetched file included, is discarded when the job ends. Publishing
+      # this dataset is a separate, deliberately deferred question --
+      # RIPE's redistribution terms are unverified -- and unrelated to
+      # watching the source's shape, which is all this workflow does.
+      - name: Validate parsed output
+        id: validate
+        run: ./scripts/check-asnames-format.sh
+
+      # The step list above already distinguishes the two failure modes by
+      # NAME (see the comment on "Confirm RIPE is reachable"), but that
+      # still asks a reader to know which step name means what. This step
+      # spells the diagnosis out in plain language on the run's own Summary
+      # page -- the one thing visible without opening any step's log --
+      # because a person glancing at a red run at 3am should not have to
+      # remember this workflow's internal shape to know whether to worry.
+      # `if: always()` is required: a failed step otherwise skips everything
+      # after it, which would suppress the diagnosis exactly when it is
+      # needed most.
+      #
+      # The "OK" branch is a POSITIVE check (all three ran and succeeded),
+      # not the `else` of the two failure branches. Reached by elimination,
+      # `else` would also catch the case where an earlier, un-id'd step --
+      # `actions/checkout` above, or a future step inserted before this one
+      # -- fails outright: reachability/fetch/validate would then all be
+      # `skipped`, which is neither branch's `"failure"`, and elimination
+      # would print "OK" while the job is red. That is the one place a
+      # person is told they can trust without opening a log, so it must be
+      # earned, not assumed.
+      - name: Summarize result
+        if: always()
+        env:
+          REACHABILITY: ${{ steps.reachability.outcome }}
+          FETCH: ${{ steps.fetch.outcome }}
+          VALIDATE: ${{ steps.validate.outcome }}
+        run: |
+          if [ "$REACHABILITY" = "failure" ]; then
+            {
+              echo "### RIPE unreachable"
+              echo "The reachability probe failed before \`make fetch-asnames\` ran anything. This looks like a network or RIPE-side outage, not a format change -- see the \"Confirm RIPE is reachable\" step's log. No action needed unless this repeats next week."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$FETCH" = "failure" ] || [ "$VALIDATE" = "failure" ]; then
+            {
+              echo "### AS-name format may have changed"
+              echo "RIPE answered the reachability probe, but \`make fetch-asnames\` or the validator failed afterward. This is the signal this canary exists for -- read the failing step's log for which invariant broke and the offending line."
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$REACHABILITY" = "success" ] && [ "$FETCH" = "success" ] && [ "$VALIDATE" = "success" ]; then
+            {
+              echo "### OK"
+              echo "RIPE reachable, fetch succeeded, and every invariant held."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Unexpected failure"
+              echo "Neither the reachability probe nor fetch/validate ran to a normal success or failure -- a step before them (checkout) likely failed, or the run was canceled. This is not the RIPE-vs-format distinction this canary makes; open the full run log."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi

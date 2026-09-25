@@ -1,0 +1,35 @@
+[
+  {
+    "RouterSysName": "parity-r1",
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.1",
+    "NextHop": "10.250.9.1",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "RouteType": 5,
+    "RD": "65101:10",
+    "Prefix": "203.0.113.0/24",
+    "MAC": "",
+    "IP": "",
+    "GatewayIP": "",
+    "EthernetTag": 0,
+    "ESI": "00000000000000000000",
+    "PathID": 0,
+    "Labels": [
+      10020
+    ],
+    "RouteTargets": [],
+    "ASPath": [
+      65101,
+      65502,
+      65501
+    ],
+    "OriginASN": 65501,
+    "MED": null,
+    "LocalPref": null,
+    "Communities": [],
+    "LargeCommunities": [],
+    "ExtCommunities": [],
+    "DumpState": "complete"
+  }
+]

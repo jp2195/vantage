@@ -1,0 +1,30 @@
+[
+  {
+    "Rows": [
+      {
+        "RouterSysName": "parity-r2",
+        "RouterIP": "10.250.1.2",
+        "PeerIP": "10.250.2.4",
+        "NextHop": "10.250.9.4",
+        "Collector": "parity-c1",
+        "RIB": "in_pre",
+        "Family": "ipv4u",
+        "Prefix": "198.18.20.0/24",
+        "PathID": 0,
+        "ASPath": [
+          65104,
+          65600
+        ],
+        "OriginASN": 65600,
+        "MED": null,
+        "LocalPref": null,
+        "Communities": [],
+        "LargeCommunities": [],
+        "ExtCommunities": [],
+        "RouteTargets": [],
+        "DumpState": "complete"
+      }
+    ],
+    "Next": null
+  }
+]

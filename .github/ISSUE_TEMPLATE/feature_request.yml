@@ -1,0 +1,21 @@
+name: Feature request
+description: Something vantage should do that it does not.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to find out or do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would solve it
+      description: Optional. The problem matters more than the shape of the fix.
+  - type: input
+    id: router
+    attributes:
+      label: Router vendors involved
+      description: If the feature depends on what a router sends over BMP.

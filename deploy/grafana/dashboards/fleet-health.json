@@ -1,0 +1,740 @@
+{
+  "description": "Is my fleet healthy: peer session state and parser diagnostics across the collector fleet.",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Current state per (router, peer), the same states the API reports: up, down, view_lost, stale and unspecified. This panel deliberately ignores the dashboard's time range: it is a state snapshot, not a time series, and bounding it to the window would make any peer that has been quietly up for longer than the window vanish from the total. It reads peer_current, which holds every peer event of the sessions still retained and has no retention TTL, so a peer that has been up and quiet for longer than history retention still counts as up. A session's up/down state is not a member of a RIB stream, so the $rib variable does not apply here.\n\nEach collector's view is resolved first, the way the API resolves it. Only the collector's current session with the router counts -- the newest session_id per (collector, router) -- so a peer that only a superseded session carried is not counted. Within that session, each (peer, rib)'s latest event is chosen by (seq, stream_seq), the collector's own order within the session with JetStream's publish order breaking ties, not by ts_router: ts_router is router-reported, and a router whose clock jumps backwards would otherwise pin an old state as current. That view's \"up\" is then checked against the collector's heartbeats (collector_beats): it reads view_lost when its session is older than the collector's newest process start, and stale when the collector has not been heard from for 90 seconds. 90 s is the API's default stale_after, fixed here because a dashboard cannot read the API's config; an API configured with another threshold will disagree with this panel near it.\n\nThe views are then merged into one state per (router, peer). An up or down -- the view's resolved state, a router statement from a collector's current session -- outranks everything else, whatever that collector's liveness: a dead or restarted collector's down is still the router's last word and outranks another collector's stale or view_lost, even when that one carries the newer ts_router. Between two ups or downs the newer ts_router wins: across collectors watching one router it is the one clock they share. With no router statement, stale outranks view_lost, and view_lost outranks unspecified: stale means the peer was up when its collector was last heard from, while view_lost is a collector's statement about itself and says nothing about the peer. So a dead or restarted collector does not paint a peer another collector still watches, and a peer whose only watcher went quiet shows as stale.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "up"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0ca30c",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "down"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#d03b3b",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unspecified"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#898781",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "stale"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#e0a100",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "displayLabels": [
+          "percent"
+        ],
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT countIf(kind = 'up') AS up,\n       countIf(kind = 'down') AS down,\n       countIf(kind = 'view_lost') AS view_lost,\n       countIf(kind = 'unspecified') AS unspecified,\n       countIf(kind = 'stale') AS stale\nFROM\n(\n    SELECT\n        multiIf(countIf(view_kind IN ('up', 'down')) > 0,\n                argMaxIf(view_kind, view_ts_router, view_kind IN ('up', 'down')),\n                countIf(view_kind = 'stale') > 0, 'stale',\n                countIf(view_kind = 'view_lost') > 0, 'view_lost',\n                'unspecified') AS kind\n    FROM\n    (\n        SELECT v.router_ip AS router_ip,\n               v.peer_ip   AS peer_ip,\n               multiIf(v.stored_kind = 'up' AND v.sid < toUnixTimestamp64Nano(l.epoch_at), 'view_lost',\n                       v.stored_kind = 'up' AND l.last_beat < now64(3) - toIntervalSecond(90), 'stale',\n                       toString(v.stored_kind)) AS view_kind,\n               v.view_ts_router AS view_ts_router\n        FROM\n        (\n            SELECT peer_current.collector_id AS collector_id,\n                   peer_current.router_ip    AS router_ip,\n                   peer_current.peer_ip      AS peer_ip,\n                   peer_current.rib          AS rib,\n                   cur.sid                   AS sid,\n                   argMax(peer_current.kind, (peer_current.seq, peer_current.stream_seq))      AS stored_kind,\n                   argMax(peer_current.ts_router, (peer_current.seq, peer_current.stream_seq)) AS view_ts_router\n            FROM vantage.peer_current\n            INNER JOIN\n            (\n                SELECT collector_id, router_ip, max(session_id) AS sid\n                FROM vantage.peer_current\n                GROUP BY collector_id, router_ip\n            ) AS cur\n                ON  peer_current.collector_id = cur.collector_id\n                AND peer_current.router_ip    = cur.router_ip\n                AND peer_current.session_id   = cur.sid\n            GROUP BY collector_id, router_ip, peer_ip, rib, sid\n        ) AS v\n        INNER JOIN\n        (\n            SELECT collector_id,\n                   max(started_at)  AS epoch_at,\n                   max(inserted_at) AS last_beat\n            FROM\n            (\n                SELECT collector_id, started_at, inserted_at FROM vantage.collector_beats\n                UNION ALL\n                SELECT DISTINCT collector_id,\n                       toDateTime64(0, 9, 'UTC') AS started_at,\n                       toDateTime64(0, 3, 'UTC') AS inserted_at\n                FROM vantage.peer_current\n            )\n            GROUP BY collector_id\n        ) AS l ON l.collector_id = v.collector_id\n    )\n    GROUP BY router_ip, peer_ip\n)",
+          "refId": "A"
+        }
+      ],
+      "title": "Peer status",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Peer Up and Peer Down events as they arrived -- session churn over time, which is a count of events and not of sessions (see Peer status for current state). A Peer Up/Down is session lifecycle, not a member of a RIB stream, so the $rib variable does not apply here.\n\nTime is filtered on ts_collector, not ts_router. ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (see the QK_TS_ZERO quirk), so filtering on it would silently drop exactly the routers whose clocks are broken. ts_collector is the collector's own clock, and is what PARTITION BY and TTL key on, so this also prunes partitions.\n\nONE COLLECTOR'S NUMBERS, EXCEPT view_lost. Two collectors watching one router both write down its peer lifecycle, and sessions, ups and downs are things the ROUTER did -- a Peer Down is the router telling BMP a BGP session ended, on the wire, with an RFC 7854 reason code -- so summing the observers reports how many collectors watch a router as how often it reconnected. Confirmed on a lab archive on 2026-09-20: router 172.22.0.8 reported 7 sessions where dev-c1 saw 5 and dev-c2 saw 2, and 14 ups against their 10 and 4. The collector is chosen per router as the one that heard the most FROM THE ROUTER, and that collector's whole row is reported.\n\nview_lost is SUMMED instead, deliberately. It is the collector saying it stopped being able to see the peer (down_reason is 0 because the router said nothing at all), so it describes collection, and a collection quantity honestly scales with the number of collectors. Choosing the best vantage point for it would be worse than imprecise: a collector that has gone blind records fewer router statements BY DEFINITION, so it always loses the choice, and the one column that exists to surface its blindness would be read off the collector that stayed healthy. One row therefore mixes two subjects, which the column names carry.\n\nThe ranking counts up + down and not every event, or a collector could win the choice by going blind.\n\nThe collector is chosen ONCE OVER THE WHOLE TIME RANGE, not per bucket. A per-bucket choice compares two collectors' copies of one event only when both land in the same bucket, and the column the bucketing reads -- ts_collector -- is precisely the column two collectors disagree about, so it fails wherever they are not watching at the same times. Choosing once also stops consecutive points being drawn by different observers, which puts a step in the chart no router caused. Summing across ROUTERS is still addition; they are disjoint.\n\nThis panel and the \"Lost view vs peer down\" table beside it name the same three columns off the same table, so they resolve collectors the same way on purpose. When the table best-vantaged and this chart still summed, one dashboard answered one question two ways with both numbers visible at once.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "up"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#0ca30c",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "down"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#d03b3b",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unspecified"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#898781",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 2,
+          "queryType": "sql",
+          "rawSql": "SELECT t,\n       sumIf(up, mine = best)          AS up,\n       sumIf(down, mine = best)        AS down,\n       sum(view_lost)                  AS view_lost,\n       sumIf(unspecified, mine = best) AS unspecified\nFROM (\n  SELECT t, view_lost, up, down, unspecified,\n         (router_events, collector_id)                   AS mine,\n         max(mine) OVER (PARTITION BY router_ip)         AS best\n  FROM (\n    SELECT t, router_ip, collector_id, up, down, view_lost, unspecified,\n           sum(up + down) OVER (PARTITION BY router_ip, collector_id) AS router_events\n    FROM (\n      SELECT $__timeInterval(ts_collector) AS t,\n             router_ip,\n             collector_id,\n             countIf(kind = 'up')          AS up,\n             countIf(kind = 'down')        AS down,\n             countIf(kind = 'view_lost')   AS view_lost,\n             countIf(kind = 'unspecified') AS unspecified\n      FROM vantage.peer_events FINAL\n      WHERE $__timeFilter(ts_collector)\n      GROUP BY t, router_ip, collector_id\n    )\n  )\n)\nGROUP BY t\nORDER BY t",
+          "refId": "A"
+        }
+      ],
+      "title": "Peer up/down over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "One row per (router IP, sysName) pair. Grouping by IP alone and taking any() sysName hid every router that shares an address with another -- a lab reuses addresses as devices are rebuilt -- and silently summed several routers' event counts into one row. A router that sent no sysName in its BMP initiation TLV shows as '(no sysName TLV)' rather than as a blank cell. Peer events carry no meaningful RIB stream, so the $rib variable does not apply here.\n\nTime is filtered on ts_collector, not ts_router. ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (see the QK_TS_ZERO quirk), so filtering on it would silently drop exactly the routers whose clocks are broken. ts_collector is the collector's own clock, and is what PARTITION BY and TTL key on, so this also prunes partitions.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#2a78d6",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last_seen"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "dateTimeAsIso"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT toString(router_ip) AS router_ip,\n       if(router_sysname = '', '(no sysName TLV)', router_sysname) AS sysname,\n       count() AS events,\n       max(ts_collector) AS last_seen\nFROM vantage.peer_events FINAL\nWHERE $__timeFilter(ts_collector)\nGROUP BY router_ip, router_sysname\nORDER BY events DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Routers",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Parser diagnostics across all ten tables carrying parse_flags, not just route_unicast: an unknown-family fallback fires most often on BGP-LS, and reading one table reported 2 occurrences of a condition that had fired 43 times fleet-wide. Counted per envelope (distinct stream sequence, qualified by stream because each stream numbers its own), not per row -- one truncated-attribute UPDATE carrying 50 prefixes is one parse event, not 50. peer_events is included without the $rib filter: a peer lifecycle event is not a member of a RIB stream.\n\nls_prefixes and eor_events are the ninth and tenth, and both were missing until a completeness check caught the gap: ls_prefixes carries 61 flagged rows in the archive and had never been read here at all, and eor_events was initially missed by this union and has since been added. On eor_events: all 56 End-of-RIB markers in the archive carry parse flags (56 PARSE_FLAG_VERSION_UNPARSED, 4 PARSE_FLAG_UNKNOWN_FAMILY), and before the table existed they were route_unicast rows this panel already counted. Splitting the artifact out of the route tables silently removed 60 flag events from the fleet-wide total -- the same under-reporting this panel's first paragraph describes. It reads through SELECT DISTINCT rather than FINAL because eor_events is a plain MergeTree (ClickHouse refuses FINAL on one outright): the table has no deduplication, so a JetStream redelivery leaves a second, byte-identical row, and DISTINCT is what collapses it here. The other eight arms no longer read FINAL: this panel counts uniqExact((stream, stream_seq)) and a redelivery carries the SAME stream_seq, so the outer aggregate already collapses the duplicate on every arm -- FINAL was doing work that was being done twice, at 48x the rows read and 1,270x the memory (measured on a scale test on 2026-08-13). TestFleetParseFlagsCountsARedeliveredEnvelopeOnce is what holds that: with FINAL gone it fails if the outer aggregate is ever weakened to a row count. Its markers count as ROUTES because that is the stream they arrive on -- an End-of-RIB is a RouteEvent, so its stream_seq is numbered in the routes stream's own space.\n\nTime is filtered on ts_collector, not ts_router. ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (see the QK_TS_ZERO quirk), so filtering on it would silently drop exactly the routers whose clocks are broken. ts_collector is the collector's own clock, and is what PARTITION BY and TTL key on, so this also prunes partitions.\n\nEvery branch reads $rib, peer_events included. peer_events did not previously respect this filter, which meant selecting a single stream filtered seven tables and left the eighth contributing its flags unconditionally, mixing a filtered and an unfiltered population; it is filtered the same way now. peer_events does carry a rib value -- this archive holds one loc_rib row -- so there was no basis for treating it differently from stats_events, which was already filtered.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "#2a78d6",
+            "mode": "fixed"
+          },
+          "custom": {
+            "fillOpacity": 80
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "orientation": "horizontal",
+        "showValue": "always",
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        },
+        "xTickLabelRotation": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "sql",
+          "rawSql": "SELECT flag, uniqExact((stream, stream_seq)) AS envelopes\nFROM\n(\n    SELECT 'ROUTES' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.route_unicast\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'ROUTES' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.route_vpn\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'ROUTES' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.route_evpn\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'ROUTES' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM (SELECT DISTINCT * FROM vantage.eor_events)\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'LS' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.ls_events\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'LS' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.ls_nodes\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'LS' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.ls_links\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'LS' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.ls_prefixes\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'STATS' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.stats_events\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    UNION ALL\n    SELECT 'PEER' AS stream, stream_seq, arrayJoin(parse_flags) AS flag\n    FROM vantage.peer_events\n    WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n)\nGROUP BY flag\nORDER BY envelopes DESC",
+          "refId": "A"
+        }
+      ],
+      "title": "Parse flags",
+      "type": "barchart"
+    },
+    {
+      "id": 101,
+      "type": "timeseries",
+      "title": "Writer lag by stream",
+      "description": "Envelopes sitting in each JetStream stream that vantage-writer has not yet archived: undelivered plus delivered-but-unacked. Sustained growth means the writer is falling behind the routers; since the streams are DiscardOld with a finite MaxAge, lag that outlives the retention window becomes the permanent loss counted in the panel to the right. This panel reads Prometheus rather than the archive, so the $rib variable does not apply to it: an envelope still waiting in JetStream has not been decoded into a RIB stream yet, and has no rib to be filtered by.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vantage-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "spanNulls": false
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vantage-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "vantage_sink_consumer_lag",
+          "legendFormat": "{{stream}}",
+          "range": true
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "stat",
+      "title": "Envelopes lost to retention",
+      "description": "Envelopes discarded by stream retention before vantage-writer acked them, over the selected range. Each one is a row missing from ClickHouse for good -- no backfill exists, because the bytes are gone from JetStream too. Any value above zero is a permanent hole in the archive, not a transient. increase() is used rather than the raw counter so a writer restart does not read as the hole being repaired. This panel reads Prometheus rather than the archive, so the $rib variable does not apply to it: an envelope discarded before it was ever written has no rib -- which is also why the loss cannot be attributed to one RIB stream after the fact.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "vantage-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "vantage-prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum by (stream) (increase(vantage_sink_envelopes_lost_total[$__range]))",
+          "legendFormat": "{{stream}}",
+          "instant": true
+        }
+      ]
+    },
+    {
+      "id": 201,
+      "type": "timeseries",
+      "title": "Loc-RIB routes by peer",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Routes in each peer's Loc-RIB, as the router itself reports them (RFC 7854 §4.8 stat type 8). This is the router's own count, not ours, which makes it the one number on these dashboards that can be compared against what we archived: a Loc-RIB of 11 against far fewer rows in route_unicast means we are missing routes the router believes it sent. Each series is the last sample in the bucket, not the max, because this is a gauge.\n\nTime is filtered on ts_collector, not ts_router: ts_router is router-reported and untrusted (a zero clock reports 1970 -- see the QK_TS_ZERO quirk), and ts_collector is what PARTITION BY and TTL key on. The $rib variable is deliberately not applied -- a BMP Stats Report describes a peer's inbound processing and is always recorded as in_pre, so filtering by $rib would blank these panels whenever an operator selects an adj-RIB-out view.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(ts_collector) AS t,\n       concat(toString(router_ip), ' / ', toString(peer_ip)) AS peer,\n       argMax(counters[8], (ts_collector, stream_seq)) AS value\nFROM vantage.stats_events\nWHERE $__timeFilter(ts_collector) AND has(counters, 8)\nGROUP BY t, peer\nORDER BY t"
+        }
+      ]
+    },
+    {
+      "id": 202,
+      "type": "timeseries",
+      "title": "Prefixes rejected by inbound policy",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Prefixes the router discarded before they ever reached its RIB (RFC 7854 §4.8 stat type 0). Nothing else on either dashboard can show this: the routes are rejected on the router, so they are never advertised over BMP and never reach ClickHouse. A rising count here is the difference between \"the peer is sending nothing\" and \"our own policy is dropping what it sends\" -- two situations that look identical in every other panel.\n\nTime is filtered on ts_collector, not ts_router: ts_router is router-reported and untrusted (a zero clock reports 1970 -- see the QK_TS_ZERO quirk), and ts_collector is what PARTITION BY and TTL key on. The $rib variable is deliberately not applied -- a BMP Stats Report describes a peer's inbound processing and is always recorded as in_pre, so filtering by $rib would blank these panels whenever an operator selects an adj-RIB-out view.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "showPoints": "auto",
+            "spanNulls": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "format": 1,
+          "queryType": "sql",
+          "editorType": "sql",
+          "rawSql": "SELECT $__timeInterval(ts_collector) AS t,\n       concat(toString(router_ip), ' / ', toString(peer_ip)) AS peer,\n       argMax(counters[0], (ts_collector, stream_seq)) AS value\nFROM vantage.stats_events\nWHERE $__timeFilter(ts_collector) AND has(counters, 0)\nGROUP BY t, peer\nORDER BY t"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Lost view vs peer down",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 301,
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Two different failures, told apart. `bmp_sessions` counts how many times this collector held a BMP session with the router, so anything above 1 means the view was LOST and rebuilt -- the router stopped talking to us. `peer_downs` counts Peer Down messages, which is the router telling us a BGP session dropped: a fact about the network.\n\nOn this archive the two are almost perfectly inverted. Five lab XR routers turned over 354 BMP sessions between them and sent not one Peer Down; the lab's NX-OS routers held six sessions and sent seventeen. \"Peer up/down over time\" above plots both as undifferentiated event counts, so those 354 lost views arrive there as a wall of healthy-looking `up` spikes -- each one a fresh session re-dumping its whole table. Read a high session count as \"we could not keep a connection\", not as instability in the network.\n\n`peer_ups` is a message count, not a peer count: a router with several BGP peers sends one per peer per session. This panel ignores $rib -- a BMP session is per router, not per RIB stream. Time is filtered on ts_collector, not ts_router, because a router with a zero clock reports 1970 (the QK_TS_ZERO quirk).\n\nONE COLLECTOR'S NUMBERS, EXCEPT view_lost. Two collectors watching one router both write down its peer lifecycle, and sessions, ups and downs are things the ROUTER did -- a Peer Down is the router telling BMP a BGP session ended, on the wire, with an RFC 7854 reason code -- so summing the observers reports how many collectors watch a router as how often it reconnected. Confirmed on a lab archive on 2026-09-20: router 172.22.0.8 reported 7 sessions where dev-c1 saw 5 and dev-c2 saw 2, and 14 ups against their 10 and 4. The collector is chosen per router as the one that heard the most FROM THE ROUTER, and that collector's whole row is reported.\n\nview_lost is SUMMED instead, deliberately. It is the collector saying it stopped being able to see the peer (down_reason is 0 because the router said nothing at all), so it describes collection, and a collection quantity honestly scales with the number of collectors. Choosing the best vantage point for it would be worse than imprecise: a collector that has gone blind records fewer router statements BY DEFINITION, so it always loses the choice, and the one column that exists to surface its blindness would be read off the collector that stayed healthy. One row therefore mixes two subjects, which the column names carry.\n\nThe ranking counts up + down and not every event, or a collector could win the choice by going blind.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT router,\n       bmp_sessions,\n       peer_ups,\n       peer_downs,\n       view_lost,\n       last_seen\nFROM (\n  SELECT router,\n         bmp_sessions,\n         peer_ups,\n         peer_downs,\n         sum(view_lost) OVER (PARTITION BY router_ip, router) AS view_lost,\n         max(last_seen) OVER (PARTITION BY router_ip, router) AS last_seen,\n         (router_events, collector_id)                        AS mine,\n         max(mine) OVER (PARTITION BY router_ip, router)       AS best\n  FROM (\n    SELECT if(router_sysname = '', '(no sysName TLV)', router_sysname) AS router,\n           router_ip,\n           collector_id,\n           uniqExact(session_id)       AS bmp_sessions,\n           countIf(kind = 'up')        AS peer_ups,\n           countIf(kind = 'down')      AS peer_downs,\n           countIf(kind = 'view_lost') AS view_lost,\n           peer_ups + peer_downs       AS router_events,\n           max(ts_collector)           AS last_seen\n    FROM vantage.peer_events FINAL\n    WHERE $__timeFilter(ts_collector)\n    GROUP BY router_ip, router, collector_id\n  )\n)\nWHERE mine = best\nORDER BY bmp_sessions DESC, router",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Why peers went down",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "id": 302,
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "description": "Why the router said a BGP session went down, decoded from RFC 7854 §4.9. The collector stores the reason byte exactly as it arrives and nothing in this codebase names it, so this panel is the first place the code is read as English.\n\nReason 5 is the one to read carefully: it does NOT mean a session failed. It means the router will stop reporting this peer -- a configuration change, not an outage -- and treating it as a failure sends someone hunting for something that never happened. A code RFC 7854 does not define is labeled as undefined and keeps its number, rather than being folded into the nearest reason that looks plausible.\n\nOnly Peer Down events are counted. A Peer Up carries down_reason = 0, and 0 is not a reason code -- an unfiltered version of this query renders 788 of them as \"reason 0\". A router that lost its BMP session entirely appears NOWHERE here: nothing was sent, which is exactly why \"Lost view vs peer down\" sits beside this panel. This panel ignores $rib -- a Peer Down is per BGP peer, not per RIB stream.",
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "queryType": "table",
+          "rawSql": "SELECT if(router_sysname = '', '(no sysName TLV)', router_sysname) AS router,\n       IPv6NumToString(peer_ip) AS peer,\n       multiIf(\n         down_reason = 1, '1: local system closed, NOTIFICATION follows',\n         down_reason = 2, '2: local system closed, FSM event follows',\n         down_reason = 3, '3: remote system closed, NOTIFICATION follows',\n         down_reason = 4, '4: remote system closed, no notification',\n         down_reason = 5, '5: peering ceased -- this peer is no longer being reported',\n         concat(toString(down_reason), ': not a reason code defined in RFC 7854')\n       ) AS reason,\n       count() AS downs,\n       max(ts_collector) AS last_seen\nFROM vantage.peer_events FINAL\nWHERE $__timeFilter(ts_collector) AND kind = 'down'\nGROUP BY router_ip, router, peer_ip, peer, down_reason\nORDER BY downs DESC, router, peer",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 39,
+  "tags": [
+    "vantage"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "description": "Which of the four RFC 8671 RIB streams to show. Defaults to All: every route this fleet has recorded so far is in_pre, so selecting any other single value empties every panel on the dashboard, which reads as 'the fleet is silent' rather than 'the filter matched nothing'. Panels over peer_events do not use it -- a session going up or down is not a member of a RIB stream.",
+        "hide": 0,
+        "includeAll": true,
+        "label": "RIB stream",
+        "multi": false,
+        "name": "rib",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": "$__all"
+          },
+          {
+            "selected": false,
+            "text": "in_pre",
+            "value": "in_pre"
+          },
+          {
+            "selected": false,
+            "text": "in_post",
+            "value": "in_post"
+          },
+          {
+            "selected": false,
+            "text": "out_pre",
+            "value": "out_pre"
+          },
+          {
+            "selected": false,
+            "text": "out_post",
+            "value": "out_post"
+          }
+        ],
+        "query": "in_pre,in_post,out_pre,out_post",
+        "skipUrlSync": false,
+        "type": "custom"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "title": "Fleet health",
+  "uid": "vantage-fleet-health",
+  "version": 3
+}

@@ -1,0 +1,21 @@
+[
+  {
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.3",
+    "Collector": "parity-c1",
+    "RIB": "loc_rib",
+    "ASN": 65103,
+    "State": "up",
+    "DumpStates": {
+      "ipv4u": "complete"
+    },
+    "SessionID": 25002,
+    "Routes": 2,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:00:28Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  }
+]

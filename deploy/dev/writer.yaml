@@ -1,0 +1,8 @@
+# deploy/dev/writer.yaml is vantage-writer's config for
+# docker-compose.dev.yml. nats_url and clickhouse_dsn point at the other
+# dev-stack containers by their compose service name; every other field
+# (metrics_listen, batch_rows, batch_wait, fetch_batch) is left to
+# LoadConfig's built-in defaults, which are already sensible for a
+# single-node dev install.
+nats_url: "nats://nats:4222"
+clickhouse_dsn: "clickhouse://vantage:vantage@clickhouse:9000/vantage"

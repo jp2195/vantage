@@ -1,0 +1,105 @@
+[
+  {
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.1",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "ASN": 65101,
+    "State": "up",
+    "DumpStates": {
+      "evpn": "complete",
+      "ipv4u": "complete",
+      "ipv6u": "dumping",
+      "lu4": "dumping",
+      "vpn4": "dumping"
+    },
+    "SessionID": 25002,
+    "Routes": 5,
+    "HoldTime": 180,
+    "HoldTimeSeen": true,
+    "UpSince": "2030-01-01T00:00:22Z",
+    "MPFamilies": [
+      "ipv4u",
+      "ipv6u",
+      "vpn4",
+      "lu4",
+      "evpn"
+    ],
+    "AddPathFamilies": [
+      "ipv4u"
+    ],
+    "SysDescr": "parity router one"
+  },
+  {
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.2",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "ASN": 65102,
+    "State": "down",
+    "DumpStates": {},
+    "SessionID": 25002,
+    "Routes": 0,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:00:25Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  },
+  {
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.3",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "ASN": 65103,
+    "State": "up",
+    "DumpStates": {
+      "ipv4u": "dumping"
+    },
+    "SessionID": 25002,
+    "Routes": 1,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:00:27Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  },
+  {
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.3",
+    "Collector": "parity-c1",
+    "RIB": "loc_rib",
+    "ASN": 65103,
+    "State": "up",
+    "DumpStates": {
+      "ipv4u": "complete"
+    },
+    "SessionID": 25002,
+    "Routes": 2,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:00:28Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  },
+  {
+    "RouterIP": "10.250.1.1",
+    "PeerIP": "10.250.2.8",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "ASN": 65108,
+    "State": "view_lost",
+    "DumpStates": {},
+    "SessionID": 25002,
+    "Routes": 0,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:00:29Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  }
+]

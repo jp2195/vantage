@@ -1,0 +1,7 @@
+block.ts:3
+config.yaml:2
+mid-block.ts:3
+notes.md:3
+page.vue:2
+same-line.ts:1
+same-line.ts:1

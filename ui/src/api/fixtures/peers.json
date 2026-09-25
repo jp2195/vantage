@@ -1,0 +1,43 @@
+{
+    "data": [
+        {
+            "router_ip": "10.0.0.80",
+            "peer_ip": "0.0.0.0",
+            "collector": "vantage-collector-0",
+            "rib": "loc_rib",
+            "asn": 65010,
+            "state": "up",
+            "dump_states": {
+                "evpn": "complete",
+                "vpn6": "complete"
+            },
+            "session_id": "1788722065877779361",
+            "routes": 0
+        },
+        {
+            "router_ip": "10.0.0.80",
+            "peer_ip": "172.31.0.90",
+            "collector": "vantage-collector-0",
+            "rib": "in_pre",
+            "asn": 65010,
+            "state": "up",
+            "dump_states": {
+                "evpn": "complete",
+                "ipv4u": "dumping",
+                "vpn6": "complete"
+            },
+            "session_id": "1788722065877779361",
+            "routes": 2
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [
+            {
+                "code": "session_dumping",
+                "message": "at least one contributing peer is still sending its initial RIB dump, so this answer is a partial view of that peer's routes rather than its full table"
+            }
+        ],
+        "total_matched": null
+    }
+}

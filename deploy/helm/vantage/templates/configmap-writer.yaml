@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vantage.fullname" . }}-writer
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+data:
+  writer.yaml: |
+    nats_url: {{ include "vantage.natsURL" . | quote }}
+    {{- if .Values.nats.tls.enabled }}
+    nats_tls:
+      ca_file: {{ printf "%s/ca.crt" (include "vantage.natsTLSDir" .) | quote }}
+      cert_file: {{ printf "%s/tls.crt" (include "vantage.natsTLSDir" .) | quote }}
+      key_file: {{ printf "%s/tls.key" (include "vantage.natsTLSDir" .) | quote }}
+    {{- end }}
+    metrics_listen: "0.0.0.0:{{ .Values.writer.metricsPort }}"
+    {{- include "vantage.logConfig" (dict "root" $ "c" .Values.writer "name" "writer") | nindent 4 }}
+    # The password is the mounted Secret key, not part of clickhouse_dsn: the
+    # render-config init container writes a DSN carrying only the username.
+    clickhouse_password_file: {{ printf "%s/password" (include "vantage.clickhousePasswordDir" .) | quote }}
+    {{- with .Values.writer.batchRows }}
+    batch_rows: {{ . }}
+    {{- end }}
+    {{- with .Values.writer.batchWait }}
+    batch_wait: {{ . | quote }}
+    {{- end }}
+    {{- with .Values.writer.fetchBatch }}
+    fetch_batch: {{ . }}
+    {{- end }}

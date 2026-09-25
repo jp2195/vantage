@@ -1,0 +1,12 @@
+{
+  "Rows": [
+    {
+      "RouterIP": "10.250.1.1",
+      "PeerIP": "10.250.2.3",
+      "Reported": 3,
+      "Archived": 2,
+      "HasStat": true
+    }
+  ],
+  "Total": 1
+}

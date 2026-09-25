@@ -1,0 +1,36 @@
+{
+    "data": [
+        {
+            "flag": "PARSE_FLAG_LS_TLV_UNKNOWN",
+            "envelopes": 2626
+        },
+        {
+            "flag": "PARSE_FLAG_VERSION_UNPARSED",
+            "envelopes": 1530
+        },
+        {
+            "flag": "PARSE_FLAG_LS_NLRI_UNDECODED",
+            "envelopes": 117
+        },
+        {
+            "flag": "PARSE_FLAG_UNKNOWN_FAMILY",
+            "envelopes": 59
+        },
+        {
+            "flag": "PARSE_FLAG_TS_COLLECTOR_FALLBACK",
+            "envelopes": 42
+        },
+        {
+            "flag": "PARSE_FLAG_TREAT_AS_WITHDRAW_7606",
+            "envelopes": 2
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": 6,
+        "flag_totals": {
+            "envelopes": 4376
+        }
+    }
+}

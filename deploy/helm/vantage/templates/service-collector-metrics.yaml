@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vantage.fullname" . }}-collector
+  labels:
+    {{- include "vantage.labels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+spec:
+  type: ClusterIP
+  clusterIP: None
+  # The collector is NotReady while its NATS connection is down (readiness
+  # is /readyz), and that is exactly when the API's collector card and a
+  # Prometheus scrape most need to reach it. Without this, a NotReady pod's
+  # per-pod DNS name stops resolving and the card shows "unreachable" instead
+  # of what the collector itself reports.
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "vantage.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+  ports:
+    - name: metrics
+      port: {{ .Values.collector.metricsPort }}
+      targetPort: metrics

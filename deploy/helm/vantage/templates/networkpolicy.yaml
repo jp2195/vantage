@@ -1,0 +1,100 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+Ingress-only NetworkPolicies; see networkPolicy in values.yaml for what each
+admits and why. Accepted and ignored on a cluster whose CNI does not
+enforce NetworkPolicy.
+*/}}
+{{- if .Values.nats.enabled }}
+{{- $natsName := .Values.nats.nameOverride | default "nats" }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vantage.fullname" . }}-nats
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  # The subchart's own selector labels (nats.selectorLabels): the NATS
+  # server pods, and not nats-box, whose component is nats-box.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $natsName }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: nats
+  policyTypes: [Ingress]
+  ingress:
+    # Client connections. NATS runs with no authentication of its own; with
+    # nats.tls off, reaching this port is enough to publish forged routes
+    # and read every router's feed, so only the two daemons that use it may.
+    - ports:
+        - port: {{ .Values.nats.config.nats.port | default 4222 }}
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              {{- include "vantage.selectorLabels" . | nindent 14 }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [collector, writer]
+        {{- if .Values.nats.natsBox.enabled }}
+        # nats-box, and the subchart's `helm test` pod, which is built from
+        # nats-box's pod template with its own component label.
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $natsName }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+            matchExpressions:
+              - key: app.kubernetes.io/component
+                operator: In
+                values: [nats-box, test-request-reply]
+        {{- end }}
+    # Cluster routes, between the NATS pods themselves: every server dials
+    # every other on this port, and JetStream's stream replication and
+    # leader elections run over these connections, so all three pods must
+    # reach each other here. Mutual TLS (nats.config.cluster.tls) is what
+    # authenticates a peer; this rule only keeps other pods off the port.
+    # Unused by a single server, and harmless there.
+    - ports:
+        - port: {{ .Values.nats.config.cluster.port | default 6222 }}
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $natsName }}
+              app.kubernetes.io/instance: {{ .Release.Name }}
+              app.kubernetes.io/component: nats
+    {{- with .Values.networkPolicy.nats.metricsFrom }}
+    - ports:
+        - port: {{ $.Values.nats.config.monitor.port | default 8222 }}
+          protocol: TCP
+        {{- if $.Values.nats.promExporter.enabled }}
+        - port: {{ $.Values.nats.promExporter.port | default 7777 }}
+          protocol: TCP
+        {{- end }}
+      from: {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.networkPolicy.nats.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+---
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vantage.fullname" . }}-api
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "vantage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: api
+  policyTypes: [Ingress]
+  ingress:
+    # No `from`: any source, in the cluster or outside it through whatever
+    # Service or Ingress an operator puts in front. The API authenticates
+    # its own callers; this only closes the ports it does not serve.
+    - ports:
+        - port: {{ .Values.api.port }}
+          protocol: TCP
+        - port: {{ .Values.api.metricsPort }}
+          protocol: TCP
+{{- end }}

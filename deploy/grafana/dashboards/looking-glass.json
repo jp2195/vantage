@@ -1,0 +1,136 @@
+{
+  "uid": "vantage-looking-glass",
+  "title": "Looking glass",
+  "tags": [
+    "vantage",
+    "routes"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "",
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "textbox",
+        "name": "target",
+        "label": "Address or prefix",
+        "description": "An address (10.77.14.7) or a prefix (10.77.14.0/24), v4 or v6. A typed prefix is reduced to its network address before the lookup, so 10.77.14.0/24 returns the routes COVERING 10.77.14.0 -- not the routes contained within that /24. Empty means show everything, so the dashboard is useful when opened. Text that is not an address returns no rows rather than an error.",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "custom",
+        "name": "rib",
+        "label": "RIB stream",
+        "description": "Which of the RFC 8671 adj-RIB streams to search, or loc_rib for RFC 9069 Loc-RIB -- the router's own table after best-path selection. Defaults to All.",
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "collector",
+        "label": "Collector",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "multi": true,
+        "includeAll": true,
+        "refresh": 2,
+        "query": "SELECT DISTINCT collector_id FROM vantage.peer_current ORDER BY collector_id"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "What we know — $collector",
+      "description": "Framing for the table below, for the same $target and $rib. \"Routers advertising\" counts only routers whose most recent observation is an advertisement, so a withdrawn route reads as zero. \"From a superseded session\" counts rows resting on a BMP session that is no longer the router's current one -- on this archive that is most of them, because XRd resets its session every few minutes and reports its table only at session start. One tile per collector. A router two collectors both watch has one BMP session per collector, so these numbers describe the collector named in the heading and nothing else, and \"from a superseded session\" compares every row against ITS OWN collector's current session -- compared against the larger of two unrelated session ids, one collector's live routes all read as stale.",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "repeat": "collector",
+      "repeatDirection": "h",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT countDistinctIf(m.router_ip, m.is_withdraw = 0) AS routers_advertising, toUInt64(max(m.prefix_len)) AS most_specific, countIf(m.session_id != s.sid) AS from_superseded_session FROM ( WITH toIPv6OrNull(splitByChar('/', ${target:sqlstring})[1]) AS target, splitByChar('/', prefix)[1] AS net, toIPv6OrNull(net) AS netaddr, toUInt8OrNull(splitByChar('/', prefix)[2]) AS len, toUInt8(coalesce(len, 0) + if(position(net, ':') > 0, 0, 96)) AS len6, IPv6CIDRToRange(coalesce(netaddr, toIPv6('::')), len6) AS rng SELECT collector_id, router_ip, peer_ip, rib, prefix, path_id, coalesce(len, 0) AS prefix_len, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(session_id, (ts_collector, stream_seq)) AS session_id FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND (${target:sqlstring} = '' OR (target IS NOT NULL AND netaddr IS NOT NULL AND len IS NOT NULL AND target >= rng.1 AND target <= rng.2)) GROUP BY collector_id, router_ip, peer_ip, rib, prefix, path_id, prefix_len ) AS m LEFT JOIN ( SELECT collector_id, router_ip, max(session_id) AS sid FROM vantage.peer_current GROUP BY collector_id, router_ip ) AS s ON s.collector_id = m.collector_id AND s.router_ip = m.router_ip WHERE m.collector_id = '$collector'"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Covering routes",
+      "description": "Every route whose prefix contains $target, grouped by collector and most specific first WITHIN each collector -- what would actually carry traffic to that address. One row per (router, peer, RIB, prefix, path-id), showing that key's most recent observation across the dashboard's time range. It is deliberately NOT scoped to each router's current BMP session: eight of ten routers in this archive have no prefixes in their newest session, so scoping would empty the table. Read `session_current` instead -- 0 means the observation rests on a session that has since been superseded. A route whose latest observation was a withdrawal is shown, marked withdrawn, rather than omitted.\n\nIt ignores $collector deliberately: a dual-homed router's session is one per collector, so the table lists every collector's routes at once, in a leading collector column, rather than narrowing to the one the picker names. session_current is decided against the session of the collector that heard the row, so a row is never marked stale because a DIFFERENT collector happens to hold a higher session id.",
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT m.collector_id AS collector, m.prefix AS prefix, m.router_sysname AS router, IPv6NumToString(m.peer_ip) AS peer, toString(m.rib) AS rib, if(m.is_withdraw = 1, 'withdrawn', 'advertised') AS state, m.next_hop AS next_hop, arrayStringConcat(arrayMap(x -> toString(x), m.as_path), ' ') AS as_path, if(length(m.as_path) > 0, toString(m.as_path[-1]), '') AS origin_as, m.local_pref AS local_pref, m.med AS med, arrayStringConcat(arrayMap(x -> concat(toString(intDiv(x, 65536)), ':', toString(x % 65536)), m.communities), ' ') AS communities, m.last_seen AS last_seen, toUInt8(m.session_id = s.sid) AS session_current FROM ( WITH toIPv6OrNull(splitByChar('/', ${target:sqlstring})[1]) AS target, splitByChar('/', prefix)[1] AS net, toIPv6OrNull(net) AS netaddr, toUInt8OrNull(splitByChar('/', prefix)[2]) AS len, toUInt8(coalesce(len, 0) + if(position(net, ':') > 0, 0, 96)) AS len6, IPv6CIDRToRange(coalesce(netaddr, toIPv6('::')), len6) AS rng SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id, coalesce(len, 0) AS prefix_len, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(local_pref, (ts_collector, stream_seq)) AS local_pref, argMax(med, (ts_collector, stream_seq)) AS med, argMax(communities, (ts_collector, stream_seq)) AS communities, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND (${target:sqlstring} = '' OR (target IS NOT NULL AND netaddr IS NOT NULL AND len IS NOT NULL AND target >= rng.1 AND target <= rng.2)) GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id, prefix_len ) AS m LEFT JOIN ( SELECT collector_id, router_ip, max(session_id) AS sid FROM vantage.peer_current GROUP BY collector_id, router_ip ) AS s ON s.collector_id = m.collector_id AND s.router_ip = m.router_ip ORDER BY collector, m.prefix_len DESC, router, peer, prefix"
+        }
+      ]
+    }
+  ]
+}

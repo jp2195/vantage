@@ -1,0 +1,38 @@
+# Dockerfile.api builds vantage-api's container image. The UI is built first
+# and copied into webui/dist so the Go build embeds it; the Go stage cannot
+# run npm and must not have to.
+# The UI and Go stages run on the build machine's own platform and
+# cross-compile, so a multi-platform build never runs npm or the Go compiler
+# under emulation. Only the final stage is per-platform.
+FROM --platform=$BUILDPLATFORM node:22@sha256:363e1587494626837fa7f9a23bdb453d13b0ff3c67c705c2805cfc69c2d2fad7 AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+FROM --platform=$BUILDPLATFORM golang:1.27@sha256:3680233e3204827fbdc66088528ae6d4b3d034f51d03a99d454f6de034888244 AS build
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+COPY --from=ui /webui/dist ./webui/dist
+# .dockerignore keeps .git out of the context, so the version cannot be read
+# here; `make images` and the release workflow pass both as build args.
+# Declared just before the build, not at the top of the stage: every RUN
+# after an ARG misses the cache when its value changes, and the module
+# download above should survive a new commit.
+ARG VERSION=dev
+ARG REVISION=unknown
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/jp2195/vantage/buildinfo.Version=${VERSION} -X github.com/jp2195/vantage/buildinfo.Revision=${REVISION}" -o /out/vantage-api ./cmd/vantage-api
+
+# :nonroot runs as uid 65532, the same uid the Helm chart's securityContext
+# sets, so the image is non-root outside Kubernetes too (docker run,
+# docker-compose). The daemons need no privilege: every listener is above
+# 1024 and nothing writes outside a mounted volume.
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab
+COPY --from=build /out/vantage-api /vantage-api
+# 9473 is the read API, 9474 its metrics.
+EXPOSE 9473 9474
+ENTRYPOINT ["/vantage-api"]

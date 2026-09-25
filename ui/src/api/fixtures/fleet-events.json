@@ -1,0 +1,109 @@
+{
+    "data": [
+        {
+            "ts_collector": "2026-08-30T02:36:27.758903Z",
+            "ts_router": "2026-08-30T02:36:27.781783Z",
+            "stream_seq": "3221",
+            "seq": "1",
+            "session_id": "1788057387758553717",
+            "router_ip": "10.0.103.62",
+            "router_sysname": "xr-pe1",
+            "peer_ip": "10.0.0.80",
+            "peer_asn": 4200000002,
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "kind": "up",
+            "down_reason": 0,
+            "reason_name": "",
+            "local_ip": "10.0.103.62",
+            "local_port": 43333,
+            "remote_port": 179
+        },
+        {
+            "ts_collector": "2026-08-30T02:36:27.758785Z",
+            "ts_router": "2026-08-30T02:36:27.781783Z",
+            "stream_seq": "3220",
+            "seq": "1",
+            "session_id": "1788057387758553717",
+            "router_ip": "10.0.103.62",
+            "router_sysname": "xr-pe1",
+            "peer_ip": "10.255.0.1",
+            "peer_asn": 65000,
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "kind": "up",
+            "down_reason": 0,
+            "reason_name": "",
+            "local_ip": "10.255.0.2",
+            "local_port": 58186,
+            "remote_port": 179
+        },
+        {
+            "ts_collector": "2026-08-30T02:36:27.758765Z",
+            "ts_router": "2026-08-30T02:36:27.781781Z",
+            "stream_seq": "3219",
+            "seq": "1",
+            "session_id": "1788057387758553717",
+            "router_ip": "10.0.103.62",
+            "router_sysname": "xr-pe1",
+            "peer_ip": "10.2.0.2",
+            "peer_asn": 65101,
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "kind": "up",
+            "down_reason": 0,
+            "reason_name": "",
+            "local_ip": "10.2.0.1",
+            "local_port": 31579,
+            "remote_port": 179
+        },
+        {
+            "ts_collector": "2026-08-30T02:36:27.758708Z",
+            "ts_router": "2026-08-30T02:36:27.781775Z",
+            "stream_seq": "3218",
+            "seq": "1",
+            "session_id": "1788057387758553717",
+            "router_ip": "10.0.103.62",
+            "router_sysname": "xr-pe1",
+            "peer_ip": "2001:db8:c1::2",
+            "peer_asn": 65101,
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "kind": "up",
+            "down_reason": 0,
+            "reason_name": "",
+            "local_ip": "2001:db8:c1::1",
+            "local_port": 179,
+            "remote_port": 22561
+        },
+        {
+            "ts_collector": "2026-08-30T02:36:25.975377Z",
+            "ts_router": "2026-08-30T02:36:25.998644Z",
+            "stream_seq": "3217",
+            "seq": "1",
+            "session_id": "1788057385975216839",
+            "router_ip": "10.0.103.63",
+            "router_sysname": "xr-pe2",
+            "peer_ip": "10.255.0.1",
+            "peer_asn": 65000,
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "kind": "up",
+            "down_reason": 0,
+            "reason_name": "",
+            "local_ip": "10.255.0.3",
+            "local_port": 47406,
+            "remote_port": 179
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [
+            {
+                "code": "truncated",
+                "message": "2843 rows matched and 5 were returned; narrow the query to see the rest -- this answer is a sample, not a total"
+            }
+        ],
+        "total_matched": 2843
+    }
+}

@@ -1,0 +1,3095 @@
+# The vantage-api contract. Hand-written, and the source of truth: the
+# implementation is tested against this file in both directions (no
+# undocumented endpoint, no documented-but-unrouted path, and golden
+# instances of every response schema validated against it). It is served
+# by the daemon at /v1/openapi.yaml.
+#
+# Conventions this contract commits to, and why:
+#
+#   - Versioned paths, additive-only changes within /v1/ -- the same
+#     discipline `buf breaking` enforces on the proto.
+#   - All u64 identity fields (session_id, seq, stream_seq) are JSON
+#     strings: session_id is a UnixNano timestamp (~1.77e18), past 2^53,
+#     and a JSON number silently loses precision in JS-adjacent clients.
+#   - origin_asn and label are nullable, never a defaulted 0. AS 0 and
+#     label 0 are both real values (reserved AS; implicit-null label), so
+#     0-as-absent reproduces a defect this project has already shipped and
+#     fixed once (2026-08-23: a Grafana L3VPN panel reported 142 rows that
+#     carried no AS path as originating in the reserved AS 0).
+#   - IP addresses are always in plain form ("10.0.103.61", never
+#     "::ffff:10.0.103.61") for every field the query layer returns as a
+#     typed address -- router_ip, peer_ip, next_hop -- because query/ unmaps
+#     each one on the way out of the scan loop.
+#     EVPNRoute's `ip` and `gateway_ip` are the exception and are NOT
+#     normalized: they are String columns carrying whatever text the decoder
+#     wrote, and for a type-3 route they are "" rather than an address at
+#     all, so there is nothing to unmap. No stored value is mapped today
+#     (0 of 202 rows), and a caller comparing them to a next hop should
+#     parse and unmap first. TRIGGER for normalizing them in query/: a
+#     decoder or a vendor that emits the ::ffff: form for either column.
+#   - A down peer contributes nothing, and a still-dumping session is
+#     reported as such (dump_state, meta.warnings) -- an empty answer and
+#     a partial answer are different facts and both are stated.
+openapi: 3.1.0
+info:
+  title: vantage-api
+  version: "1.0.0"
+  description: >
+    Question-shaped read API over vantage's BMP archive. Endpoints answer
+    "where is this prefix right now", "what is this peer carrying", "what
+    changed" -- each one session-scoped current state derived from the
+    append-only event log, never raw table access. Current state means: per
+    (collector, router), the newest BMP session; within it, each route key's
+    newest observation by (seq, stream_seq), excluding withdrawals; a down
+    peer contributes nothing.
+
+servers:
+  - url: /
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: inventory
+  - name: routes
+  - name: rib
+  - name: link-state
+  - name: events
+  - name: collection
+  - name: reference
+  - name: meta
+
+paths:
+  /v1/routers:
+    get:
+      tags: [inventory]
+      operationId: listRouters
+      summary: Router inventory with current-session peer counts.
+      responses:
+        "200":
+          description: One entry per (collector, router).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Router" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collectors:
+    get:
+      tags: [inventory]
+      operationId: listCollectors
+      summary: The archive's own view of each collector, beside what that collector's process currently says about itself.
+      responses:
+        "200":
+          description: >
+            One row per collector id: the UNION of every id query.Collectors
+            has an archive record for and every id this daemon is
+            configured to poll at /status. Either side alone is a different
+            wrong answer -- config alone cannot see a collector that has
+            been decommissioned but whose data is still being read, and the
+            archive alone cannot see a collector that is configured and
+            completely down -- so a row can be present on one side and
+            absent on the other, and that absence is itself part of the
+            answer.
+
+            archive is null when the archive has no record of this id at
+            all. It is never a real object with zero routers and zero peers:
+            that shape cannot occur, because an id the archive has ANY
+            record of always has at least one router. A non-null archive
+            carries this collector's current routers, its peers rolled up
+            into fleet totals, and last_row_at -- the newest row this
+            collector has written to ANY of the archive's ten data tables,
+            not merely a peer up/down event, so a collector that is busy
+            writing route or link-state updates is not misread as dead just
+            because its BGP sessions have had nothing new to report.
+
+            status is null whenever the daemon did not answer, for either of
+            two reasons this response keeps distinguishable rather than
+            collapsing into one blank card: no endpoint is configured for
+            this id at all (reachable is then ALSO null -- reachability is
+            not a question to ask of a collector nobody told this daemon how
+            to reach), or one IS configured and it did not respond
+            (reachable is then false, and error names why: unreachable,
+            timed out, a non-200 response, or a body that did not decode).
+            status is non-null, and reachable true, only when the daemon
+            actually answered. A collector with no endpoint has NO uptime
+            and NO message count -- not zero of each, which would read as a
+            collector that has been up for no time and has processed
+            nothing, the description of a broken one rather than an
+            unconfigured one.
+
+            THERE IS NO LAG FIELD ANYWHERE ON THIS RESPONSE, and there must
+            never be one: vantage_sink_consumer_lag is the WRITER's, per
+            stream, measured in envelopes, and one writer consumes every
+            stream on behalf of every collector it serves -- there is no
+            per-collector lag this daemon could honestly attribute to the
+            process status describes.
+
+            id_mismatch carries the CONFIGURED id, and only when the daemon
+            answered under a DIFFERENT collector_id than the id it is
+            configured under -- someone pointed this entry's endpoint at
+            another collector's process. The row is keyed on the daemon's
+            own (authoritative) id in that case, and the disagreement is
+            stated rather than resolved to either side.
+
+            activity is rows ARCHIVED PER MINUTE, oldest first, over
+            meta.activity_window -- never a message count and never a rate:
+            one BMP route-monitoring message carrying forty NLRIs archives
+            as forty rows. Its length always equals meta.activity_window in
+            minutes, including for a collector that archived nothing
+            anywhere in the window: every entry for it reads zero rather
+            than the array being shorter or the row being dropped, because a
+            quiet collector is exactly the one an operator opens this screen
+            to find. THE LAST ENTRY IS THE CURRENT, STILL-ACCUMULATING
+            MINUTE, not the last fully-elapsed one -- a client that reads it
+            as a completed minute renders a bar that is always short.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Collector" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/peers:
+    get:
+      tags: [inventory]
+      operationId: listPeers
+      summary: Per-(router, peer, rib) state as of the current session.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/rib"
+      responses:
+        "200":
+          description: >
+            One entry per (collector, router, peer, rib). state is the state
+            the current session ended in -- a peer that flapped and recovered
+            within it reports up. routes is the deduplicated live route-key
+            count (0 for a down peer).
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Peer" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/routes:
+    get:
+      tags: [routes]
+      operationId: findRoutes
+      summary: Fleet-wide answer for one prefix or address, across all families.
+      description: >
+        The looking-glass fan-out: at least one of prefix= (exact match),
+        covers= (longest-match containment; documented scan cost, measured
+        31-52ms over 3.2M rows), origin_asn=, through_asn= or community= is
+        required. prefix= and covers= remain mutually exclusive with each
+        other -- together they ask for an exact prefix that also contains an
+        address -- but any other combination of the five is a legal,
+        narrower question. Returns a keyed object of homogeneous per-family
+        arrays -- never a mixed array -- so each family keeps an exact
+        schema. Each family's array is independently capped at the daemon's
+        max_page; meta.total_matched is the sum of true matches across all
+        three, and can exceed what was returned.
+      parameters:
+        - $ref: "#/components/parameters/prefix"
+        - $ref: "#/components/parameters/covers"
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/originASN"
+        - $ref: "#/components/parameters/throughASN"
+        - $ref: "#/components/parameters/community"
+      responses:
+        "200":
+          description: Current state per family for the requested target.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: "#/components/schemas/RouteFanout" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/routes/unicast:
+    get:
+      tags: [routes]
+      operationId: findUnicastRoutes
+      summary: Current unicast routes for one prefix or covering an address.
+      parameters:
+        - $ref: "#/components/parameters/prefix"
+        - $ref: "#/components/parameters/covers"
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - name: family
+          in: query
+          description: >
+            ipv6u is contractually legal but the archive currently holds zero
+            IPv6 rows; expect empty results until a deployment's archive
+            carries IPv6.
+          schema: { type: string, enum: [ipv4u, ipv6u] }
+        - $ref: "#/components/parameters/originASN"
+        - $ref: "#/components/parameters/throughASN"
+        - $ref: "#/components/parameters/community"
+      responses:
+        "200":
+          description: >
+            At least one of prefix=, covers=, origin_asn=, through_asn= or
+            community= is required (prefix= and covers= stay mutually
+            exclusive with each other -- see /v1/routes' own description).
+            Capped at the daemon's max_page; meta.total_matched carries the
+            true count and can exceed what was returned.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/UnicastRoute" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/routes/vpn:
+    get:
+      tags: [routes]
+      operationId: findVPNRoutes
+      summary: Current VPN and labeled-unicast routes.
+      description: >
+        Serves route_vpn as it exists: vpn4/vpn6 (RD, route targets) and lu4
+        (BGP-LU; rd is "" and route_targets empty by nature, not by absence
+        of data). family= distinguishes them without inferring from an empty
+        rd. At least one of prefix=, rd=, router=, origin_asn=, through_asn=
+        or community= is required -- the same rule as /v1/routes/evpn (an
+        unfiltered dump belongs to /v1/rib/vpn). peer=, rib= and family=
+        narrow but do not count toward this rule on their own: none of them
+        bounds a fleet-wide answer to something a single unpaginated
+        response can carry. A seventh narrowing shape, containment, is not a
+        parameter on this path at all: covers= reaches the same underlying
+        filter only through the /v1/routes fan-out, which is the only way to
+        narrow a VPN answer by address containment here.
+
+        Capped at the daemon's max_page; meta.total_matched carries the true
+        count and can exceed what was returned.
+      parameters:
+        - name: prefix
+          in: query
+          schema: { type: string }
+          example: "10.77.0.0/24"
+        - name: rd
+          in: query
+          description: Exact route-distinguisher match, e.g. "65000:1".
+          schema: { type: string }
+        - name: family
+          in: query
+          schema: { type: string, enum: [vpn4, vpn6, lu4] }
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/originASN"
+        - $ref: "#/components/parameters/throughASN"
+        - $ref: "#/components/parameters/community"
+      responses:
+        "200":
+          description: Current state, one entry per live route key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/VPNRoute" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/routes/evpn:
+    get:
+      tags: [routes]
+      operationId: findEVPNRoutes
+      summary: Current EVPN routes.
+      description: >
+        At least one of prefix=, rd=, router=, origin_asn=, through_asn= or
+        community= is required (an unfiltered EVPN dump belongs to
+        /v1/rib/evpn). peer=, rib= and type= narrow but do not count toward
+        this rule on their own. As on /v1/routes/vpn, a seventh narrowing
+        shape -- containment -- is not a parameter here: covers= reaches the
+        same underlying filter only through the /v1/routes fan-out.
+
+        Capped at the daemon's max_page; meta.total_matched carries the true
+        count and can exceed what was returned.
+      parameters:
+        - name: prefix
+          in: query
+          description: Exact match on the IP prefix of type 5 (and type 2 where present) routes.
+          schema: { type: string }
+        - name: rd
+          in: query
+          schema: { type: string }
+        - name: type
+          in: query
+          description: >
+            EVPN route type: 1 Ethernet A-D, 2 MAC/IP, 3 IMET, 4 ES, 5 IP
+            prefix. The bound is IANA's EVPN Route Types registry, which runs
+            to 11, and not the five RFC 7432 and RFC 9136 define: the decoder
+            sets route_type from the wire for every type, so a route of type
+            6-11 can be STORED and RETURNED, and a narrower bound here would
+            refuse the query that finds it while the response carrying it
+            violated this schema.
+
+            Only 2, 3 and 5 occur in the archive, so the name mappings above
+            are the only ones any data has exercised; 6-11 are legal to ask
+            for and untested in practice.
+          schema: { type: integer, minimum: 1, maximum: 11 }
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/originASN"
+        - $ref: "#/components/parameters/throughASN"
+        - $ref: "#/components/parameters/community"
+      responses:
+        "200":
+          description: Current state, one entry per live EVPN NLRI.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EVPNRoute" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/routes/history:
+    get:
+      tags: [routes]
+      operationId: routeHistory
+      summary: Event timeline for one exact prefix (unicast).
+      parameters:
+        - name: prefix
+          in: query
+          required: true
+          schema: { type: string }
+        - name: since
+          in: query
+          description: >
+            RFC 3339 timestamp, or a duration relative to now ("1h", "30m",
+            "24h"). Default "1h".
+          schema: { type: string, default: "1h" }
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+      responses:
+        "200":
+          description: >
+            Raw events, newest first, NOT current-state-deduplicated: history
+            is the one surface where withdrawals and superseded announcements
+            are the payload, not noise.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/HistoryEvent" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/topology:
+    get:
+      tags: [routes]
+      operationId: findTopology
+      summary: The AS-path graph the routes in one scope form.
+      description: >
+        Takes /v1/routes' scope parameters exactly -- prefix=, covers=,
+        router=, peer=, rib=, origin_asn=, through_asn=, community= -- and
+        returns the graph those routes form rather than the routes
+        themselves. prefix= and covers= stay mutually exclusive with each
+        other, for the reason /v1/routes states.
+
+        What it does NOT inherit is that endpoint's sufficiency rule.
+        /v1/routes requires one of five CONTENT filters and treats
+        router=/peer= as narrowing only; here **router= and peer= together
+        are a sufficient scope**, and either half alone is not. The
+        difference is the answer's size rather than caprice: one peer's RIB
+        is hundreds of thousands of routes and /v1/routes refuses to return
+        it, but the same peer's AS-path graph is tens of edges, and
+        router_ip/peer_ip are a prefix of every route table's sort key, so
+        that mode is a seek where origin_asn= is a scan. A request carrying
+        none of the five content filters and not both halves of that pair is
+        a 400 naming what would make it answerable; rib= narrows an answer
+        but does not make one.
+
+        There is no limit= and no pagination. A graph is tens of edges, and
+        capping one would mean choosing which adjacencies to hide -- a
+        decision no caller asked for and none could detect from the answer.
+        meta.total_matched is reported anyway: it is the route identities the
+        scope matched, summed across the three families, which is the
+        population the graphs were built from and not a sum over nodes or
+        edges. There is no since= either, so the daemon's
+        max_unscoped_since never applies here.
+      parameters:
+        - $ref: "#/components/parameters/prefix"
+        - $ref: "#/components/parameters/covers"
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/originASN"
+        - $ref: "#/components/parameters/throughASN"
+        - $ref: "#/components/parameters/community"
+      responses:
+        "200":
+          description: >
+            One merged AS-path graph per family, keyed the way RouteFanout
+            keys its three arrays. Four things this answer does not claim,
+            each of them a claim the archive cannot support:
+
+            **1. No AS holder names.** A node is an AS NUMBER. This answer
+            carries no holder names; GET /v1/asnames resolves them, in one
+            batch for the ASNs a client draws, when the optional RIPE
+            dataset is loaded. No IRR or whois data is collected.
+
+            **2. A withdrawn route is in the graph, described by its last
+            ADVERTISED path.** A BGP withdrawal carries NLRI and no path
+            attributes, so the path of a withdrawn route is its newest
+            announcement rather than its newest observation. That is why
+            origin_asn= and through_asn= match routes an AS has STOPPED
+            originating here, where they cannot on /v1/routes -- a deliberate
+            divergence in the answer for the identical query string, and the
+            question this graph exists to answer.
+
+            **3. A thin edge is not a weak link.** An edge's `routes` is how
+            many route identities IN THIS ANSWER traverse that adjacency --
+            paths carried, and nothing else. It is not capacity, not
+            preference, not stability and not health.
+
+            **4. These are the families' graphs, not one graph.** Merging
+            them would assert that an EVPN adjacency and a unicast adjacency
+            are the same kind of edge, which no BGP speaker claims; the three
+            differ by an order of magnitude in size.
+
+            `routes` and `live_routes` on an edge are carried separately so a
+            client can derive the state it draws without a second call:
+            `live_routes == 0` means every route carrying that adjacency has
+            been withdrawn, `first_seen` inside the window on screen means
+            the edge is newly observed, and everything else is stable. A
+            server-computed state string would bake that window into the
+            response, and the window is a thing the operator moves.
+
+            A family's graph is empty whenever the scope reaches nothing in
+            it, which is ordinary rather than exceptional: EVPN's real graph
+            is two edges wide, and a one-hop AS path contributes a node and
+            no edge at all. nodes and edges are arrays with no null form, so
+            an empty one is the positive claim "nothing there", never "we did
+            not look".
+
+            **meta.warnings never carries session_dumping on this path, and
+            an empty warnings array here is therefore not a claim of
+            completeness.** Dump progress is a property of a (peer, family),
+            which is the grain /v1/peers reports it at; the merged graph
+            carries no dump state at all, and a warning synthesized at this
+            layer would be asserting a fact rather than reporting one. The
+            consequence is an operator's to know: a peer still sending its
+            initial dump yields a PARTIAL graph -- edges that will appear
+            once the dump completes are simply absent -- and this response
+            does not say so. The same scope on /v1/routes does warn, so the
+            looking glass's Paths tab can report a session still loading
+            while its Topology tab reports nothing at all. Read /v1/peers
+            for the scope's dump state before taking a sparse graph for the
+            whole one.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data: { $ref: "#/components/schemas/TopologyFanout" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/events:
+    get:
+      tags: [events]
+      operationId: findPeerEvents
+      summary: Session history for one peer, or the newest events fleet-wide -- peer_events as the events they were.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - name: since
+          in: query
+          description: >
+            RFC 3339 timestamp, or a duration relative to now ("1h", "30m",
+            "24h"). Default "1h". Bounds against ts_collector, never
+            ts_router.
+          schema: { type: string, default: "1h" }
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            Two modes on one path, chosen by scope.
+
+            SCOPED -- router AND peer -- is the walk this path has always
+            served: one page of one peer's history, newest first,
+            keyset-ordered by (ts_collector, stream_seq) descending on the
+            collector clock, the trustworthy one -- ts_router is carried
+            for display and is never sorted or paged on. Its since= is not
+            clamped: scoped, a wide window is still a seek.
+
+            UNSCOPED -- neither router nor peer -- is the fleet console's
+            question: the newest events anywhere. It is capped rather than
+            paginated, so meta.next_cursor is always null and
+            meta.total_matched carries the true match count, with a
+            "truncated" warning when the cap applied -- the same pair
+            /v1/ls/nodes uses, so a request never receives a cursor it
+            could not legally resend alongside its own filter. cursor= on
+            an unscoped request is a 400.
+
+            Capped at limit= -- default 1000, clamped to the daemon's
+            max_page as a ceiling, same as every other paginated path here
+            -- not at max_page directly: this mode still honors an explicit
+            limit= below that ceiling.
+
+            An unscoped since= is bounded at both ends: absent it defaults
+            to 1h, and wider than the daemon's max_unscoped_since (24h by
+            default) it is a 400 that names the limit. That clamp applies
+            to the unscoped mode only -- scoped, this same window is still
+            not clamped, because there a wide window is a seek rather than
+            the full-table read it is when nothing narrows the walk.
+
+            Naming exactly one half of the scope -- router without peer, or
+            peer without router -- is a 400 rather than either mode. It is
+            neither a scoped walk nor a fleet-wide question, and answering
+            it as the latter would hand an operator who forgot a parameter
+            a different question's answer.
+
+            Unlike /v1/rib/* and the three /v1/ls paths, this walk -- in
+            either mode -- is not pinned to one BMP session: a peer's event
+            history is itself the record of sessions starting and ending,
+            and a session pin would stop the walk at the very transitions
+            this endpoint exists to show. The scoped cursor carries no
+            session, and paginating it never answers 409.
+
+            peer_events keeps the configured history retention (90 days by
+            default; a TTL on ts_collector, reported as meta.retention_days
+            on GET /v1/collectors); a session's events are deleted, not
+            merely unindexed, once they age past it. An empty answer for an old since= does not
+            distinguish "nothing happened" from "it happened and was
+            purged."
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PeerEvent" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/rib/unicast:
+    get:
+      tags: [rib]
+      operationId: ribUnicast
+      summary: Paginated current unicast RIB for one (router, peer).
+      parameters:
+        - $ref: "#/components/parameters/routerRequired"
+        - $ref: "#/components/parameters/peerRequired"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/ribCollector"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One page, keyset-ordered by (rib, prefix, path_id). rib is part
+            of the page key, not merely a filter: the same (prefix, path_id)
+            legitimately appears under in_pre, in_post and loc_rib for one
+            peer -- verified in the live archive -- so a key without it would
+            silently drop routes at page boundaries. Including it also
+            matches the table's own sort order, which leads with
+            (router_ip, peer_ip, rib). The walk is pinned to the session
+            observed at page 1; the page set is a smear over a live table,
+            not a snapshot -- meta.warnings says so on every page.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/UnicastRoute" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/SessionChanged" }
+
+  /v1/rib/vpn:
+    get:
+      tags: [rib]
+      operationId: ribVPN
+      summary: Paginated current VPN/labeled RIB for one (router, peer).
+      parameters:
+        - $ref: "#/components/parameters/routerRequired"
+        - $ref: "#/components/parameters/peerRequired"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/ribCollector"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One page, keyset-ordered by (rib, rd, prefix, path_id). See
+            /v1/rib/unicast on why rib is part of the key rather than only a filter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/VPNRoute" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/SessionChanged" }
+
+  /v1/rib/evpn:
+    get:
+      tags: [rib]
+      operationId: ribEVPN
+      summary: Paginated current EVPN RIB for one (router, peer).
+      parameters:
+        - $ref: "#/components/parameters/routerRequired"
+        - $ref: "#/components/parameters/peerRequired"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/ribCollector"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One page, keyset-ordered by rib plus the full EVPN NLRI tuple
+            (route_type, rd, prefix, mac, ip, ethernet_tag, esi, path_id).
+            See /v1/rib/unicast on why rib is part of the key.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/EVPNRoute" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/SessionChanged" }
+
+  /v1/ls/nodes:
+    get:
+      tags: [link-state]
+      operationId: findLSNodes
+      summary: Link-state nodes, one row per observing router and peer.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/protocol"
+        - $ref: "#/components/parameters/area"
+        - $ref: "#/components/parameters/lsASN"
+        - $ref: "#/components/parameters/node"
+        - $ref: "#/components/parameters/lsState"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            No narrowing parameter is required, unlike /v1/routes: the whole
+            fleet's topology is a small answer. One row per (observer,
+            node) -- the same node reported by six routers is six rows, and
+            node_key is how a caller groups them. A request naming both
+            router= and peer=, and no node-identity narrowing (protocol=,
+            area=, asn=, node=, or a non-default state=), is scoped and may
+            be paginated with cursor=; it is capped at max_page when no
+            limit= is given, not at the smaller default page every other
+            paginated path takes. An unscoped request, or a scoped one that
+            also narrows by node identity, stays capped at the daemon's
+            max_page instead -- with meta.total_matched carrying the true
+            count and meta.next_cursor always null -- so a request never
+            receives a cursor it could not legally resend alongside its own
+            filter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/LSNode" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/SessionChanged" }
+
+  /v1/ls/links:
+    get:
+      tags: [link-state]
+      operationId: findLSLinks
+      summary: Link-state links, one row per observing router and adjacency.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/protocol"
+        - $ref: "#/components/parameters/area"
+        - $ref: "#/components/parameters/lsASN"
+        - $ref: "#/components/parameters/localNode"
+        - $ref: "#/components/parameters/remoteNode"
+        - $ref: "#/components/parameters/lsState"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            No narrowing parameter is required, unlike /v1/routes: the whole
+            fleet's topology is a small answer. One row per (observer,
+            local end, remote end) -- the same adjacency reported by
+            observers at both ends, and in both directions, is more than one
+            row. A request naming both router= and peer=, and no
+            node-identity narrowing (protocol=, area=, asn=, local_node=,
+            remote_node=, or a non-default state=), is scoped and may be
+            paginated with cursor=; it is capped at max_page when no
+            limit= is given, not at the smaller default page every other
+            paginated path takes. An unscoped request, or a scoped one that
+            also narrows by node identity, stays capped at the daemon's
+            max_page instead -- with meta.total_matched carrying the true
+            count and meta.next_cursor always null -- so a request never
+            receives a cursor it could not legally resend alongside its own
+            filter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/LSLink" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/SessionChanged" }
+
+  /v1/ls/prefixes:
+    get:
+      tags: [link-state]
+      operationId: findLSPrefixes
+      summary: Link-state prefixes, one row per observing router and prefix.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/rib"
+        - $ref: "#/components/parameters/protocol"
+        - $ref: "#/components/parameters/area"
+        - $ref: "#/components/parameters/lsASN"
+        - $ref: "#/components/parameters/node"
+        - $ref: "#/components/parameters/prefix"
+        - $ref: "#/components/parameters/covers"
+        - $ref: "#/components/parameters/lsState"
+        - $ref: "#/components/parameters/cursor"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            No narrowing parameter is required, unlike /v1/routes: the whole
+            fleet's topology is a small answer. One row per (observer,
+            node, prefix) -- the same prefix reported by six routers is six
+            rows. A request naming both router= and peer=, and none of
+            protocol=, area=, asn=, node=, prefix=, covers= or a
+            non-default state=, is scoped and may be paginated with
+            cursor=; it is capped at max_page when no limit= is given, not
+            at the smaller default page every other paginated path takes.
+            An unscoped request, or a scoped one that also narrows by any
+            of those, stays capped at the daemon's max_page instead -- with
+            meta.total_matched carrying the true count and meta.next_cursor
+            always null -- so a request never receives a cursor it could
+            not legally resend alongside its own filter.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/LSPrefix" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "409": { $ref: "#/components/responses/SessionChanged" }
+
+  /v1/collection/dumps:
+    get:
+      tags: [collection]
+      operationId: collectionDumps
+      summary: Per-router BMP re-dump volume versus genuine route churn.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/collectionSince"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One row per router: how much of what collection archived inside
+            the window was the router RE-SENDING a route it had already
+            sent -- because its BMP session restarted and the table came
+            down again -- and how much was the network actually changing.
+            Reads route_unicast, route_vpn AND route_evpn together, because
+            "what our storage is made of" is a claim about storage and
+            reading only one table would understate it.
+
+            archived = dumps + changes, ALWAYS: every row the window covers
+            is classified as exactly one of the two. A DUMP IS NOT A
+            FAILURE -- a router re-dumping its table after a session reset
+            is ordinary BMP behavior, not a fault, and a high dump ratio
+            describes what storage is composed of rather than anything
+            having gone wrong. Rows are ordered busiest-first (archived
+            DESC), so a fleet larger than limit= loses its quietest routers
+            first, never an arbitrary slice.
+
+            meta.dump_totals carries the sum of archived, dumps
+            and changes across every router this answer returned -- not a
+            synthesized row in data, so no client has to learn to skip one
+            to avoid double-counting it.
+
+            Capped at limit= -- default 1000, clamped to the daemon's
+            max_page -- with meta.total_matched carrying the true count of
+            routers matched before the cap applied, and a "truncated"
+            warning when it did. Unreachable at today's fleet size; carried
+            for the same reason every other capped path here carries it,
+            not because it has ever fired.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RouterDumpCount" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collection/sessions:
+    get:
+      tags: [collection]
+      operationId: collectionSessions
+      summary: Per-router BMP session churn inside the window.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/collectionSince"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One row per router: how many distinct BMP sessions collection
+            observed inside the window (sessions), and how each session's
+            peer events resolved -- up, down, or view_lost.
+
+            SESSIONS ARE NOT EVENTS: one BMP session can carry many peer
+            events (every peer under it announcing up, and flapping down
+            and back up, without the session itself resetting), so
+            sessions counts distinct sessions and never counts events.
+
+            view_lost IS NOT down, and the two must never be summed or
+            rendered as one figure: down is the router stating, on the
+            wire, that a BGP session ended, with a reason code (RFC 7854
+            sec 4.9); view_lost is the collector losing its own BMP
+            transport to the router while the router said nothing at all.
+            Folding the second into the first misreports the collector's
+            own blindness as a fact about the network.
+
+            meta.session_totals carries the sum of sessions, up,
+            down and view_lost across every router this answer returned --
+            not a synthesized row in data.
+
+            Capped at limit= -- default 1000, clamped to the daemon's
+            max_page -- with meta.total_matched carrying the true count of
+            routers matched before the cap applied, and a "truncated"
+            warning when it did.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/RouterSessionCount" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collection/locrib:
+    get:
+      tags: [collection]
+      operationId: collectionLocRIB
+      summary: What each peer's Loc-RIB reports, against what collection archived for it.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/collectionSince"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One row per (router, peer): what the router's newest BMP Stats
+            Report claims its Loc-RIB holds (reported), against how many
+            route_unicast rows collection has archived for that peer's
+            Loc-RIB view specifically (archived -- rib = loc_rib only,
+            never the peer's adj-RIB-in rows, which would compare a Loc-RIB
+            number against a population the router never claimed to
+            describe).
+
+            A LOC-RIB GAP IS NOT PROOF OF LOSS. RFC 9069 Loc-RIB monitoring
+            is a capability a router must be separately configured for,
+            distinct from ordinary adj-RIB-in route monitoring, and most
+            routers do not enable it. Measured on 2026-09-11 against a real
+            archive: 21 of the 25 (router, peer) pairs this comparison
+            returned read archived = 0 against reported > 0 -- because those
+            peers send adj-RIB-in and not Loc-RIB, which is the expected
+            reading of "this peer's Loc-RIB monitoring is not enabled," not
+            evidence collection dropped anything.
+
+            since= SCOPES reported ONLY. The window bounds the
+            stats_events read and never the route_unicast one, so archived
+            is what collection holds for the peer in its router's current
+            BMP session, whole, at every window -- see PeerLocRIB.archived
+            for why windowing both sides would compare an accumulation
+            against a snapshot and fabricate a gap. router= and limit= narrow this answer as they narrow the
+            other three.
+
+            has_stat is what keeps reported = 0 honest. A ClickHouse map
+            returns 0 for a missing key, so a peer whose Loc-RIB really is
+            empty and a peer that has NEVER sent BMP Stats Report counter 8
+            (RFC 7854 sec 4.8) both read reported = 0 -- indistinguishable
+            without has_stat. has_stat = false means the router has sent no
+            such stat at all inside the window; render that as "no stat,"
+            never as a gap of 0.
+
+            THE COMPARISON IS UNICAST-ONLY: counter 8 is a single count with
+            no family breakdown, and only route_unicast holds a route
+            identity this comparison already trusts for it -- route_vpn and
+            route_evpn are not summed in.
+
+            meta.locrib_totals carries the sum of reported and
+            archived across every (router, peer) pair this answer returned
+            -- not a synthesized row in data.
+
+            Capped at limit= -- default 1000, clamped to the daemon's
+            max_page -- with meta.total_matched carrying the true count of
+            (router, peer) pairs matched before the cap applied, and a
+            "truncated" warning when it did.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PeerLocRIB" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collection/flags:
+    get:
+      tags: [collection]
+      operationId: collectionFlags
+      summary: Fleet-wide parse flag counts, by envelope, inside the window.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/collectionSince"
+        - $ref: "#/components/parameters/limit"
+      responses:
+        "200":
+          description: >
+            One row per parse flag: how many ENVELOPES raised it inside the
+            window, across all ten tables that carry a parse_flags column
+            (the three BGP route tables, eor_events, the four BGP-LS object
+            tables, stats_events and peer_events). An envelope is one BMP
+            UPDATE or notification; a single truncated-attribute UPDATE
+            carrying fifty prefixes that all trip the same flag is ONE
+            envelope, not fifty rows -- counting rows instead of envelopes
+            has measurably overstated a flag on this project's own archive
+            before (tenfold, on one flag).
+
+            PARSE FLAGS ARE HISTORICAL. A parse_flags value records the
+            decoder as it stood AT THE MOMENT THE ROW WAS WRITTEN; nothing
+            in this schema records which build of the collector wrote a
+            row. A flag counted inside this window may describe a decoder
+            bug that was fixed before the window even opened -- "is this
+            flag still firing" is answerable only by widening the window to
+            see whether it recurs, never by this count alone, and this
+            count must never be presented as a current diagnosis.
+
+            ?router= NARROWS THE QUERY BUT NOT THE OUTPUT SHAPE: every one
+            of the ten tables carries its own router_ip, so router= answers
+            "how often did THIS router's decoder raise each flag" -- but a
+            row here carries no router_ip field, and this endpoint returns
+            no per-router breakdown even when router= is set. stream_seq is
+            JetStream's own per-stream sequence number, assigned once per
+            message fleet-wide, so it identifies an envelope rather than a
+            router's position in anything; a caller that needs one router's
+            own share of a fleet-wide spike gets it by calling this
+            endpoint once scoped and once unscoped and comparing the two
+            totals, not by reading a column this response does not carry.
+
+            meta.flag_totals carries the sum of envelopes across every flag
+            this answer returned -- not a synthesized row in data, and NOT a
+            count of distinct envelopes: an envelope that raised two flags is
+            counted once under each of them in data, so it contributes twice
+            to this total as well. See Meta.flag_totals.
+
+            Capped at limit= -- default 1000, clamped to the daemon's
+            max_page -- with meta.total_matched carrying the true count of
+            flags matched before the cap applied, and a "truncated" warning
+            when it did. In practice this is close to dormant: bgp/'s own
+            PARSE_FLAG_* vocabulary is on the order of ten literals, nowhere
+            near the default cap.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/FlagCount" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collection/churn:
+    get:
+      tags: [collection]
+      operationId: collectionChurn
+      summary: What the archive received over time, bucketed and classified.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/churnCollector"
+        - $ref: "#/components/parameters/collectionSince"
+        - name: bucket
+          in: query
+          required: false
+          schema: { type: string, default: "5m" }
+          description: >
+            The width of one bar, as a duration ("30s", "5m", "1h"). A
+            duration only -- never an RFC 3339 instant, which since= also
+            accepts: a width is not a point in time. At least 1s.
+
+            Window over width is the number of bars, and an answer carries
+            at most 1500 of them: a request for more is a 400 naming this
+            parameter, not a slow query. 1500 is a screen's worth and then
+            some -- at 1920 CSS pixels a bar plus its gap cannot be under a
+            pixel -- so anything past it is rows nobody can see.
+      responses:
+        "200":
+          description: >
+            One row per time bucket, in ascending order, covering only the
+            buckets the window actually held rows in -- a gap in the series
+            is a bucket with nothing archived in it, and this endpoint does
+            not synthesize an empty row to fill it.
+
+            THE THREE COUNTS ARE MUTUALLY EXCLUSIVE AND SUM TO EVERY ROW THE
+            BUCKET HELD. `dump` is the first non-withdrawal observation of a
+            route inside its session -- the session re-sending what it
+            already knew; `withdraw` is a withdrawal, whether or not it is
+            the first thing seen for that route in its session; and
+            `readvertise` is everything else, a route re-sent inside a
+            session that had already sent it. A session dump is never a
+            withdrawal, by the classification's own definition.
+
+            THESE ARE NOT /v1/collection/dumps' TWO. That path's `changes`
+            is everything that is not a dump, WITHDRAWALS INCLUDED, so
+            anything reconciling the two answers must add `readvertise` and
+            `withdraw` before comparing. Folding withdrawals into
+            re-advertisements would draw a table being emptied and a table
+            being refreshed as the same bar.
+
+            A DUMP IS NOT A FAILURE. A router re-sending its table after a
+            BMP session reset is ordinary behavior; this series says what
+            the window's archived rows are composed of, and nothing here is
+            scored or ranked.
+
+            THE WINDOW IS APPLIED BEFORE THE CLASSIFICATION, inside each
+            table's own subquery, exactly as deploy/grafana/dashboards/
+            route-churn.json applies its own -- this endpoint computes that
+            panel's classification through the same expression. So a "dump"
+            is the first observation of a route, in its session, THAT THIS
+            WINDOW CONTAINS: a route whose real dump landed an hour before
+            since= has its earliest in-window re-advertisement reported as a
+            dump, and widening the window can move a row from readvertise to
+            dump.
+
+            meta.churn_bucket carries the width every bar was computed at,
+            always, including when data is empty -- bucket= is optional, so
+            the width is a decision this daemon can make, and a chart
+            labeled with a width it did not use is the same defect as one
+            labeled with a window it did not use.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ChurnBucket" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collection/churn/peers:
+    get:
+      tags: [collection]
+      operationId: collectionChurnPeers
+      summary: The churn signal ranked by peer, busiest first.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/churnCollector"
+        - $ref: "#/components/parameters/collectionSince"
+      responses:
+        "200":
+          description: >
+            One row per (router, peer) inside the window, ordered by
+            `readvertise` + `withdraw` descending, then `dump`, then the peer
+            address -- so the order is total even where two peers churn
+            identically, and the first N rows of a truncated read are still
+            the busiest N.
+
+            No bucket= parameter: the COUNTS are /v1/collection/churn's own
+            classification summed rather than drawn, and this path's ranking
+            has no time axis of its own.
+
+            Each row does carry a small `activity` series beside those
+            counts, and `meta.churn_bucket` reports the width it was cut at.
+            That is not a bucket= in disguise -- a caller cannot choose it. A
+            sparkline's width is fixed in pixels, so what has to be bounded
+            is its BAR COUNT, and this path cuts the window into a constant
+            number of bars rather than a width the caller names.
+            /v1/collection/churn is where the width is the caller's
+            decision, because there the chart's own width is. Same shape
+            GET /v1/collectors already ships: summed counts per row with a
+            short per-row series beside them, and the span named in meta. The three counts carry exactly the
+            meanings that path documents, including that they are mutually
+            exclusive and that a dump is not a failure.
+
+            ACROSS ALL THREE ROUTE TABLES, unlike /v1/collection/churn/
+            prefixes. `peer_ip` names the same thing on route_unicast,
+            route_vpn and route_evpn, so adding a peer's unicast, VPN and
+            EVPN churn under one label is addition. A prefix does not have
+            that property, which is the whole reason these are two paths.
+
+            THESE ARE ARCHIVED ROWS, NOT THE ROUTER'S UPDATE RATE. A count
+            here is what this collector stored in the window; a screen
+            turning it into a per-second figure is reporting a COLLECTION
+            rate and has to say so.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PeerChurn" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/collection/churn/prefixes:
+    get:
+      tags: [collection]
+      operationId: collectionChurnPrefixes
+      summary: The most-changed prefixes in the window, ranked.
+      parameters:
+        - $ref: "#/components/parameters/router"
+        - $ref: "#/components/parameters/peer"
+        - $ref: "#/components/parameters/churnCollector"
+        - $ref: "#/components/parameters/collectionSince"
+      responses:
+        "200":
+          description: >
+            At most 50 rows, ordered by `readvertise` + `withdraw`
+            descending, then `withdraw`, then `observations`, then the
+            prefix. The 50 is deploy/grafana/dashboards/route-churn.json's
+            own cap on this panel and is NOT a limit= parameter: this is a
+            ranking, a page past the first answers no question the first did
+            not, and there is accordingly nothing to page through and no
+            meta.total_matched to report.
+
+            ROUTE_UNICAST ONLY, and that is what `prefix` can honestly mean
+            rather than a narrowing chosen for cost. `prefix` is a column on
+            all three route tables and names the same kind of thing on one of
+            them: a route_vpn prefix without its `rd` is ambiguous, since one
+            string under two route distinguishers is two different routes,
+            and a route_evpn type-2 MAC route has no IP prefix at all. Summing
+            the three would merge unrelated routes under a shared string.
+
+            UNDECODED NLRI IS EXCLUDED. Rows whose prefix could not be parsed
+            are stored with an empty prefix; they have no prefix to be
+            most-changed about, and ranked by change count they would sort to
+            the top of this answer under a blank label -- the collector's own
+            failures presented as the network's busiest prefix. They are
+            excluded in SQL, before the cap, so the answer is not short by
+            however many it held.
+
+            The three counts carry the meanings /v1/collection/churn
+            documents. `observations` is every archived row for the prefix in
+            the window and equals their sum.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/PrefixChurn" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/asnames:
+    get:
+      tags: [reference]
+      operationId: listASNames
+      summary: Registered AS holder names for a batch of AS numbers, from RIPE's published list.
+      description: >
+        Optional by design: a person runs `make fetch-asnames` and applies
+        deploy/clickhouse/asnames.sql and asnames_meta.sql by hand, or does
+        not. This daemon never fetches anything itself, and every other
+        endpoint in this contract works identically whether this dataset
+        exists or not -- a router, peer or route's own `asn` field is never
+        blocked on it.
+
+        `asn=` names the batch, one query parameter per value (repeat it --
+        `?asn=3356&asn=15169`), at least once and at most 512 times per
+        request; a request naming none is a 400 rather than a dump of the
+        whole dataset (122,442 rows on the published list), and a request
+        past 512 is a 400 naming that bound rather than a silently
+        truncated answer. A value named more than once is answered once.
+
+        `data` carries exactly one row per DISTINCT value named, in the
+        order each first appeared, whether or not this dataset has ever
+        heard of it -- an ASN this dataset does not list is never simply
+        absent from `data`, which would read to a client as "not asked
+        about" rather than "asked about, and found to have no holder."
+      parameters:
+        - $ref: "#/components/parameters/asnBatch"
+      responses:
+        "200":
+          description: >
+            One row per distinct AS number named, in first-seen order.
+
+            `name` is the WHOLE registered-holder line RIPE's list carries
+            for that ASN, exactly as published -- never split into a
+            handle and an organization; some names carry a legal successor
+            or a second holder after their own " - " separator, and any
+            split guesses at a boundary this dataset does not mark. `""`
+            in both `name` and `country` together is the explicit,
+            positive claim that this AS has no registered holder on the
+            list -- true of every private-range ASN any deployment's
+            archive carries, since RIPE's list holds none of them -- and
+            it is NOT the same fact as the dataset being
+            unavailable: read `meta.asnames_loaded` before drawing either
+            conclusion from an empty name.
+
+            `meta.asnames_loaded` is `false` on every stack where nobody
+            has run `make fetch-asnames` (or applied the dictionary DDL)
+            yet -- the ordinary state of a fresh clone -- and every row's
+            `name` and `country` are `""` in that case too, for the ASN
+            asked about rather than any registered fact about it.
+            `meta.asnames_loaded` is what tells the two apart; a client
+            that reads an empty name without checking it first cannot.
+
+            `meta.asnames_published` is the SOURCE's own publication date
+            -- RIPE's Last-Modified response header at the moment `make
+            fetch-asnames` last ran, never the moment that command itself
+            ran -- so a caller can judge how stale a still-authoritative-
+            looking name might be. The key is ABSENT -- not present and
+            `null` -- whenever `meta.asnames_loaded` is `false`, and it is
+            ALSO absent when `meta.asnames_loaded` is `true` but the
+            date's own companion dictionary is unavailable: the names
+            dataset and its publication date are two independent
+            ClickHouse objects, ordinarily fetched and applied together,
+            and one being loaded is never a guarantee that the other is
+            too. Read the key's presence, not its value; and read
+            `meta.asnames_loaded`, which IS always sent here, to tell a
+            missing dataset from a dataset with no date.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, meta]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/ASName" }
+                  meta: { $ref: "#/components/schemas/Meta" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/auth/config:
+    get:
+      tags: [meta]
+      operationId: getAuthConfig
+      summary: How this daemon expects callers to authenticate.
+      description: >
+        Unauthenticated by necessity: a browser has to learn which mode it is
+        in before it can present a credential. The response carries no secret
+        -- a mode name, and in oidc mode an issuer URL and client id, both of
+        which are public by construction.
+      security: []
+      responses:
+        "200":
+          description: The daemon's auth mode.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mode]
+                properties:
+                  mode:
+                    type: string
+                    enum: [token, oidc, none]
+
+  /v1/openapi.yaml:
+    get:
+      security: []
+      operationId: getOpenAPI
+      summary: This document.
+      responses:
+        "200":
+          description: The contract, as shipped in the running binary.
+          content:
+            application/yaml:
+              schema: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        Static named tokens from the daemon's config. This is still the
+        default -- a daemon left at it, or set to it explicitly, refuses to
+        start with no tokens configured -- but it is no longer the only
+        mode: auth.mode: none turns authentication off for the whole
+        daemon, for a deployment that already gates access with a fronting
+        proxy or a VPN and does not want a second credential to manage.
+        GET /v1/auth/config is unauthenticated for exactly this reason: a
+        caller has to learn which of the two it is talking to before it can
+        present anything.
+
+  parameters:
+    router:
+      name: router
+      in: query
+      description: Router IP, plain form.
+      schema: { type: string }
+      example: "10.0.103.61"
+    routerRequired:
+      name: router
+      in: query
+      required: true
+      schema: { type: string }
+    peer:
+      name: peer
+      in: query
+      description: Peer IP, plain form.
+      schema: { type: string }
+    churnCollector:
+      name: collector
+      in: query
+      required: false
+      schema: { type: string }
+      description: >
+        Narrow the answer to one collector's view.
+
+        Omitting this does NOT sum the collectors. Churn describes the PEER,
+        so a count that grew because a second collector was watching would be
+        a collection artifact reported as a fact about the network -- and it
+        grew unevenly, so "busiest first" ranked by observer count. The
+        unscoped answer is instead the BEST SINGLE VANTAGE POINT: the
+        collector that saw the most, reported whole, which can never inflate
+        and is identical to a single-collector deployment's answer.
+
+        There is no deduplicated union on offer, because two collectors
+        observing one UPDATE agree on no identity that survives a broken
+        router clock. Name a collector here when you want one vantage point
+        specifically -- including a lagging one, which the default hides
+        behind the collector that saw more.
+    peerRequired:
+      name: peer
+      in: query
+      required: true
+      schema: { type: string }
+    rib:
+      name: rib
+      in: query
+      description: >
+        BMP RIB view. All five values are legal; the archive currently
+        carries in_pre, in_post, and loc_rib only.
+      schema:
+        type: string
+        enum: [in_pre, in_post, out_pre, out_post, loc_rib]
+    prefix:
+      name: prefix
+      in: query
+      description: Exact prefix match, e.g. "10.77.0.0/24". Mutually exclusive with covers.
+      schema: { type: string }
+    covers:
+      name: covers
+      in: query
+      description: >
+        Longest-match: rows whose prefix contains this address, **within
+        the same address family**. Containment alone is 128-bit arithmetic,
+        under which an IPv6 default route (::/0) contains every IPv4-mapped
+        address — so `covers=10.0.0.1` would report ::/0 as covering it. It
+        does not, in any operational sense, so the family must agree.
+
+        Family is decided from the row's own prefix as this endpoint
+        renders it, always in plain (unmapped) form: an IPv4 prefix never
+        renders in mapped form, so a stored `::ffff:10.0.0.0/104` is an IPv6
+        prefix and does not answer an IPv4 query (and, being mapped, is not
+        reachable by an IPv6 query either — it is unreachable via covers).
+        A mapped address supplied HERE is the opposite case: it is what a
+        person typed rather than what was advertised or reported, so it is
+        unmapped and asks the IPv4 question.
+
+        Full-scan by construction (no index can serve containment); cost
+        scales with the underlying table's size -- see the endpoint's own
+        description for a measured figure where one is given (/v1/routes'
+        is 31-52ms at 3.2M rows; ls_prefixes is a much smaller table).
+        Mutually exclusive with prefix.
+      schema: { type: string }
+      example: "10.77.0.33"
+    ribCollector:
+      name: collector
+      in: query
+      required: false
+      description: >
+        Which collector's view to walk, for a router more than one monitors.
+
+        A RIB walk is pinned to one (collector, session) by construction: a
+        session_id is minted by one collector's own clock and means nothing
+        without it, and two collectors' RIBs of one router are two answers
+        rather than one. With no collector named, a router two collectors
+        monitor is a 400 -- deliberately, because picking one silently is
+        the failure this parameter exists to replace.
+
+        Naming a collector that does not monitor this router is also a 400,
+        rather than an empty page: an empty page says "this peer carries
+        nothing", which is a different and false statement.
+
+        A cursor already carries the collector it was issued for, so passing
+        both is redundant when they agree and a 400 when they do not. To
+        switch collectors, drop the cursor and start that collector's walk
+        from the beginning -- a position from one collector's walk means
+        nothing in another's.
+      schema: { type: string }
+    cursor:
+      name: cursor
+      in: query
+      description: >
+        Opaque, from the previous page's meta.next_cursor. Carries the
+        walk's (router, peer, rib) scope and the last-seen key; a tampered
+        cursor is a 400. On /v1/rib/* and the three /v1/ls paths it also
+        carries the pinned (collector, session) that walk cannot resume
+        without, and a cursor whose session has been superseded is a 409
+        with code session_changed (restart the walk without a cursor).
+        /v1/events is the one exception: a peer's event history is itself
+        the record of sessions starting and ending, so its cursor carries
+        no session pin and paginating it never answers 409.
+        On the three /v1/ls paths, a cursor is accepted only when router=
+        and peer= are both set (an unscoped walk has no single session to
+        pin), and combining one with protocol=, area=, asn=,
+        node=/local_node=/remote_node=, prefix=, covers=, or a state=
+        other than the default is a 400 naming the offending parameter.
+        Pagination itself is offered only for a scoped request with none of
+        those set: a scoped request that also narrows by node identity is
+        answered like an unscoped one instead -- capped at max_page,
+        meta.next_cursor always null -- rather than handing back a cursor
+        the same narrowing would then refuse on the next page. Drop the
+        narrowing parameter to page the walk, or drop cursor= for a
+        filtered, capped answer.
+      schema: { type: string }
+    limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 10000, default: 1000 }
+    collectionSince:
+      name: since
+      in: query
+      description: >
+        RFC 3339 timestamp, or a duration relative to now ("1h", "30m",
+        "24h"). Default "1h". Bounds against ts_collector, never ts_router
+        -- the same rule /v1/events' own since= holds, for the same reason
+        (ts_collector is the collector's own clock; ts_router is whatever
+        the router claimed and is carried for display only).
+
+        On /v1/collection/locrib it bounds the reported side ONLY -- the
+        stats_events read -- and never the archived side. reported is a
+        snapshot of the router's newest claim and archived is what
+        collection holds in the router's current BMP session, so windowing
+        both would compare an accumulation against a snapshot and render a
+        Loc-RIB gap that is an artifact of the window. See that path's own 200 description. On the
+        other three paths it bounds every row the answer is computed from.
+
+        Unlike /v1/events, there is no scoped mode here that exempts a wide
+        window from the clamp below: router= narrows every one of these
+        four signals' WHERE clauses, but none of the four is a keyset walk
+        pinned to a session, so narrowing by router never turns a wide
+        window into a cheap seek the way pinning (router, peer) does for a
+        scoped /v1/events request. A since= reaching further back than the
+        daemon's configured max_unscoped_since (24h by default) is a 400
+        naming that limit, with or without router= set.
+      schema: { type: string, default: "1h" }
+    protocol:
+      name: protocol
+      in: query
+      description: >
+        BGP-LS Protocol-ID, as a decimal or as a name. The two notations are
+        the same question: protocol=2 and protocol=isis-l2 select the same
+        rows. 0 is not assigned and is a 400.
+      schema:
+        type: string
+        example: "isis-l2"
+    area:
+      name: area
+      in: query
+      description: >
+        IGP area. 0 is a REAL value here -- the OSPF backbone, and the most
+        common area in the archive -- so an absent parameter and area=0 are
+        different questions and are distinguished by presence, not by value.
+        On /v1/ls/links this matches EITHER end, so an area-crossing link is
+        returned by a query for either of its two areas.
+      schema: { type: integer, format: int64, minimum: 0, maximum: 4294967295 }
+    lsASN:
+      name: asn
+      in: query
+      description: >
+        The node's AS. Unlike origin_asn on the route paths, 0 is accepted:
+        a link-state node with no AS descriptor genuinely stores 0, and RFC
+        7607's reservation is about what may originate a route, not about
+        what an IGP may report. On /v1/ls/links this matches either end.
+      schema: { type: integer, format: int64, minimum: 0, maximum: 4294967295 }
+    node:
+      name: node
+      in: query
+      description: >
+        A node_key, as a string: cityHash64 over the node's own descriptors,
+        so it is stable across observers and exceeds 2^53. String, not
+        number, for the reason session_id is.
+      schema: { type: string }
+    localNode:
+      name: local_node
+      in: query
+      description: A node_key, as a string. Matches the link's local end only.
+      schema: { type: string }
+    remoteNode:
+      name: remote_node
+      in: query
+      description: A node_key, as a string. Matches the link's remote end only.
+      schema: { type: string }
+    lsState:
+      name: state
+      in: query
+      description: >
+        Which objects to include. live (the default) returns objects
+        currently present; withdrawn returns exactly those the default
+        hides; any returns both, and each row's own is_withdraw
+        discriminates. is_withdraw is returned regardless of this parameter,
+        so a caller never has to infer state from the request it made.
+      schema: { type: string, enum: [live, withdrawn, any], default: live }
+    originASN:
+      name: origin_asn
+      in: query
+      description: >
+        The AS that originated the route: the last entry of the live AS path.
+        A route with an empty AS path never matches, because its origin is
+        unknown -- which this API reports as origin_asn: null rather than 0.
+        0 is refused: RFC 7607 reserves it and no route originates it.
+      schema: { type: integer, minimum: 1, maximum: 4294967295 }
+    throughASN:
+      name: through_asn
+      in: query
+      description: >
+        An AS appearing anywhere in the live AS path, origin and adjacent
+        neighbor included. 0 is refused, as for origin_asn.
+      schema: { type: integer, minimum: 1, maximum: 4294967295 }
+    community:
+      name: community
+      in: query
+      description: >
+        One community in any notation this archive stores: a standard
+        community (65000:100), a large community (65101:1:100), an extended
+        community (rt:65101:1, soo:65000:777, or the raw type:subtype:value
+        form) or a route target (65100:777, 10.255.0.3:900). The shape of the
+        value decides which columns are searched, and where a shape fits more
+        than one column all of them are searched -- meta.community_columns
+        reports which, so an empty answer can be told from one looked for in
+        the wrong place.
+      schema: { type: string }
+    asnBatch:
+      name: asn
+      in: query
+      required: true
+      description: >
+        One AS number per occurrence -- repeat the parameter for a batch
+        (`?asn=3356&asn=15169`), never a comma-joined list in one value.
+        At least one occurrence is required; more than 512 is a 400 naming
+        that bound. Unlike origin_asn and through_asn, 0 is accepted: this
+        parameter has no "unset" value of its own (absence is naming it
+        zero times, not the value 0), so there is no ambiguity for 0 to
+        introduce, and refusing it would only turn "does AS 0 have a
+        holder" (it does not) into a 400 instead of the ordinary answer.
+      explode: true
+      schema:
+        type: array
+        minItems: 1
+        maxItems: 512
+        items: { type: integer, minimum: 0, maximum: 4294967295 }
+
+  responses:
+    BadRequest:
+      description: Malformed or conflicting parameters.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: >
+        The request did not present exactly one usable bearer token. That
+        covers a missing Authorization header, an unrecognized token, a
+        scheme other than Bearer -- and also a request carrying MORE than
+        one Authorization header, which is refused rather than resolved:
+        Go's Header.Get returns the first value while a fronting proxy may
+        forward and read the last, so accepting either would let the daemon
+        and the proxy disagree about who called. The response body never
+        echoes what was presented.
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, const: Bearer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    SessionChanged:
+      description: >
+        The session this cursor's walk was pinned to is no longer the
+        router's current session (the router reconnected mid-walk). The
+        pages already fetched describe the superseded dump; restart the
+        walk without a cursor.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    Meta:
+      type: object
+      required: [warnings, total_matched]
+      properties:
+        next_cursor:
+          type: [string, "null"]
+          description: Present (non-null) only when another page exists.
+        warnings:
+          type: array
+          description: >
+            Machine-readable caveats about the answer's completeness. An
+            empty array is a claim, not an omission: no contributing session
+            was mid-dump, no contributing collector is stale, and no smear
+            applies. collector_stale means at least one row came from a
+            collector that has not been heard from within the stale threshold
+            (90 s by default): that row is the collector's last view, served
+            because a pipeline stall would otherwise blank every answer, not
+            a current one. On /v1/topology, which merges collectors, it means
+            such a row may be in the graph.
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code:
+                type: string
+                enum: [session_dumping, paginated_smear, truncated, collector_stale]
+              message: { type: string }
+        total_matched:
+          type: [integer, "null"]
+          description: >
+            Rows matched, which is not rows returned once the cap applies.
+            null on endpoints that do not cap.
+        community_columns:
+          type: array
+          items: { type: string }
+          description: >
+            The columns a community= was searched in. Absent when the request
+            carried no community=.
+        dump_totals:
+          description: >
+            Sum of archived, dumps and changes across every row
+            /v1/collection/dumps' own response returned -- not a synthesized
+            row in data, so a client never has to learn to exclude one from
+            a sum, a sort or a count of members. Present only on
+            /v1/collection/dumps' response; absent on every other endpoint's,
+            including the other three /v1/collection/* paths.
+          type: object
+          required: [archived, dumps, changes]
+          properties:
+            archived: { type: integer }
+            dumps: { type: integer }
+            changes: { type: integer }
+        session_totals:
+          description: >
+            Sum of sessions, up, down and view_lost across every
+            row /v1/collection/sessions' own response returned -- not a
+            synthesized row in data. Present only on
+            /v1/collection/sessions' response.
+          type: object
+          required: [sessions, up, down, view_lost]
+          properties:
+            sessions: { type: integer }
+            up: { type: integer }
+            down: { type: integer }
+            view_lost: { type: integer }
+        locrib_totals:
+          description: >
+            Sum of reported and archived across every row
+            /v1/collection/locrib's own response returned -- not a
+            synthesized row in data. Present only on /v1/collection/locrib's
+            response.
+          type: object
+          required: [reported, archived]
+          properties:
+            reported: { type: integer }
+            archived: { type: integer }
+        flag_totals:
+          description: >
+            Sum of envelopes across every row /v1/collection/flags' own
+            response returned -- not a synthesized row in data. Present only
+            on /v1/collection/flags' response.
+
+            IT IS NOT A COUNT OF DISTINCT ENVELOPES. data explodes each
+            row's parse_flags array, so a single BMP envelope that raised two
+            flags is counted once under EACH of those flags in data, and this
+            total sums those rows exactly as they stand -- so that envelope
+            contributes twice here as well. That matches what data itself
+            shows rather than silently answering a different, deduplicated
+            question data does not. A client needing distinct envelopes
+            cannot get them from this field or by summing data; nothing in
+            this response carries that number.
+          type: object
+          required: [envelopes]
+          properties:
+            envelopes: { type: integer }
+        churn_bucket:
+          type: string
+          description: >
+            The width every bar was computed at, as a Go duration string
+            ("5m0s").
+
+            Present on TWO paths. On /v1/collection/churn it is the width of
+            every bar in data, and bucket= lets a caller name it. On
+            /v1/collection/churn/peers it is the width of every bar in each
+            row's activity, and a caller may NOT name it -- that path cuts
+            the window into a fixed number of bars, because a sparkline's
+            bar count is what needs bounding. Always present on both,
+            INCLUDING WHEN data IS EMPTY, and absent on every other path.
+
+            bucket= is optional, so the width is a decision this daemon can
+            make rather than one the caller always states -- and a chart
+            labeled with a width it was not drawn at is the same defect as
+            one labeled with a window it did not cover. A client should
+            render this value, not the one it asked for: the two agree today
+            and would stop agreeing the moment a clamp adjusted a request.
+        churn_from:
+          type: string
+          format: date-time
+          description: >
+            The START of the window this answer covers, on the DAEMON's
+            clock -- what `since=` resolved to. Present on
+            GET /v1/collection/churn and GET /v1/collection/churn/peers, and
+            always present on both.
+          
+        churn_to:
+          type: string
+          format: date-time
+          description: >
+            The END of that window: the moment the answer was computed, and
+            the same instant the unscoped-window check was made against.
+
+            Sent with churn_from because a bar cannot be PLACED without
+            both -- on either path. /v1/collection/churn/peers needs them
+            just as much: each row's `activity` omits its quiet buckets, so
+            spacing the bars evenly would draw a peer that churned twice an
+            hour apart exactly like one that churned twice in a minute. Every `ts` in `data` is a COLLECTOR timestamp, so a client
+            bounding the axis with its own clock is drawing collector time
+            against browser time -- which is what this project's own Monitor
+            screen did until 2026-09-21, deriving the window from
+            `new Date()`. A browser a few minutes off shifted every bar
+            against its own gridline, and nothing on screen could have shown
+            it. Draw the axis between these two, never between a local
+            subtraction.
+        activity_window:
+          type: string
+          description: >
+            How far back GET /v1/collectors' own sparkline looks, as a Go
+            duration string ("30m0s"). Present only on that path, and always
+            present there, INCLUDING WHEN data IS EMPTY -- the window every
+            Collector.activity array in this response was computed over,
+            named on the wire rather than left for a client to infer by
+            counting entries or reading a card's own first and last minute.
+        retention_days:
+          type: integer
+          description: >
+            History retention, in days; current state does not expire. Read
+            from the history tables' own TTL, not from configuration, so it
+            is the retention the archive actually applies: the ten history
+            tables (every route, link-state, peer, End-of-RIB and stats
+            event) delete rows older than this, while the current-state
+            tables behind routers, peers, routes and link-state objects as
+            they stand now have no TTL. Present only on GET /v1/collectors.
+            Absent there too when the TTL is not a whole number of days (set
+            by hand in months, say), rather than a guessed number, and when
+            the TTL could not be read.
+        asnames_loaded:
+          type: boolean
+          description: >
+            Whether GET /v1/asnames' own AS holder-name dataset is loaded
+            AT ALL. Present only on that path, and always present there,
+            true or false. It answers "is there a dataset to ask", never
+            "does the dataset list THIS particular ASN" -- see that
+            path's own 200 description for why an empty name on a row
+            cannot be read without checking this field first.
+        asnames_published:
+          type: string
+          format: date-time
+          description: >
+            When the AS holder-name dataset's SOURCE published it (RIPE's
+            own Last-Modified header), sent only on GET /v1/asnames and
+            only when there is a date to send. NEVER the moment `make
+            fetch-asnames` ran. ABSENT -- not null -- whenever
+            asnames_loaded is false, and also absent when asnames_loaded
+            is true but the date's own companion object is unavailable.
+            Unlike asnames_loaded, which is always present on that path,
+            this key's own presence is the signal: see that path's 200
+            description.
+
+    RouterDumpCount:
+      type: object
+      required: [router_ip, router_sysname, archived, dumps, changes]
+      properties:
+        router_ip: { type: string }
+        router_sysname: { type: string }
+        archived:
+          type: integer
+          description: Rows /v1/collection/dumps' window archived for this router. archived = dumps + changes.
+        dumps:
+          type: integer
+          description: >
+            Rows that were the FIRST observation of their route inside their
+            own BMP session -- the router re-sending a route it had already
+            sent, because the session reset. Ordinary BMP behavior, not a
+            fault: see this path's own 200 description.
+        changes:
+          type: integer
+          description: >
+            Every row that was not a dump, including every withdrawal --
+            nothing synthesizes a withdrawal, so a withdrawal is never a
+            dump.
+
+    RouterSessionCount:
+      type: object
+      required: [router_ip, router_sysname, sessions, up, down, view_lost]
+      properties:
+        router_ip: { type: string }
+        router_sysname: { type: string }
+        sessions:
+          type: integer
+          description: Distinct BMP sessions observed inside the window. Not an event count.
+        up: { type: integer, description: peer_events rows of kind up inside the window. }
+        down:
+          type: integer
+          description: >
+            peer_events rows of kind down -- the router stating, on the
+            wire, that a BGP session ended. Never the same thing as
+            view_lost; see this path's own 200 description.
+        view_lost:
+          type: integer
+          description: >
+            peer_events rows of kind view_lost -- the collector losing its
+            own BMP transport to the router, with the router having said
+            nothing. Never folded into down.
+
+    PeerLocRIB:
+      type: object
+      required: [router_ip, peer_ip, reported, archived, has_stat]
+      properties:
+        router_ip: { type: string }
+        peer_ip: { type: string }
+        reported:
+          type: integer
+          description: >
+            The router's own newest claim for this peer's Loc-RIB route
+            count (BMP Stats Report counter 8, RFC 7854 sec 4.8). 0 when
+            has_stat is false -- see has_stat before reading this as a real
+            zero.
+        archived:
+          type: integer
+          description: >
+            Live routes collection holds for this peer under rib = loc_rib
+            specifically -- never adj-RIB-in rows -- in each collector's
+            current BMP session for the router. Routes a superseded session
+            left behind are not counted: a new session re-dumps the router's
+            table, and reported counts what the router holds now. A gap
+            against reported is not proof of loss; see this path's own 200
+            description.
+
+            since= DOES NOT SCOPE THIS FIELD. It bounds reported and nothing
+            else, so archived is what collection holds for the peer in its
+            router's current BMP session, whole, at every window. reported is a SNAPSHOT -- the newest count the
+            router has claimed -- and a windowed archived would be an
+            ACCUMULATION over that window, so comparing the two would render
+            a gap that is an artifact of the window rather than anything
+            about the data: a peer whose Loc-RIB is stable wrote its rows
+            once at session start and has written nothing since, so its
+            archived would decay toward 0 as the window narrowed while
+            reported held.
+        has_stat:
+          type: boolean
+          description: >
+            Whether the router has sent BMP Stats Report counter 8 for this
+            peer at all, inside the window. false means "no stat, ever" --
+            distinct from a genuine reported = 0 -- because a ClickHouse map
+            returns 0 for a missing key exactly as it would for a real zero.
+            Render false as "no stat," never as a gap of 0.
+
+    PeerChurn:
+      type: object
+      required: [router_ip, router_sysname, peer_ip, peer_asn, readvertise, withdraw, dump, changes_per_second, activity]
+      properties:
+        router_ip: { type: string, description: The router this peer is a peer OF. }
+        router_sysname:
+          type: string
+          description: >
+            The router's sysName as of its latest row in the window, resolved
+            with argMax rather than grouped on: it is a per-row column, so a
+            device renamed mid-window would otherwise split into two rows
+            each holding part of one peer's archive. Empty when the router
+            sent no sysName TLV.
+        peer_ip: { type: string }
+        peer_asn:
+          type: integer
+          format: int64
+          description: >
+            The peer's AS as of its latest row in the window, resolved the
+            same way and for the same reason as router_sysname.
+        readvertise:
+          type: integer
+          format: int64
+          description: See ChurnBucket.readvertise; summed over the window rather than bucketed.
+        withdraw:
+          type: integer
+          format: int64
+          description: See ChurnBucket.withdraw; summed over the window rather than bucketed.
+        dump:
+          type: integer
+          format: int64
+          description: See ChurnBucket.dump; summed over the window rather than bucketed.
+        changes_per_second:
+          type: number
+          format: double
+          description: >
+            (`readvertise` + `withdraw`) divided by the window's length in
+            seconds. ARCHIVED ROWS PER SECOND, NOT THE PEER'S UPDATE RATE:
+            it counts what this collector stored and kept, and a BGP
+            speaker's own update rate is not observable from a BMP archive.
+            A screen rendering it has to say so.
+
+            Computed by the daemon rather than left to the client because
+            this is where the window is known exactly -- since= is a duration
+            OR an RFC 3339 instant, and only this side has resolved which,
+            against which clock. A client dividing by its own reading of the
+            same string divides by a second, slightly different window.
+
+            `dump` is excluded for the reason this path ranks without it: a
+            session that restarted once would otherwise outrank a peer that
+            is genuinely busy. Zero when the window has no positive length.
+
+        activity:
+          type: array
+          items: { $ref: "#/components/schemas/ChurnActivity" }
+          description: >
+            This peer's changes over time: the same quantity
+            changes_per_second averages, kept as the shape an average
+            destroys. Two peers with one rate may have churned steadily and
+            all at once, and only this tells them apart.
+
+            Oldest first. ONE ENTRY PER BUCKET THAT HELD A CHANGE -- a quiet
+            bucket is absent rather than present as zero, so the array's
+            length is a function of the data and not of the window's width.
+            Draw these on an axis whose bounds you already know, the way
+            /v1/collection/churn's own bars are drawn; a gap is drawable
+            without being transmitted.
+
+            Empty, never null, for a peer that changed nothing in the window
+            -- that is an answer, not an absence.
+
+    ChurnActivity:
+      type: object
+      required: [bucket, changes]
+      properties:
+        bucket:
+          type: string
+          format: date-time
+          description: >
+            The bar's START, aligned to a multiple of meta.churn_bucket, on
+            the collector clock -- the same alignment and the same clock
+            /v1/collection/churn's own `ts` uses.
+        changes:
+          type: integer
+          description: >
+            Re-advertisements plus withdrawals in this bucket, and NEVER
+            dumps -- the same exclusion the ranking beside it applies, for
+            the same reason: a session that restarted would otherwise draw a
+            spike the network did not cause.
+    PrefixChurn:
+      type: object
+      required: [prefix, observations, readvertise, withdraw, dump, routes, sessions]
+      properties:
+        prefix:
+          type: string
+          description: >
+            A unicast prefix in CIDR form. Never empty: a row whose NLRI the
+            decoder could not read is excluded rather than ranked under a
+            blank label.
+        observations:
+          type: integer
+          format: int64
+          description: >
+            Every archived row for this prefix in the window. Equals
+            readvertise + withdraw + dump.
+        readvertise:
+          type: integer
+          format: int64
+          description: See ChurnBucket.readvertise.
+        withdraw:
+          type: integer
+          format: int64
+          description: See ChurnBucket.withdraw.
+        dump:
+          type: integer
+          format: int64
+          description: See ChurnBucket.dump.
+        routes:
+          type: integer
+          format: int64
+          description: >
+            Distinct routes carrying this prefix -- the unicast route
+            identity minus the prefix itself, so two ADD-PATH siblings or two
+            peers advertising the same prefix are two routes.
+        sessions:
+          type: integer
+          format: int64
+          description: >
+            Distinct BMP sessions that contributed. High `observations` over
+            ONE route and MANY sessions is a flapping session; over many
+            routes and one session it is a busy prefix.
+
+    ChurnBucket:
+      type: object
+      required: [ts, readvertise, withdraw, dump]
+      properties:
+        ts:
+          type: string
+          format: date-time
+          description: >
+            The bucket's START, aligned to a multiple of meta.churn_bucket --
+            not the timestamp of the first row inside it, which would put a
+            bar wherever a router happened to speak. On the collector clock,
+            like every other timestamp this API orders on.
+        readvertise:
+          type: integer
+          format: int64
+          description: >
+            Rows that are neither a session dump nor a withdrawal: a route
+            re-sent inside a session that had already sent it. The network
+            doing something, as opposed to the session restarting.
+        withdraw:
+          type: integer
+          format: int64
+          description: >
+            Withdrawals. Always a change, never a dump: nothing synthesizes
+            a withdrawal -- a router re-dumping its table sends what it has,
+            not what it does not -- so a withdrawal that happens to be the
+            first thing seen for a route in its session is still a change.
+        dump:
+          type: integer
+          format: int64
+          description: >
+            First non-withdrawal observation of a route inside its session.
+            Ordinary BMP behavior after a session reset, and not a fault.
+
+    FlagCount:
+      type: object
+      required: [flag, envelopes]
+      properties:
+        flag:
+          type: string
+          description: One of bgp/'s PARSE_FLAG_* names, as the decoder wrote it.
+        envelopes:
+          type: integer
+          description: >
+            Distinct (stream, stream_seq) envelopes that raised this flag
+            inside the window -- ONE per BMP message, however many rows
+            (routes, nodes, links, prefixes) that message exploded into.
+            Never a row count; see this path's own 200 description.
+
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_param, unauthorized, session_changed, internal]
+            message:
+              type: string
+              description: >
+                Human-readable; always redaction-safe. For code internal it
+                is exactly "internal error; the server log records the cause
+                under ref=" followed by 16 hex digits, and the server logs
+                the failure under the same ref. It never carries driver or
+                SQL text.
+
+    Collector:
+      type: object
+      required: [collector, archive, status, reachable, error, endpoint, id_mismatch, activity]
+      properties:
+        collector: { type: string }
+        archive:
+          type: [object, "null"]
+          description: >
+            Null when the archive has no record of this id at all -- see
+            this path's own 200 description. Never a real object with zero
+            routers and zero peers; that shape cannot occur.
+          required: [routers, peers_up, peers_down, peers_view_lost, peers_stale, last_row_at,
+                     last_beat_at, started_at]
+          properties:
+            routers:
+              type: array
+              items: { $ref: "#/components/schemas/CollectorRouter" }
+            peers_up: { type: integer }
+            peers_down: { type: integer }
+            peers_view_lost:
+              type: integer
+              description: >
+                Peers whose current session ended with the collector losing
+                its own BMP transport, summed across every router this
+                collector currently monitors. See Router.peers_view_lost for
+                the identical distinction at the router grain.
+            peers_stale:
+              type: integer
+              description: >
+                Peers whose last word was up, summed across every router this
+                collector currently monitors, while the collector has not been
+                heard from within the stale threshold. See Router.peers_stale.
+            last_row_at:
+              type: string
+              format: date-time
+              description: >
+                The newest row this collector has written to ANY of the
+                archive's ten data tables, not merely a peer up/down event
+                -- a collector can be busy writing route or link-state
+                updates for minutes with no new peer event at all, and this
+                is what keeps that collector from reading as dead.
+            last_beat_at:
+              type: [string, "null"]
+              format: date-time
+              description: >
+                When the archive last received this collector's heartbeat, on
+                the archive's own clock: the instant staleness is measured
+                from. Null when no heartbeat was ever received, which reads
+                the same as a stale one. Distinct from last_row_at: a
+                collector with nothing to report still beats.
+            started_at:
+              type: [string, "null"]
+              format: date-time
+              description: >
+                When this collector's newest process started, on the
+                collector's own clock, as its heartbeat announces it. A
+                current session opened before it belongs to an earlier
+                process, and its peers stored as up read view_lost; a peer
+                stored as down stays down. Null when no heartbeat was ever
+                received.
+        status:
+          type: [object, "null"]
+          description: >
+            Null whenever the daemon did not answer -- see this path's own
+            200 description for the two reasons that can be, and reachable
+            for how to tell them apart on the wire.
+          required: [started_at, observed_at, sessions_active, bmp_messages_total,
+                     events_published_total, publish_errors_total, publish_rejects_total]
+          properties:
+            started_at: { type: string, format: date-time }
+            observed_at:
+              type: string
+              format: date-time
+              description: >
+                When the daemon gathered the counters below, on ITS OWN
+                clock. Two polls and their two observed_at values are what a
+                messages/s rate is made of; this response computes none --
+                a single answer is one sample, and a rate needs two.
+            sessions_active:
+              type: integer
+              description: Open BMP sessions right now -- a gauge, not a total.
+            bmp_messages_total: { type: integer }
+            events_published_total: { type: integer }
+            publish_errors_total:
+              type: integer
+              description: >
+                Local backpressure: this collector shedding a publish
+                because NATS was unreachable. Distinct from
+                publish_rejects_total -- the two are different failures with
+                different fixes, and a card that adds them reports neither.
+            publish_rejects_total:
+              type: integer
+              description: The JetStream SERVER refusing a publish this collector believed it had sent. Distinct from publish_errors_total.
+        reachable:
+          type: [boolean, "null"]
+          description: >
+            Null exactly when status is null AND no endpoint is configured
+            for this id -- reachability is not a question to ask of a
+            collector nobody told this daemon how to reach. true when the
+            endpoint answered (status is then non-null); false when one IS
+            configured and did not answer (error then names why). A null
+            status paired with reachable: false means "configured and
+            silent"; a null status paired with a null reachable means "not
+            configured at all" -- the two must never render the same way.
+        error:
+          type: string
+          description: Why status is null despite an endpoint being configured. "" whenever reachable is not false.
+        endpoint:
+          type: string
+          description: The URL this daemon polled for status. "" when no endpoint is configured for this id.
+        id_mismatch:
+          type: string
+          description: >
+            The CONFIGURED id, set only when the daemon answered and
+            reported a DIFFERENT collector_id than the id it is configured
+            under -- see this path's own 200 description. "" otherwise,
+            including every case where status is null.
+        activity:
+          type: array
+          description: >
+            Rows archived per minute, oldest first, over meta.activity_window
+            -- see this path's own 200 description for the unit (never a
+            message count, never a rate) and for what the last entry means.
+          items: { $ref: "#/components/schemas/CollectorActivity" }
+
+    CollectorRouter:
+      type: object
+      required: [sysname, ip, peers_up, peers_down, peers_view_lost, peers_stale, sys_descr, last_seen]
+      properties:
+        sysname: { type: string }
+        ip: { type: string }
+        peers_up: { type: integer }
+        peers_down: { type: integer }
+        peers_view_lost: { type: integer }
+        peers_stale: { type: integer }
+        sys_descr:
+          type: string
+          description: >
+            The router's Initiation sysDescr TLV. "" means never observed --
+            never backfilled or defaulted. See Peer.sys_descr for the
+            identical field at the peer grain.
+        last_seen:
+          type: string
+          format: date-time
+          description: >
+            The newest peer_events row in this router's CURRENT session --
+            not Collector.archive.last_row_at, which is the newest row this
+            COLLECTOR wrote to any table at all. A router whose peers have
+            been quiet for hours while its collector keeps writing route or
+            link-state updates for other routers has an old last_seen here
+            beside a fresh last_row_at on the same entry's archive object.
+
+    CollectorActivity:
+      type: object
+      required: [minute, rows]
+      properties:
+        minute:
+          type: string
+          format: date-time
+          description: The bucket's START, aligned to the minute.
+        rows:
+          type: integer
+          description: >
+            Rows this collector archived in this minute, across the
+            archive's ten data tables. Never a message count and never a
+            rate -- see this path's own 200 description.
+
+    Router:
+      type: object
+      required: [sysname, ip, collector, session_id, peers_up, peers_down, peers_view_lost, peers_stale, last_seen]
+      properties:
+        sysname: { type: string }
+        ip: { type: string }
+        collector:
+          type: string
+          description: >
+            The collector whose view this entry is. One collector per router
+            is the supported deployment; a router monitored by two collectors
+            yields one entry per collector, not a merged one.
+        session_id:
+          type: string
+          description: Current BMP session (u64 as string; see file header).
+        peers_up: { type: integer }
+        peers_down: { type: integer }
+        peers_view_lost:
+          type: integer
+          description: >
+            Peers whose current session ended with the collector losing its
+            BMP transport, rather than with the router reporting the BGP
+            session down. Normally 0; a non-zero value means nobody is
+            currently watching those peers, and their routes are excluded
+            from every current-state answer. Distinct from peers_down, which
+            is the router's own statement about a BGP session.
+        peers_stale:
+          type: integer
+          description: >
+            Peers whose last word was up while this entry's collector has not
+            been heard from within the stale threshold (90 s by default).
+            Nobody can currently vouch for them. Their routes are still
+            served, with a collector_stale warning. Normally 0; every peer of
+            every collector reads stale at once when NATS or the writer
+            stalls, and returns to up by itself when the heartbeats resume.
+        last_seen: { type: string, format: date-time }
+
+    Peer:
+      type: object
+      required: [router_ip, peer_ip, collector, rib, asn, state, dump_states, session_id, routes,
+                 hold_time, mp_families, addpath_families, sys_descr, up_since]
+      properties:
+        router_ip: { type: string }
+        peer_ip: { type: string }
+        collector: { type: string }
+        rib: { type: string, enum: [in_pre, in_post, out_pre, out_post, loc_rib] }
+        asn: { type: integer }
+        state:
+          type: string
+          enum: [unspecified, up, down, view_lost, stale]
+          description: >
+            The state the current session ended in, as far as the archive
+            can vouch for it. "unspecified" is a peer whose newest event is
+            of a kind the writer did not recognize, stored as unspecified;
+            it contributes no routes to any current-state answer. "down" is
+            the router reporting the BGP session down, with a reason on the
+            wire. "view_lost" is the collector's BMP transport ending, where
+            the router said nothing: recorded by the collector when it
+            closed the session, or derived when the collector's process has
+            restarted since the session began (a derived view_lost has no
+            event in /v1/events). "stale" is a session whose last word was
+            up while its collector has not been heard from within the stale
+            threshold (90 s by default). A "down" or "view_lost" peer
+            contributes no routes to any current-state answer; a "stale"
+            peer's routes are still served, with a collector_stale warning.
+        dump_states:
+          type: object
+          description: >
+            Per-family initial-dump progress, keyed by family ("ipv4u",
+            "vpn4", "evpn", ...). A family appears once its session has
+            carried any route or end-of-RIB marker for it: "complete" means
+            the end-of-RIB marker arrived, "dumping" means routes without
+            one yet. Empty object for a down peer (a down peer's dump state
+            is not a meaningful question).
+          additionalProperties:
+            type: string
+            enum: [complete, dumping]
+        session_id: { type: string }
+        routes:
+          type: integer
+          description: >
+            Deduplicated live unicast route-key count. 0 for a down peer.
+
+        hold_time:
+          type: [integer, "null"]
+          description: >
+            The NEGOTIATED Hold Time in seconds -- the smaller of the two the
+            session's OPEN messages offered (RFC 4271 sec 4.2).
+
+            NULL MEANS NO OPEN WAS OBSERVED, and is not the same as 0. Zero
+            is a real negotiated value: RFC 4271 says a Hold Time of 0 means
+            the timer never expires, i.e. keepalives are off for this
+            session. A peer whose only event is a Peer Down carries no OPEN
+            at all, and rendering that as 0 would tell an operator the
+            session ran with keepalives disabled.
+
+            THERE IS NO KEEPALIVE FIELD, here or anywhere in this API. The
+            OPEN carries no such value -- the keepalive interval is a local
+            timer a speaker never announces -- and hold_time/3 is a
+            convention, not an observation.
+
+            Taken from the newest event in this session that actually carried
+            an OPEN, which is not necessarily the newest event.
+        mp_families:
+          type: array
+          items: { type: string }
+          description: >
+            The address families the two speakers NEGOTIATED (RFC 4760
+            Multiprotocol Extensions), in the same family vocabulary every
+            route row's own `family` field uses -- "ipv4u", "vpn4", "evpn"
+            and so on.
+
+            This is a different and stronger claim than the families a peer
+            has routes in: a family negotiated but carrying nothing appears
+            here and appears in no route count. That is the difference
+            between "this peer does not send IPv6" and "this peer has no IPv6
+            routes to send".
+
+            Empty array, never null, when no OPEN was observed or none were
+            negotiated.
+        addpath_families:
+          type: array
+          items: { type: string }
+          description: >
+            The families ADD-PATH (RFC 7911) was negotiated for, in the same
+            vocabulary. Empty array, never null.
+        sys_descr:
+          type: string
+          description: >
+            The ROUTER's Initiation sysDescr TLV (type 1): what the router
+            says it IS -- vendor, platform and version, verbatim and
+            unnormalized. This is a router fact on a peer object because
+            peer_events is where this pipeline denormalizes router identity;
+            its sysName counterpart has always been carried the same way.
+
+            Empty string when the router sent no sysDescr TLV. Never parsed
+            into vendor/version here: the raw string is what was observed.
+
+        up_since:
+          type: [string, 'null']
+          format: date-time
+          description: >
+            When this peer's CURRENT session last came up, on the collector
+            clock -- the newest `up` event in the session, ranked on
+            (seq, stream_seq), the same key `state` is resolved on.
+
+            AN INSTANT, NOT AN UPTIME. `now - up_since` is NOT how long the
+            session has been up, and a measurement on 2026-09-21 showed
+            exactly how wrong it gets: across a real archive it equaled how
+            long the ROUTER had been SILENT for 25 of 35 peers, to the
+            decimal. A lab torn down rather than shut down sends no Peer
+            Down, so the last recorded state stays `up` forever and the
+            subtraction reports archive silence as a live session. Render the
+            instant, or pair a duration with a liveness signal of its own.
+
+            Null, never the epoch, when the session never carried an `up` at
+            all -- the same encoding and the same reason as `hold_time`.
+    RouteFanout:
+      type: object
+      required: [unicast, vpn, evpn]
+      properties:
+        unicast:
+          type: array
+          items: { $ref: "#/components/schemas/UnicastRoute" }
+        vpn:
+          type: array
+          items: { $ref: "#/components/schemas/VPNRoute" }
+        evpn:
+          type: array
+          items: { $ref: "#/components/schemas/EVPNRoute" }
+
+    TopologyFanout:
+      type: object
+      # RouteFanout's three-key discipline, applied to three GRAPHS rather
+      # than three arrays of routes. All three are required for that type's
+      # reason: a caller must never have to distinguish "this scope reaches
+      # nothing in that family" from "that family was not searched".
+      required: [unicast, vpn, evpn]
+      properties:
+        unicast: { $ref: "#/components/schemas/Graph" }
+        vpn: { $ref: "#/components/schemas/Graph" }
+        evpn: { $ref: "#/components/schemas/Graph" }
+
+    Graph:
+      type: object
+      # Both arrays, never null, and both always present. An empty graph is
+      # an ordinary answer here rather than a failed query -- see the
+      # endpoint's own 200 description.
+      #
+      # nodes is not derived from edges and cannot be: a one-hop AS path
+      # contributes a node and no edge, so a client assembling nodes from the
+      # edge list would report an origin-only answer as nothing at all.
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items: { $ref: "#/components/schemas/ASNode" }
+        edges:
+          type: array
+          items: { $ref: "#/components/schemas/ASEdge" }
+
+    ASNode:
+      type: object
+      required: [asn, routes, roles, first_seen]
+      properties:
+        asn:
+          type: integer
+          description: >
+            The AS number, and the whole identity of this node. There is no
+            holder name here: GET /v1/asnames resolves one, when the
+            optional RIPE dataset is loaded.
+        routes:
+          type: integer
+          description: >
+            Route identities in this answer whose live AS path traverses this
+            AS. Never path positions: a route whose path prepends the same
+            ASN three times traverses it once.
+        roles:
+          type: array
+          description: >
+            A SET, not an enum, and it may carry more than one member: one AS
+            is routinely the last hop of one route and the middle of another,
+            which is the ordinary shape of a mid-size network rather than an
+            edge case. origin is the last hop of at least one route in this
+            answer, transit is a non-last hop of at least one, and
+            observed_peer means this is the AS of a BMP peer the fleet holds
+            a session with -- a fact about our vantage point rather than
+            about the internet, taken from the peer_asn the router itself
+            reported.
+          items:
+            type: string
+            enum: [origin, transit, observed_peer]
+        first_seen:
+          type: string
+          format: date-time
+          description: >
+            Earliest ts_collector among the routes in this answer that
+            traverse this AS, bounded by the route tables' history
+            retention (90 days by default).
+
+    ASEdge:
+      type: object
+      required: [src, dst, routes, live_routes, first_seen]
+      properties:
+        src: { type: integer }
+        dst:
+          type: integer
+          description: >
+            src and dst are two ASNs that appear consecutively, in that
+            order, in at least one route's live AS path. A path that prepends
+            an ASN yields no self-edge: an AS does not peer with itself, and
+            drawing that pair would describe the prepend rather than the
+            network.
+        routes:
+          type: integer
+          description: >
+            Route identities in this answer carrying this adjacency, counted
+            once per route however often its path repeats the pair. This is
+            the edge's weight, and it means paths carried -- not capacity,
+            preference, stability or health.
+        live_routes:
+          type: integer
+          description: >
+            The subset of routes that are not currently withdrawn. 0 means
+            every route carrying this adjacency has been withdrawn: the
+            collector knows the edge and the network no longer uses it.
+        first_seen:
+          type: string
+          format: date-time
+          description: >
+            Earliest ts_collector among the routes that CURRENTLY traverse
+            this edge, which is not the same as the first time the edge
+            itself was seen -- and it can land on EITHER side of that, so
+            there is no safe direction to assume. A route first advertised
+            with one path and later re-advertised with another brings its
+            original timestamp to whatever edge it carries now, which reads
+            OLDER than the edge is; a route that used to carry this adjacency
+            and no longer does contributes nothing at all, so an edge whose
+            every current route arrived recently reads NEWER than it is, even
+            where the collector observed it long before.
+
+            So a client deriving "newly appeared" from a recent first_seen is
+            making a claim about the routes in this answer rather than about
+            the adjacency's age, and it can be wrong in both directions.
+            Bounded in any case by the route tables' history retention (90
+            days by default): no edge is reported as first seen earlier than
+            what we still hold.
+
+    RouteCommon:
+      type: object
+      # next_hop, med, local_pref, communities, large_communities,
+      # ext_communities and route_targets are required BECAUSE the query
+      # layer always emits them -- required here means the key is always
+      # present, not that its value is non-null. For the nullable ones that
+      # is the whole point: a caller never has to distinguish "the server
+      # omitted this" from "this route has no MED", because the first case
+      # does not occur. An LLM reading these responses gets that distinction
+      # wrong more often than a person does.
+      #
+      # next_hop is the sharpest case of the three types' worth of them. It
+      # is nullable AND it is the field a looking glass reaches for first, so
+      # "absent" and "no parseable next hop" being two different shapes on
+      # the wire would put the ambiguity exactly where it costs most.
+      required: [router_sysname, router_ip, peer_ip, collector, rib, path_id, next_hop, as_path,
+                 origin_asn, dump_state, med, local_pref, communities, large_communities,
+                 ext_communities, route_targets]
+      properties:
+        router_sysname: { type: string }
+        router_ip: { type: string }
+        peer_ip: { type: string }
+        collector: { type: string }
+        rib: { type: string, enum: [in_pre, in_post, out_pre, out_post, loc_rib] }
+        path_id: { type: integer }
+        next_hop:
+          type: [string, "null"]
+          description: Plain form; null when the row carried no parseable next hop.
+        as_path:
+          type: array
+          items: { type: integer }
+          description: >
+            As received. Empty is ordinary (iBGP, reflected routes) -- it is
+            not an error and origin_asn is null exactly then.
+        origin_asn:
+          type: [integer, "null"]
+          description: >
+            Last hop of as_path; null when as_path is empty. Never a
+            defaulted 0 -- AS 0 is reserved and a returned 0 would be
+            indistinguishable from it.
+        med: { type: [integer, "null"] }
+        local_pref: { type: [integer, "null"] }
+        communities:
+          type: array
+          items: { type: string }
+          description: Standard notation, "65000:100".
+        large_communities:
+          type: array
+          items: { type: string }
+        ext_communities:
+          type: array
+          items: { type: string }
+          description: >
+            Extended communities as rendered text: a registered name where
+            one exists ("rt:65101:1", "soo:65000:777"), else
+            "type:subtype:value", whose value may itself contain colons.
+        route_targets:
+          type: array
+          items: { type: string }
+          description: >
+            The rt: subset of ext_communities, stored again with the prefix
+            stripped. Overlaps ext_communities by design.
+        dump_state:
+          type: string
+          enum: [complete, dumping, unknown]
+          description: >
+            This route's own family's dump progress for its (router, peer,
+            rib, session) -- carried per route because an empty result and a
+            partial result are otherwise indistinguishable.
+
+    UnicastRoute:
+      allOf:
+        - $ref: "#/components/schemas/RouteCommon"
+        - type: object
+          required: [family, prefix]
+          properties:
+            family: { type: string, enum: [ipv4u, ipv6u] }
+            prefix: { type: string }
+
+    VPNRoute:
+      allOf:
+        - $ref: "#/components/schemas/RouteCommon"
+        - type: object
+          required: [family, rd, prefix, label]
+          properties:
+            family: { type: string, enum: [vpn4, vpn6, lu4] }
+            rd:
+              type: string
+              description: >
+                "" for lu4 (BGP-LU carries no RD) -- the real column value,
+                never a rendered placeholder.
+            prefix: { type: string }
+            label:
+              type: [integer, "null"]
+              description: >
+                MPLS label; null when the route carries none (empty label
+                stack, or RFC 3107's withdraw sentinel). 0 is a real value
+                (implicit-null) and is never used to mean absent.
+
+    EVPNRoute:
+      allOf:
+        - $ref: "#/components/schemas/RouteCommon"
+        - type: object
+          required: [route_type, rd, prefix, mac, ip, gateway_ip, ethernet_tag, esi, labels]
+          properties:
+            route_type:
+              type: integer
+              minimum: 1
+              maximum: 11
+              description: >
+                1 Ethernet A-D, 2 MAC/IP, 3 IMET, 4 ES, 5 IP prefix. Bounded
+                by IANA's registry rather than by the types this decoder
+                names, because the value is whatever the wire carried -- see
+                the type parameter on /v1/routes/evpn.
+            rd: { type: string }
+            prefix:
+              type: string
+              description: '"" for route types that carry no IP prefix.'
+            mac: { type: string, description: '"" when absent (non-type-2).' }
+            ip: { type: string, description: '"" when absent.' }
+            gateway_ip: { type: string }
+            ethernet_tag: { type: integer }
+            esi: { type: string }
+            labels:
+              type: array
+              items: { type: integer }
+              description: >
+                The label stack as received (type 2 may carry two). An empty
+                array means no labels -- there is no null-vs-0 ambiguity for
+                a stack.
+
+    HistoryEvent:
+      type: object
+      # next_hop and as_path are required for the reason RouteCommon's are:
+      # the query layer emits both on every event, so the key is always
+      # present. next_hop is null on a withdrawal, which carries no next hop
+      # at all -- the ORDINARY case on this surface rather than the
+      # exceptional one -- and that is exactly why "absent" must not be a
+      # second way of saying it.
+      required: [ts_collector, ts_router, seq, session_id, router_ip, peer_ip, collector, rib,
+                 family, prefix, path_id, action, next_hop, as_path]
+      properties:
+        ts_collector:
+          type: string
+          format: date-time
+          description: Collector receive time; the trustworthy timestamp.
+        ts_router:
+          type: string
+          format: date-time
+          description: >
+            Router-reported and untrusted -- a router with a dead clock
+            reports 1970. Present because it is data; order by ts_collector.
+        seq:
+          type: string
+          description: Collector-assigned per-(peer, session) sequence (u64 as string); the authoritative order.
+        router_ip: { type: string }
+        peer_ip: { type: string }
+        collector: { type: string }
+        rib: { type: string, enum: [in_pre, in_post, out_pre, out_post, loc_rib] }
+        family: { type: string }
+        prefix: { type: string }
+        path_id: { type: integer }
+        action: { type: string, enum: [announce, withdraw] }
+        session_id: { type: string }
+        next_hop: { type: [string, "null"] }
+        as_path:
+          type: array
+          items: { type: integer }
+
+    PeerEvent:
+      type: object
+      # Every property is required for RouteCommon's own reason: the query
+      # layer emits all of them on every row, so the key is always present.
+      # down_reason and reason_name are the sharpest case of that here --
+      # see each one's own description for the two facts that constrain
+      # them, and PeerEvent.kind's own description for view_lost.
+      required: [ts_collector, ts_router, stream_seq, seq, session_id, router_ip,
+                 router_sysname, peer_ip, peer_asn, collector, rib, kind, down_reason,
+                 reason_name, local_ip, local_port, remote_port]
+      properties:
+        ts_collector:
+          type: string
+          format: date-time
+          description: >
+            Collector receive time; the trustworthy timestamp, and what this
+            walk is keyset-ordered on. See the path's own description for
+            why the ordering cannot follow peer_events' physical sort key.
+        ts_router:
+          type: string
+          format: date-time
+          description: >
+            Router-reported and untrusted -- a router with a dead clock
+            reports 1970. Present because it is data; never sorted on.
+        stream_seq:
+          type: string
+          description: >
+            JetStream sequence for this event (u64 as string). Unlike
+            HistoryEvent, which omits it as a transport artifact, this is
+            the tie-breaker peer_events' own physical sort key ends on and
+            the second half of this endpoint's cursor position.
+        seq:
+          type: string
+          description: Collector-assigned per-(peer, session) sequence (u64 as string).
+        session_id:
+          type: string
+          description: >
+            The BMP session this event belongs to (u64 as string; see file
+            header). A session ending and a new one starting are both
+            events this walk can return, one after another -- unlike
+            /v1/rib/* and /v1/ls/*, this endpoint's cursor is not pinned to
+            one session, so it can cross that transition rather than stop
+            at it.
+        router_ip: { type: string }
+        router_sysname: { type: string }
+        peer_ip: { type: string }
+        peer_asn: { type: integer }
+        collector: { type: string }
+        rib: { type: string, enum: [in_pre, in_post, out_pre, out_post, loc_rib] }
+        kind:
+          type: string
+          enum: [unspecified, up, down, view_lost]
+          description: >
+            One of peer_events' own four values, returned exactly as
+            recorded. "view_lost" is the collector losing its view of the
+            peer while the router said nothing -- it is not a "down", and
+            it renders as itself rather than as either of them.
+        down_reason:
+          type: integer
+          description: >
+            A BMP Peer Down reason code (RFC 7854 sec 4.9). 0 is not a
+            member of that registry: it means the router said nothing,
+            which is true on every row whose kind is not "down" -- most
+            visibly view_lost, the collector's own synthetic close -- and
+            is never reported as a manufactured reason. Never coerced,
+            defaulted or normalized: a stored 0 is reported as 0.
+        reason_name:
+          type: string
+          description: >
+            The registry name for down_reason, or "" for a down whose code
+            this project has no name for, or for any row that is not a
+            down. "" is a positive answer in both cases, never a guess --
+            the number beside it is the whole truth. Follows
+            LsLink.protocol_name's own contract for IGP protocol IDs.
+        local_ip: { type: string }
+        local_port: { type: integer }
+        remote_port: { type: integer }
+
+    LSCommon:
+      type: object
+      required:
+        [router_sysname, router_ip, peer_ip, collector, rib,
+         protocol, protocol_name, identifier, asn, bgpls_id, area,
+         router_id, node_key, is_withdraw, dump_state]
+      properties:
+        router_sysname: { type: string }
+        router_ip:      { type: string }
+        peer_ip:        { type: string }
+        collector:      { type: string }
+        rib:            { type: string, enum: [in_pre, in_post, out_pre, out_post, loc_rib] }
+        protocol:       { type: integer, minimum: 0, maximum: 255 }
+        protocol_name:
+          type: string
+          description: >
+            The IANA registry name for protocol, or "" for an ID this
+            project has no name for. "" is a positive answer -- the number
+            beside it is the whole truth -- never a guess.
+        identifier: { type: string, description: "u64 as a string." }
+        asn:        { type: integer, format: int64 }
+        bgpls_id:   { type: integer, format: int64 }
+        area:       { type: integer, format: int64 }
+        router_id:  { type: string, description: "Raw, hex for IS-IS system IDs." }
+        node_key:   { type: string, description: "u64 as a string." }
+        is_withdraw:
+          type: boolean
+          description: >
+            Present on every row whatever state= asked for, so a state=any
+            answer is readable without consulting the request.
+        dump_state: { type: string, enum: [unknown, dumping, complete] }
+
+    LSNode:
+      allOf:
+        - $ref: "#/components/schemas/LSCommon"
+        - type: object
+          required: [router_id_v4, name, srgb_base, srgb_size, srlb_base, srlb_size, sr_algorithms]
+          properties:
+            router_id_v4:  { type: string, description: "Dotted quad, or \"\" when absent." }
+            name:          { type: string }
+            srgb_base:     { type: integer, format: int64 }
+            srgb_size:     { type: integer, format: int64 }
+            srlb_base:     { type: integer, format: int64 }
+            srlb_size:     { type: integer, format: int64 }
+            sr_algorithms: { type: array, items: { type: integer, minimum: 0, maximum: 255 } }
+
+    LSEndpoint:
+      type: object
+      required: [asn, bgpls_id, area, router_id, node_key, ifaddr, interface_id, label, label_source]
+      properties:
+        asn:          { type: integer, format: int64 }
+        bgpls_id:     { type: integer, format: int64 }
+        area:         { type: integer, format: int64 }
+        router_id:    { type: string }
+        node_key:     { type: string, description: "u64 as a string." }
+        ifaddr:
+          type: string
+          description: >
+            This end's interface address on the link, as the IGP advertised
+            it. ls_links stores it as local_ifaddr / remote_ifaddr; the local
+            and remote halves are one schema here, so the side is carried by
+            which field of LSLink this object sits in rather than by the
+            name. Empty when the IGP advertised no address for the end.
+        interface_id:
+          type: integer
+          format: int64
+          description: >
+            This end's link identifier (RFC 5307's Link Local/Remote
+            Identifiers). ONE VALUE, SPELLED THREE WAYS on the way here,
+            recorded so a reader who greps for one spelling finds the others:
+            the BMP write path calls it link_local_id / link_remote_id (the
+            protobuf, sink/rows_types.go's LinkLocalID / LinkRemoteID, and
+            ls_links' own columns in deploy/clickhouse/schema.sql); the read
+            path collapses the pair into query.LSEndpoint.InterfaceID,
+            because the local and remote halves are one Go type; and this
+            contract spells that interface_id. The local/remote distinction
+            is not lost -- it is carried by which field of LSLink this object
+            sits in. This name is the frozen one: the others are free to be
+            renamed, this is not.
+        label:
+          type: string
+          description: >
+            A readable name for this end. NEVER empty: the node's name,
+            else its IPv4 router-id, else the raw router_id above.
+        label_source:
+          type: string
+          enum: [observer, fleet, identifier]
+          description: >
+            Which tier produced label. observer means the router reporting
+            this link named the node itself; fleet means another router did
+            and this one did not; identifier means nobody has a name for it
+            and label is the raw router_id. Reported so that borrowing a
+            name across observers is visible rather than blended.
+
+    LSLink:
+      type: object
+      required:
+        [router_sysname, router_ip, peer_ip, collector, rib, protocol,
+         protocol_name, identifier, local, remote, adj_sids, te_metric,
+         igp_metric, admin_group, max_bandwidth, is_withdraw, dump_state]
+      properties:
+        router_sysname: { type: string }
+        router_ip:      { type: string }
+        peer_ip:        { type: string }
+        collector:      { type: string }
+        rib:            { type: string, enum: [in_pre, in_post, out_pre, out_post, loc_rib] }
+        protocol:       { type: integer, minimum: 0, maximum: 255 }
+        protocol_name:
+          type: string
+          description: >
+            The IANA registry name for protocol, or "" for an ID this
+            project has no name for. "" is a positive answer -- the number
+            beside it is the whole truth -- never a guess.
+        identifier: { type: string, description: "u64 as a string." }
+        local:          { $ref: "#/components/schemas/LSEndpoint" }
+        remote:         { $ref: "#/components/schemas/LSEndpoint" }
+        adj_sids:       { type: array, items: { type: integer, format: int64 } }
+        te_metric:      { type: integer, format: int64 }
+        igp_metric:     { type: integer, format: int64 }
+        admin_group:    { type: integer, format: int64 }
+        max_bandwidth:  { type: number, format: float }
+        is_withdraw:
+          type: boolean
+          description: >
+            Present on every row whatever state= asked for, so a state=any
+            answer is readable without consulting the request.
+        dump_state:     { type: string, enum: [unknown, dumping, complete] }
+
+    LSPrefix:
+      allOf:
+        - $ref: "#/components/schemas/LSCommon"
+        - type: object
+          required: [prefix, prefix_sid, prefix_sid_flags, has_prefix_sid, prefix_metric, ospf_route_type]
+          properties:
+            prefix:
+              type: string
+              description: >
+                CIDR. ls_prefixes stores the address and the length in two
+                columns; that is storage, and it never reaches a caller --
+                a prefix here reads exactly as a prefix on /v1/routes does.
+            prefix_sid:       { type: integer, format: int64 }
+            prefix_sid_flags: { type: integer, minimum: 0, maximum: 255 }
+            has_prefix_sid:
+              type: boolean
+              description: >
+                Separates an absent Prefix-SID TLV from index 0, which is a
+                legal SID. With RFC 9085's V and L flags set, prefix_sid is
+                an absolute label rather than an SRGB index, so read
+                prefix_sid_flags before prefix_sid.
+            prefix_metric:    { type: integer, format: int64 }
+            ospf_route_type:  { type: integer, minimum: 0, maximum: 255 }
+
+    ASName:
+      type: object
+      required: [asn, name, country]
+      properties:
+        asn:
+          type: integer
+          description: One AS number this request named. Present exactly once per distinct value in asn=, regardless of what this dataset knows about it.
+        name:
+          type: string
+          description: >
+            The WHOLE registered-holder line, exactly as RIPE published
+            it -- NEVER split into a handle and an organization. Some
+            entries carry a legal successor or a second holder after
+            their own " - " separator, and this field is the line intact
+            rather than a guessed prefix of it.
+
+            "" (paired with country: "") means this ASN has no registered
+            holder on the dataset currently loaded -- true of every
+            private-range ASN, and a genuine, positive fact about the ASN
+            -- OR that no dataset is loaded at all. Those are different
+            facts and this field alone cannot distinguish them: read
+            meta.asnames_loaded first.
+        country:
+          type: string
+          description: The two-letter country code RIPE's list pairs with this entry, or "" under the identical two conditions name is "" under.

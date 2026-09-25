@@ -1,0 +1,42 @@
+{
+    "data": [
+        {
+            "router_sysname": "4a8063e2ed30",
+            "router_ip": "172.22.0.8",
+            "peer_ip": "172.31.0.90",
+            "collector": "dev-c2",
+            "rib": "in_pre",
+            "path_id": 0,
+            "next_hop": "172.31.0.90",
+            "as_path": [
+                65001,
+                65002
+            ],
+            "origin_asn": 65002,
+            "med": 0,
+            "local_pref": 250,
+            "communities": [
+                "65010:1",
+                "65010:2"
+            ],
+            "large_communities": [
+                "65010:1:1"
+            ],
+            "ext_communities": [],
+            "route_targets": [],
+            "dump_state": "complete",
+            "family": "ipv4u",
+            "prefix": "10.10.1.0/24"
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [
+            {
+                "code": "collector_stale",
+                "message": "at least one row in this answer comes from a collector that has not been heard from in over 1m30s, so it is that collector's last view rather than a current one; its peers read \"stale\""
+            }
+        ],
+        "total_matched": 1
+    }
+}

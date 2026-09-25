@@ -1,0 +1,31 @@
+{
+    "data": [
+        {
+            "router_ip": "10.0.0.80",
+            "peer_ip": "0.0.0.0",
+            "collector": "vantage-collector-0",
+            "rib": "loc_rib",
+            "asn": 65010,
+            "state": "view_lost",
+            "dump_states": {},
+            "session_id": "1788722065877779361",
+            "routes": 0
+        },
+        {
+            "router_ip": "10.0.0.80",
+            "peer_ip": "172.31.0.90",
+            "collector": "vantage-collector-0",
+            "rib": "in_pre",
+            "asn": 65010,
+            "state": "view_lost",
+            "dump_states": {},
+            "session_id": "1788722065877779361",
+            "routes": 0
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": null
+    }
+}

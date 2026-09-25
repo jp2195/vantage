@@ -1,0 +1,34 @@
+# deploy/dev/api.yaml is vantage-api's config for docker-compose.dev.yml.
+#
+# clickhouse_dsn points at the other dev-stack container by its compose
+# service name. default_page and max_page are left to LoadConfig's defaults,
+# which it takes from query.DefaultRIBPage and query.MaxRIBPage -- the same
+# numbers api/openapi.yaml types limit= with.
+clickhouse_dsn: "clickhouse://vantage:vantage@clickhouse:9000/vantage"
+
+# 0.0.0.0, unlike the built-in default of 127.0.0.1. Inside a container,
+# loopback means the container, so the compose port mapping would reach
+# nothing. The default is loopback precisely because this API answers
+# arbitrary questions about the whole database and has to fail closed;
+# overriding it here is safe only because compose publishes the host side on
+# 127.0.0.1 (see docker-compose.dev.yml). Do not copy this line into a
+# production config without something in front of it.
+listen: "0.0.0.0:9473"
+
+# THIS TOKEN IS A DEVELOPMENT VALUE, NOT A SECRET. It is committed to the
+# repository in plaintext, so it is public, and it is here so that
+# `docker compose up` produces a working API without a setup step. A
+# production deployment supplies its own tokens from wherever it keeps
+# credentials -- never from a file in version control.
+tokens:
+  - name: dev
+    token: "dev-token-not-a-secret"
+
+# The collector's /status rides on its metrics listener (:9469) -- see
+# collector/status.go for why it is not on admin_listen. Reached by compose
+# service name over the compose network, not by a published host port.
+collectors:
+  - id: dev-c1
+    url: http://collector:9469
+  - id: dev-c2
+    url: http://collector2:9569

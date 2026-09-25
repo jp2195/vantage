@@ -1,0 +1,19 @@
+{
+    "data": [
+        {
+            "sysname": "4a8063e2ed30",
+            "ip": "10.0.0.80",
+            "collector": "vantage-collector-0",
+            "session_id": "1788722065877779361",
+            "peers_up": 2,
+            "peers_down": 0,
+            "peers_view_lost": 0,
+            "last_seen": "2026-09-06T19:14:28.788894Z"
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": null
+    }
+}

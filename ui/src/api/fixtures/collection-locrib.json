@@ -1,0 +1,97 @@
+{
+    "data": [
+        {
+            "router_ip": "10.0.103.67",
+            "peer_ip": "10.255.1.1",
+            "reported": 7,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "10.0.103.68",
+            "peer_ip": "10.255.1.1",
+            "reported": 7,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.7",
+            "peer_ip": "172.31.0.90",
+            "reported": 5,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.8",
+            "peer_ip": "172.31.0.90",
+            "reported": 5,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.10",
+            "peer_ip": "10.0.0.80",
+            "reported": 4,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.10",
+            "peer_ip": "10.255.0.1",
+            "reported": 190,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.10",
+            "peer_ip": "10.255.1.1",
+            "reported": 7,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.10",
+            "peer_ip": "2001:db8:5549:3::1",
+            "reported": 208,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.11",
+            "peer_ip": "10.0.0.80",
+            "reported": 4,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.11",
+            "peer_ip": "10.255.0.1",
+            "reported": 190,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.11",
+            "peer_ip": "10.255.1.1",
+            "reported": 7,
+            "archived": 0,
+            "has_stat": true
+        },
+        {
+            "router_ip": "172.22.0.11",
+            "peer_ip": "2001:db8:5549:3::1",
+            "reported": 208,
+            "archived": 0,
+            "has_stat": true
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": 12,
+        "locrib_totals": {
+            "reported": 842,
+            "archived": 0
+        }
+    }
+}

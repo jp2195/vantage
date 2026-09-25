@@ -1,0 +1,11 @@
+{
+  "router": "172.22.0.201",
+  "sys_descr": "FRRouting 10.3_git",
+  "vendor": "frr",
+  "os": "frr",
+  "version": "10.3",
+  "captured_at": "2026-08-27T20:35:00Z",
+  "message_count": 13,
+  "mode": "full-session",
+  "note": "peer AS 4200000002 -- 4-byte ASN in AS_PATH and AGGREGATOR"
+}

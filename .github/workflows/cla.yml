@@ -1,0 +1,72 @@
+# CLA: every author of a pull request must have agreed to CLA.md. The
+# logic, and why each rule exists, is in .github/cla/cla.js; its tests are
+# .github/cla/cla.test.js (`make cla-test`).
+#
+# SECURITY. pull_request_target runs with a token that can write to this
+# repository, even for pull requests from forks. That is only safe because
+# this workflow never checks out, installs or runs the pull request's code:
+# actions/checkout below fetches the BASE branch (the default for
+# pull_request_target), and cla.js reads commits and comments through the
+# API. Never add `ref: ${{ github.event.pull_request.head.sha }}`, a build
+# step or an `npm install` here. Doing so hands any fork the write token.
+#
+# There is deliberately no `concurrency:` group. GitHub keeps one pending
+# run per group and cancels the older one, which could silently drop the run
+# triggered by a signing comment. Overlapping runs are handled instead by
+# cla.js retrying a conflicting write from a fresh read.
+#
+# issue_comment fires for every comment on every issue and pull request,
+# from anyone. The job-level `if` starts the job only for a comment on a pull
+# request that mentions CLA.md, so an arbitrary comment never starts a job
+# holding a write token; cla.js then accepts only the exact phrase. Whatever
+# the comment says, the most it can do is record its own author's signature
+# and recompute the status, the same as a push to the pull request would.
+#
+# The job is named `cla-bot`, not `cla`, so that its own check run never
+# shares a name with the `cla` commit status cla.js posts. The status
+# carries the verdict, and it is the status that branch protection requires:
+# cla.js posts `pending` before anything else, then `success` or `failure`,
+# or `error` if the run fails, and the job fails only in that last case.
+#
+# Actions are pinned by commit SHA, not tag, because this job holds a write
+# token.
+name: CLA
+
+on:
+  # zizmor: ignore[dangerous-triggers] -- reviewed: no pull request code is checked out or run, see SECURITY above.
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created]
+
+permissions: {}
+
+jobs:
+  cla:
+    name: cla-bot
+    if: >-
+      github.event_name == 'pull_request_target' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, 'CLA.md'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write      # the cla-signatures branch
+      issues: write        # pull request comments go through the issues API
+      pull-requests: read  # list the pull request's commits
+      statuses: write      # the `cla` commit status
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const root = process.env.GITHUB_WORKSPACE;
+            const cla = require(path.join(root, '.github/cla/cla.js'));
+            await cla.run({
+              github,
+              context,
+              claText: fs.readFileSync(path.join(root, 'CLA.md'), 'utf8'),
+            });

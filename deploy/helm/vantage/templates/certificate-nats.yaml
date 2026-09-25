@@ -1,0 +1,91 @@
+{{- include "vantage.validateNatsTLS" . }}
+{{- if and .Values.nats.tls.enabled .Values.nats.tls.issuerRef.name }}
+{{/*
+Only for operators who run cert-manager. Without an issuerRef this file
+renders nothing and the Secrets come from deploy/nats-tls/gen-certs.sh.
+
+The chart issues Certificates but never an Issuer: an issuer is your trust
+root. Renewal needs nothing from vantage -- nats.go re-reads its certificate
+files on each connection attempt, so a renewed certificate is picked up by
+the next reconnect. Measured 2026-09-21.
+*/}}
+{{- if .Values.nats.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vantage.fullname" . }}-nats-server
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  # Read out of the SUBCHART's value rather than constructed here. A
+  # subchart's values cannot be templated, so a name built from
+  # .Release.Name would agree with the mount only under release name
+  # "vantage" -- the same collapse the deleted clickhouse-host check existed
+  # to catch.
+  secretName: {{ .Values.nats.config.nats.tls.secretName }}
+  duration: {{ .Values.nats.tls.duration | quote }}
+  renewBefore: {{ .Values.nats.tls.renewBefore | quote }}
+  issuerRef: {{- toYaml .Values.nats.tls.issuerRef | nindent 4 }}
+  commonName: {{ printf "%s-nats" .Release.Name | quote }}
+  # <release>-nats is the Service the subchart creates, and the name the
+  # daemons dial. The headless wildcard is the cluster routes: with
+  # routeURLs.useFQDN (this chart's default) the subchart writes each route
+  # as <release>-nats-<i>.<release>-nats-headless.<ns>.svc.<domain>, and the
+  # server that dials a route checks the other's certificate against that
+  # name. A wildcard rather than per-pod names because every server presents
+  # this one certificate, and because a route found by gossip is dialed by
+  # IP and verified against the first route name in the config -- pod 0's --
+  # whichever server answers. Without it a clustered NATS never forms while
+  # a single server looks fine.
+  #
+  # The domain is the subchart's own routeURLs.k8sClusterDomain, so the
+  # route names and this certificate cannot disagree about it.
+  {{- $domain := .Values.nats.config.cluster.routeURLs.k8sClusterDomain | default "cluster.local" }}
+  dnsNames:
+    - {{ printf "%s-nats" .Release.Name | quote }}
+    - {{ printf "%s-nats.%s.svc" .Release.Name .Release.Namespace | quote }}
+    - {{ printf "%s-nats.%s.svc.%s" .Release.Name .Release.Namespace $domain | quote }}
+    - {{ printf "*.%s-nats-headless.%s.svc.%s" .Release.Name .Release.Namespace $domain | quote }}
+  # cert-manager treats `usages` as REPLACING its own "digital signature, key
+  # encipherment" default, not adding to it, so naming only the EKU here
+  # produced a leaf with an extended key usage and no KeyUsage bits at all --
+  # non-conformant with RFC 5280 and a first-install surprise against any
+  # verifier stricter than Go's. gen-certs.sh already issues
+  # keyUsage=critical,digitalSignature,keyEncipherment plus the EKU, so
+  # spelling both out here is also what makes the two issuance paths actually
+  # equivalent rather than merely described that way.
+  #
+  # client auth as well as server auth: this certificate also secures the
+  # cluster routes, and a route is a TLS connection one NATS server dials to
+  # another, presenting this certificate as its client certificate to a peer
+  # that verifies it (cluster.tls verify: true). Go's TLS stack refuses a
+  # client certificate without the clientAuth EKU. It lets nothing new
+  # through: the only holder of this key is the NATS server itself.
+  usages:
+    - digital signature
+    - key encipherment
+    - server auth
+    - client auth
+{{- end }}
+{{- range $svc := list "collector" "writer" }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vantage.fullname" $ }}-nats-{{ $svc }}
+  labels: {{- include "vantage.labels" $ | nindent 4 }}
+spec:
+  secretName: {{ include "vantage.fullname" $ }}-nats-{{ $svc }}-tls
+  duration: {{ $.Values.nats.tls.duration | quote }}
+  renewBefore: {{ $.Values.nats.tls.renewBefore | quote }}
+  issuerRef: {{- toYaml $.Values.nats.tls.issuerRef | nindent 4 }}
+  commonName: {{ printf "%s-%s" (include "vantage.fullname" $) $svc | quote }}
+  # clientAuth only -- no serverAuth. A client certificate carrying serverAuth
+  # could impersonate the broker to the other client, which is most of what
+  # mTLS was bought to prevent. The two KeyUsage bits are spelled out for the
+  # reason given on the server Certificate above.
+  usages:
+    - digital signature
+    - key encipherment
+    - client auth
+{{- end }}
+{{- end }}

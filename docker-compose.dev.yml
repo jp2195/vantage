@@ -1,0 +1,367 @@
+# docker-compose.dev.yml is the full stack on a laptop: NATS with JetStream
+# enabled, two vantage-collector instances listening for BMP, ClickHouse,
+# vantage-writer consuming ROUTES/LS/PEER/STATS into it, vantage-api serving
+# the embedded UI, and Grafana. See README.md's Quickstart for `bmpgen`, and
+# docs/deploying.md for `debug`, both run on the host against the ports this
+# file publishes.
+services:
+  nats:
+    image: nats:2.11-alpine
+    # -m enables the HTTP monitoring server. Without it nats listens on no
+    # monitoring port at all, so the 8222 publish below served nothing -- and
+    # a curl to it answered from whatever OTHER nats on the box did have the
+    # port, which is a confusing way to read someone else's stream depths.
+    command: ["-js", "-sd", "/data", "-m", "8222"]
+    # Host side overridable for the same reason clickhouse's is, and for the
+    # same failure: 4222 and 8222 are the two ports every other NATS on a
+    # developer machine publishes, and one already-bound port does not merely
+    # fail to publish -- the container never attaches to the compose network
+    # at all, so collector and writer then fail with "lookup nats: server
+    # misbehaving", which reads like broken DNS rather than a port clash.
+    # Only the host side moves; collector and writer reach this container as
+    # nats:4222 over the compose network and are unaffected.
+    ports:
+      - "127.0.0.1:${VANTAGE_NATS_PORT:-4222}:4222"
+      - "127.0.0.1:${VANTAGE_NATS_MONITOR_PORT:-8222}:8222"
+    volumes: [nats-data:/data]
+  collector:
+    build: { context: ., dockerfile: Dockerfile.collector }
+    volumes: ["./deploy/dev:/etc/vantage:ro"]
+    command: ["-config", "/etc/vantage/collector.yaml"]
+    # 11019 (BMP) is the only port published on every interface: routers have
+    # to reach it. 9469 (metrics and /status) is host loopback only; the API
+    # and Prometheus reach it over the compose network. 9470 is the
+    # admin/mirror API: host loopback ONLY, never 0.0.0.0, because arming a
+    # mirror is a real capability and should not be reachable from the LAN.
+    ports: ["11019:11019", "127.0.0.1:9469:9469", "127.0.0.1:9470:9470"]
+    depends_on: [nats]
+    # nats's initial startup (a few hundred ms) can outlast collector's own
+    # boot; nats.Connect's first dial is not retried by the client (only
+    # reconnects *after* an initial success are), so a collector that starts
+    # first would otherwise exit immediately rather than come up healthy
+    # once nats is actually accepting connections.
+    restart: on-failure
+  # collector2 makes the dev stack DUAL-HOMED: a second collector watching the
+  # same routers as the first, so one router really is seen by two collectors.
+  #
+  # Every per-collector dashboard in this repo was built and verified against
+  # sink.insertDualHomedFixture -- rows written straight into ClickHouse. That
+  # fixture is careful and adversarial, and it is still not the same thing as
+  # two collectors minting their own session ids from their own clocks against
+  # one live router. This service is what makes the difference observable
+  # without a lab: point a BMP sender at 11119 as well as 11019 and the
+  # dashboards have a genuinely dual-homed router to render.
+  #
+  # It shares nats, writer and ClickHouse with its sibling, because that is
+  # the shape being tested -- two collectors, one archive, one row set
+  # discriminated by collector_id.
+  collector2:
+    build: { context: ., dockerfile: Dockerfile.collector }
+    volumes: ["./deploy/dev:/etc/vantage:ro"]
+    command: ["-config", "/etc/vantage/collector2.yaml"]
+    # 11119/9569 rather than 11019/9469: distinct on the host AND in the
+    # container, so a misaimed `bmp connect` cannot silently land on the other
+    # collector and look like success. 9470 is NOT published here -- the
+    # sibling owns the host's mirror port, and two mirror APIs on one box is a
+    # capability question this service does not need to answer.
+    #
+    # POINTING A SENDER AT THIS, and the two traps in doing so. FRR wants
+    #     bmp connect <this container's IP on vantage_default> port 11119
+    # and both halves of that are load-bearing:
+    #
+    #   1. It must be the container's IP, NOT a hostname. FRR 10.3 does not
+    #      resolve a hostname for a BMP target -- `bmp connect collector2 port
+    #      11119` sits in "Connecting" forever while `show bmp` reports the
+    #      address as (unspec). That is why BMP senders that target a real
+    #      router must use hardcoded addresses; it is the implementation, not a
+    #      style choice.
+    #   2. It must NOT be the bridge gateway plus the published host port. That
+    #      route works, but NATs the source address, so this collector would
+    #      record the sender as the gateway while its sibling records the real
+    #      container IP -- two different router_ip values for one router, which
+    #      is precisely the dual-homing this service exists to create, broken.
+    #
+    # The consequence is that the sender's config carries an address Docker
+    # assigns, so recreating this container can require re-pointing the sender.
+    # `docker inspect vantage-collector2-1` prints the current one.
+    ports: ["11119:11119", "127.0.0.1:9569:9569"]
+    depends_on: [nats]
+    restart: on-failure
+  # ls-replay is the dev stack's only source of BGP-LS, and the reason the
+  # link-state dashboards can be verified without a lab.
+  #
+  # The gap it fills: bmpgen synthesizes BMP but its families stop at lu4, and
+  # the private lab topology that produced the link-state corpus is not something
+  # `docker compose up` can bring with it. So ls_nodes, ls_links, ls_prefixes
+  # and route_vpn only ever carried collector_id = dev-c1, and every panel that
+  # resolves a node or an edge per collector was verifiable against fixtures
+  # and nothing else.
+  #
+  # WHY THIS CAPTURE. Every capture in the corpus was decoded on 2026-09-20
+  # and what each one yields was measured. This is the only fixture that
+  # carries link-state AND VPN in a single session: 32 nodes, 57 links, 185
+  # prefixes, 10 vpn4, 4 vpn6 and 17 ipv4-unicast across 3 peers. That matters
+  # beyond richness -- current state is max(session_id) per (collector_id,
+  # router_ip), so covering route_vpn from a second capture would need a second
+  # connection, and the first capture's rows would be stranded under the older
+  # session the moment it opened. One capture, one session, every table.
+  #
+  # HOSTNAMES ARE FINE HERE, unlike the FRR trap documented on collector2
+  # above. FRR 10.3 will not resolve a hostname for a BMP target; bmp-replay is
+  # an ordinary Go program and uses Docker's embedded DNS, so it can name the
+  # services instead of chasing the addresses Docker assigns them. The other
+  # half of that trap still applies and is still avoided: these are service
+  # names on this network, NOT the bridge gateway plus a published port, which
+  # would NAT the source and split one router across two router_ip values.
+  #
+  # BOTH TARGETS, ONE PROCESS. The collector records the TCP source as
+  # router_ip, so feeding both collectors from this single container is what
+  # makes the replayed router genuinely dual-homed rather than two routers that
+  # happen to carry identical routes. bmp-replay dials every target before it
+  # writes a byte to any of them, so a collector that is down means neither is
+  # fed -- the alternative is an archive silently back in the one-collector
+  # state this service exists to leave.
+  #
+  # IT HOLDS THE SESSION OPEN, and must. Session.Close emits KIND_VIEW_LOST for
+  # every peer it could still see, so a sender that exited after writing would
+  # mark all three replayed peers lost the moment it finished.
+  #
+  # The source address is whatever Docker assigns, so this router is not in
+  # either collector's `routers:` map and its vendor reads as unidentified --
+  # the n9kv banner these bytes carry never says NX-OS. Recreating the
+  # container can therefore mint a new router_ip; the rows under the old one
+  # age out with the 90-day TTL.
+  ls-replay:
+    build: { context: ., dockerfile: Dockerfile.replay }
+    volumes: ["./bgp/testdata/corpus:/corpus:ro"]
+    command:
+      - "-capture"
+      - "/corpus/nxos/n9kv-10.6.2-p3-ospfv3-linkstate.bmpcap"
+      - "-targets"
+      - "collector:11019,collector2:11119"
+    # depends_on waits for the containers to start, not for their listeners to
+    # bind, so losing the race is expected on a cold `up`. on-failure is the
+    # retry: bmp-replay exits non-zero when a dial fails and comes straight
+    # back. It does NOT exit on success -- it holds the sessions -- so this
+    # cannot loop once the collectors are actually listening.
+    depends_on: [collector, collector2]
+    restart: on-failure
+  # evpn-replay is the dev stack's only source of EVPN from two collectors,
+  # and the reason the EVPN churn-detection fixes can be checked against
+  # real bytes instead of fixtures alone.
+  #
+  # The gap it fills: route_evpn carried collector_id = dev-c1 and nothing
+  # else, so both of those EVPN fixes were latent. The flap detection
+  # inventing flaps out of a second collector's copy -- since fixed -- is the
+  # one that matters, because it fabricates an event on the screen whose whole
+  # purpose is finding routes that flap.
+  #
+  # WHY THIS CAPTURE. All 76 corpus captures were decoded on 2026-09-20 and
+  # what each yields was counted. This one carries 21 EVPN NLRI, 7 withdrawals and
+  # SEVEN REAL FLAP CYCLES (advertise, withdraw, return) across route types 2,
+  # 3 and 5 -- five times the EVPN of any other capture, and the only one with
+  # more than a single flap.
+  #
+  # IT SENDS NO INITIATION, which a review of the corpus captures caught. None
+  # of the three EVPN captures does, and the property is anti-correlated with
+  # what this service needs: every capture carrying both an Initiation and a
+  # flap carries exactly one flap. So this router reports NO sysName -- not a
+  # prefixed one, none -- and -sysname-prefix is a no-op here because
+  # prefixSysName only rewrites an Initiation that exists. Inventing one is
+  # barred by that function's own rule: a synthesized banner puts traffic on
+  # the wire under an identity no implementation has been observed sending.
+  #
+  # The collector accepts this by design, not by luck -- see session.go's "a
+  # router that never sends one (or sends it late) is still the device the
+  # operator says it is". The dashboards now render "(no sysName TLV)" for it,
+  # which they did not before this service existed: evpn-churn showed a blank
+  # cell where fleet-health and parse-anomalies both had the fallback, and two
+  # routers in a production deployment already reported an empty sysName.
+  #
+  # A SECOND CONTAINER IS A SECOND ROUTER, so this does not hit the "one
+  # capture, one session, every table" constraint ls-replay documents above.
+  # That constraint is about covering two TABLES for ONE router, where opening
+  # a second session strands the first capture's rows under the older one.
+  # This container gets its own Docker address and therefore its own
+  # router_ip, disjoint from ls-replay's.
+  #
+  # Everything else follows ls-replay: service names rather than the bridge
+  # gateway so the source is not NATted into two router_ips, both targets from
+  # one process so the router is genuinely dual-homed, and the session held
+  # open so Session.Close does not mark every replayed peer VIEW_LOST.
+  # REPRODUCING A LAGGING COLLECTOR is deliberately NOT a service here. It is
+  # a one-shot, because a service would re-create the shape on every `up` and
+  # the archive would accumulate copies of it:
+  #
+  #   docker run --rm --network vantage_default \
+  #     -v "$PWD/bgp/testdata/corpus:/corpus:ro" <replay-image> \
+  #     -capture /corpus/frr/frr-10.3-evpn-terminal-withdraw.bmpcap \
+  #     -targets collector:11019,collector2:11119 \
+  #     -target-delay collector2:11119=20s
+  #
+  # That lands one collector's ADVERTISEMENT twenty seconds after the other
+  # collector's WITHDRAWAL of the same route, which is the only shape that
+  # makes evpn-churn's flap detection invent an event. Verified 2026-09-20:
+  # the pre-fix statement reports 1 flap on a route that never came back and
+  # the shipped one reports 0.
+  evpn-replay:
+    build: { context: ., dockerfile: Dockerfile.replay }
+    volumes: ["./bgp/testdata/corpus:/corpus:ro"]
+    command:
+      - "-capture"
+      - "/corpus/nxos/n9kv-10.6.2F-leaf-evpn.bmpcap"
+      - "-targets"
+      - "collector:11019,collector2:11119"
+    depends_on: [collector, collector2]
+    restart: on-failure
+  writer:
+    build: { context: ., dockerfile: Dockerfile.writer }
+    volumes: ["./deploy/dev:/etc/vantage:ro"]
+    command: ["-config", "/etc/vantage/writer.yaml"]
+    # 9472, not 9470: the collector already owns 9470 for its admin/mirror
+    # API.
+    ports: ["127.0.0.1:9472:9472"]
+    depends_on: [nats, clickhouse]
+    restart: on-failure
+  api:
+    build: { context: ., dockerfile: Dockerfile.api }
+    volumes: ["./deploy/dev:/etc/vantage:ro"]
+    command: ["-config", "/etc/vantage/api.yaml"]
+    # 9473 is the read API and 9474 its metrics, continuing the range the
+    # collector (9470) and writer (9472) already use. Loopback on the host
+    # side: the API is authenticated, but a dev token committed to the
+    # repository is not a credential, so the port should not be reachable
+    # from the LAN either.
+    ports: ["127.0.0.1:9473:9473", "127.0.0.1:9474:9474"]
+    # clickhouse only. This daemon reads no streams and writes nothing, so
+    # NATS is not in its dependency set -- and it can serve the archive
+    # perfectly well while the collector and writer are both down.
+    depends_on: [clickhouse]
+    restart: on-failure
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8-alpine
+    # 8123 is HTTP (Grafana's datasource), 9000 is the native protocol (the
+    # writer). Both published on loopback only: this is a dev stack, and the
+    # database should not be reachable from the LAN.
+    #
+    # The host side of both is overridable because these are two of the most
+    # commonly published ports on a developer machine, and another stack
+    # holding either one makes this service refuse to start. Only the host
+    # side moves: grafana and writer reach this container as clickhouse:9000
+    # over the compose network and are unaffected. Point sink's tests at the
+    # same place with VANTAGE_TEST_CLICKHOUSE_ADDR=127.0.0.1:$VANTAGE_CH_NATIVE_PORT.
+    ports:
+      - "127.0.0.1:${VANTAGE_CH_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${VANTAGE_CH_NATIVE_PORT:-9000}:9000"
+    environment:
+      CLICKHOUSE_DB: vantage
+      CLICKHOUSE_USER: vantage
+      CLICKHOUSE_PASSWORD: vantage
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      # Measured, not assumed: the entrypoint's first boot of a fresh
+      # clickhouse-data volume does `mkdir -p user_files && chown -R
+      # clickhouse:clickhouse user_files` (the image ships /var/lib/clickhouse
+      # itself pre-owned by clickhouse, but not user_files -- that gets
+      # created fresh every time it doesn't already exist), and that chown
+      # is unconditional -- `set -eo pipefail` at the top of entrypoint.sh
+      # means any failure inside it kills the container before the server
+      # ever starts. chown -R does not stop at a mount boundary, so it walks
+      # into the read-only asnames bind below and dies on "Read-only file
+      # system" -- confirmed by actually booting a scratch volume with this
+      # mount and watching it exit 1 with no server log at all. This
+      # variable makes the entrypoint skip that chown-if-mismatched-owner
+      # check entirely, for every directory it manages, not just user_files.
+      # Checked what that leaves user_files owned as: WITHOUT the nested
+      # asnames bind below, the entrypoint's own `su clickhouse:clickhouse
+      # mkdir -p` creates it correctly owned clickhouse:clickhouse. WITH the
+      # bind, Docker's own mount setup creates user_files first (to have
+      # somewhere to attach the nested asnames mount), as root, before
+      # entrypoint runs at all -- so here it ends up root-owned, mode 2755.
+      # Either way it stays usable for the clickhouse-server process:
+      # /var/lib/clickhouse is mode 2777 in the image, setgid, so anything
+      # created under it -- root-owned or not -- inherits group clickhouse,
+      # and the server's own gid (101) matches that group.
+      CLICKHOUSE_DO_NOT_CHOWN: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./deploy/clickhouse:/docker-entrypoint-initdb.d:ro
+      # The AS holder name dictionary's source file (deploy/clickhouse/asnames.sql
+      # reads it as an absolute path under user_files/asnames). Mounting the
+      # DIRECTORY, not the TSV file directly, matters: a bind mount of a
+      # nonexistent host FILE makes Docker create a directory in its place,
+      # both in the container and on the host, so a later `make fetch-asnames`
+      # cannot `mv` its output onto that path. A nonexistent host DIRECTORY
+      # has no such trap -- Docker creates an empty one instead (confirmed the
+      # same way: root-owned, mode 755) and ClickHouse just sees an empty
+      # directory, i.e. the file it wants is absent, which is the ordinary
+      # case `dictionaries_lazy_load` (on by default) already tolerates -- see
+      # asnames.sql. deploy/dev/asnames is gitignored and `make fetch-asnames`
+      # populates it; this mount works whether that has happened yet or not.
+      #
+      # If you bring the stack up before ever running `make fetch-asnames`,
+      # that root-owned placeholder directory is what is waiting for you.
+      # Checked: plain `rmdir deploy/dev/asnames` removes it fine, no sudo
+      # needed -- deploy/dev is yours (mode 775, not sticky), and removing a
+      # directory entry is governed by write+execute on the PARENT, not by
+      # who owns the entry itself. Then `make fetch-asnames` proceeds
+      # normally. Fetching before the first `up` avoids the placeholder
+      # entirely.
+      #
+      # Read-only (:ro) on purpose: read-write would let the entrypoint's
+      # chown (see CLICKHOUSE_DO_NOT_CHOWN above) reassign this HOST directory
+      # -- the developer's own fetched files -- to clickhouse's uid, breaking
+      # a later `make fetch-asnames`'s ability to write there.
+      - ./deploy/dev/asnames:/var/lib/clickhouse/user_files/asnames:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+  grafana:
+    # Pinned to a specific patch, not a floating major. Grafana 13 is a
+    # deliberate choice rather than drift: 11.2.0 was two majors behind, and
+    # grafana-clickhouse-datasource 4.20.0 declares "Grafana >=11.6.0-0", so
+    # the previous pairing ran the plugin below its own supported floor.
+    #
+    # v13.0 moved core from React 18 to React 19 and disabled the deprecated
+    # numeric data-source id APIs, and v13 migrates dashboards to a newer
+    # schema on open (ours are committed at schemaVersion 39). Provisioning is
+    # read-only from deploy/grafana, so that migration happens in memory and
+    # the committed JSON is unchanged -- but it is the reason the panels are
+    # verified against a live query after any bump here, not just eyeballed.
+    image: grafana/grafana:13.1.3
+    # Loopback-only, same as clickhouse above: this is a dev stack, and the
+    # host port is overridable for the same reason -- 3000 is the first port
+    # anything web-shaped reaches for, and a collision here stops the whole
+    # service rather than degrading it.
+    ports: ["127.0.0.1:${VANTAGE_GRAFANA_PORT:-3000}:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: vantage
+      # Pinned, not floating. The dashboards in deploy/grafana were built
+      # and verified against 4.20.0, and the ClickHouse datasource plugin is
+      # not a passive transport: it decides how a query's result columns are
+      # split into series, which is what Fleet health's countIf pivot
+      # depends on to render at all. An unpinned tag re-resolves on any
+      # machine that has not pulled yet, so the same committed dashboard
+      # JSON could render differently for two people on the same commit --
+      # the sort of difference that gets blamed on the data. Grafana's
+      # `preinstall_auto_update` defaults to true and updates any plugin
+      # left WITHOUT a pinned version, so the `@4.20.0` is what holds it.
+      #
+      # _SYNC, not the plain variable: preinstall alone installs
+      # asynchronously in the background while Grafana starts, whereas
+      # preinstall_sync completes first. Grafana's own defaults.ini says the
+      # sync form is "useful when used with provisioning" -- which is
+      # exactly this stack, since deploy/grafana/provisioning declares a
+      # datasource of type grafana-clickhouse-datasource that does not exist
+      # until the plugin is installed.
+      #
+      # Replaces GF_INSTALL_PLUGINS, which Grafana 13 deprecates and warns
+      # about on every boot.
+      GF_PLUGINS_PREINSTALL_SYNC: "grafana-clickhouse-datasource@4.20.0"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on: [clickhouse]
+volumes:
+  nats-data:
+  clickhouse-data:
