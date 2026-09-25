@@ -266,31 +266,49 @@ func (c *Consumer) Run(ctx context.Context) error {
 			deadline = time.Now().Add(c.cfg.BatchWait)
 			fetchErr bool
 		)
-		// batchCtx bounds every Fetch in this batch window to deadline, same
-		// as the old FetchMaxWait(time.Until(deadline)) did, but -- unlike
-		// FetchMaxWait -- it is also canceled the instant ctx is, so a
-		// shutdown request interrupts a Fetch that is blocked waiting for
-		// messages rather than waiting out the rest of BatchWait first.
-		batchCtx, cancel := context.WithDeadline(ctx, deadline)
-		for rows.Len() < c.cfg.BatchRows && time.Now().Before(deadline) {
-			batch, err := cons.Fetch(c.cfg.FetchBatch, jetstream.FetchContext(batchCtx))
+		// Each Fetch is bounded by FetchMaxWait, which the server enforces:
+		// it ends the pull request at the window's deadline and says so on
+		// the same subscription the messages arrive on, so every message it
+		// delivered is read before the Fetch ends. nats.go keeps listening
+		// for a second past that before giving up on its own.
+		//
+		// A Fetch must not be bounded by a context that expires with the
+		// window. nats.go ends a Fetch the moment its context expires and
+		// discards whatever the server has delivered but Run has not yet
+		// read. A server busy enough to answer the window's last Fetch late
+		// delivers into that gap, a whole FetchBatch at a time, and the
+		// dropped messages sit unacked until AckWait (at least 60 s in
+		// cmd/vantage-writer) makes the server redeliver them.
+		//
+		// Shutdown is still immediate: the read below selects on ctx, and a
+		// message dropped then is redelivered like any other unacked one.
+		var stopped bool
+		for !stopped && rows.Len() < c.cfg.BatchRows {
+			remaining := time.Until(deadline)
+			if remaining <= 0 {
+				break
+			}
+			batch, err := cons.Fetch(c.cfg.FetchBatch, jetstream.FetchMaxWait(remaining))
 			if err != nil {
-				// This batch window closed between the loop condition above
-				// and the Fetch call: not a failure, the same event as the
-				// deadline elapsing one instant later inside Fetch. Close the
-				// window the way a full one closes and let the outer loop
-				// open a fresh one. Anything already in pending still goes
-				// through Insert below and is acked only after it returns
-				// nil, exactly as before.
-				if isFetchWindowClosed(err, deadline) {
-					break
-				}
 				c.log.Error("fetch failed", "err", err)
 				metricFetchErrors.Inc()
 				fetchErr = true
 				break
 			}
-			for msg := range batch.Messages() {
+			msgs := batch.Messages()
+		read:
+			for {
+				var msg jetstream.Msg
+				select {
+				case <-ctx.Done():
+					stopped = true
+					break read
+				case m, ok := <-msgs:
+					if !ok {
+						break read
+					}
+					msg = m
+				}
 				var env vantagev1.Envelope
 				if err := proto.Unmarshal(msg.Data(), &env); err != nil {
 					// A poison message must not wedge the consumer: count it,
@@ -322,24 +340,22 @@ func (c *Consumer) Run(ctx context.Context) error {
 				rows.Add(envRows)
 				pending = append(pending, msg)
 			}
+			if stopped {
+				break
+			}
 			// batch.Error() reports how this Fetch ended once Messages() has
-			// drained. context.DeadlineExceeded (batchCtx's own deadline,
-			// i.e. this window's BatchWait, elapsed with nothing more
-			// arriving) and context.Canceled (ctx was canceled, i.e.
-			// ordinary shutdown) are both expected outcomes of an idle
-			// system, not failures -- everything else (consumer deleted
-			// server-side, leadership changed, no responders) is a real
-			// fetch failure and must not be silently swallowed.
+			// closed. A pull request the server ended at its expiry, the
+			// ordinary end of an idle window, reports nil. Anything else
+			// (consumer deleted server-side, leadership changed, no
+			// responders, missed heartbeats) is a real fetch failure and
+			// must not be silently swallowed.
 			if berr := batch.Error(); berr != nil {
-				if !errors.Is(berr, context.DeadlineExceeded) && !errors.Is(berr, context.Canceled) {
-					c.log.Error("fetch batch ended with error", "err", berr)
-					metricFetchErrors.Inc()
-					fetchErr = true
-				}
+				c.log.Error("fetch batch ended with error", "err", berr)
+				metricFetchErrors.Inc()
+				fetchErr = true
 				break
 			}
 		}
-		cancel()
 		if len(pending) == 0 {
 			if fetchErr {
 				// A real fetch failure produced nothing to insert or ack:
@@ -385,36 +401,4 @@ func (c *Consumer) Run(ctx context.Context) error {
 		metricRowsInserted.Add(float64(rows.Len()))
 	}
 	return errors.Join(ctx.Err())
-}
-
-// isFetchWindowClosed reports whether err is the synchronous rejection
-// jetstream.FetchContext returns when the context it is handed has already
-// passed its deadline -- i.e. when this batch window closed in the moment
-// between Run's "time.Now().Before(deadline)" check and its Fetch call.
-//
-// FetchContext computes the pull request's expiry from the context's
-// remaining time and, for "remaining <= 0", returns
-// fmt.Errorf("%w: context deadline already exceeded", ErrInvalidOption)
-// (nats.go v1.49.0, jetstream/jetstream_options.go:557) before any request
-// reaches the server. That error is neither context.DeadlineExceeded nor
-// context.Canceled, so the filtering Run applies to batch.Error() -- which
-// guards the asynchronous end of a Fetch, not this synchronous return --
-// does not cover it. TestFetchContextOnAnExpiredWindowIsBenign pins both
-// halves of that against the real library.
-//
-// Counting it as a fetch failure was doing three kinds of damage on a
-// perfectly healthy writer: recurring ERROR logs; a permanently non-zero
-// vantage_sink_fetch_errors_total, which is the metric that exists to say
-// "the durable consumer was deleted server-side" and cannot say it if it is
-// never zero; and, on idle low-rate streams, the exponential backoff, whose
-// only reset is a successful Insert -- so an idle stream climbed toward the
-// 30s ceiling and added that latency to the archive.
-//
-// The deadline re-check is what keeps this narrow. An ErrInvalidOption
-// raised for any other reason with time still left in the window (a batch
-// size under 1, say, which NewConsumer already rejects at construction)
-// falls through to Run's real-failure path, and even one raised at the exact
-// moment of expiry is logged on the next window, where there is time left.
-func isFetchWindowClosed(err error, deadline time.Time) bool {
-	return errors.Is(err, jetstream.ErrInvalidOption) && !time.Now().Before(deadline)
 }

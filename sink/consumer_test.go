@@ -473,85 +473,108 @@ func TestConsumerBacksOffOnFetchFailure(t *testing.T) {
 	}
 }
 
-// TestFetchContextOnAnExpiredWindowIsBenign pins the library behavior
-// isFetchWindowClosed exists to classify, against the real jetstream
-// package rather than a description of it.
+// TestConsumerAcksEveryMessageItIsDelivered pins that a message JetStream
+// delivers to Run is inserted and acked in the same pass, however its batch
+// window ends. A delivered message the consumer drops is not lost -- the
+// server redelivers it -- but only after AckWait, which is at least 60 s in
+// cmd/vantage-writer. Until then it holds the consumer's ack floor back and
+// the rows it carries are missing from ClickHouse.
 //
-// Run's inner loop tests time.Now().Before(deadline) and then calls Fetch.
-// When the window closes in between, FetchContext rejects the already-
-// expired context synchronously, before any request reaches the server.
-// The trap is what that error is *not*: it is neither
-// context.DeadlineExceeded nor context.Canceled, so the filtering Run
-// applies to batch.Error() -- the asynchronous end of a Fetch -- does not
-// cover it, and it was being logged and counted as a real fetch failure on
-// a completely healthy writer (17 of them in 18 hours in the dev stack,
-// holding vantage_sink_fetch_errors_total permanently non-zero).
+// Run used to bound each Fetch by a context that expired with the batch
+// window. When that context expired while the server was still delivering a
+// pull request -- the window's last Fetch has only milliseconds left, and a
+// busy server answers late -- nats.go ended the Fetch and discarded every
+// message still on its way, a whole FetchBatch at a time.
 //
-// If a nats.go upgrade changes that error's identity, this test fails and
-// says so, rather than the sink quietly resuming the false alarms.
-func TestFetchContextOnAnExpiredWindowIsBenign(t *testing.T) {
+// A very short BatchWait over a deep backlog puts a window edge in the
+// middle of a delivery over and over. AckWait is far longer than the wait
+// below, so the ack floor reaching the end of the stream in time means no
+// message waited for a redelivery.
+func TestConsumerAcksEveryMessageItIsDelivered(t *testing.T) {
 	js := natstest.RunJS(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
 	if err := natsutil.EnsureStreams(ctx, js, testStreamOpts); err != nil {
 		t.Fatalf("EnsureStreams: %v", err)
 	}
-	cons, err := js.CreateOrUpdateConsumer(ctx, "STATS", jetstream.ConsumerConfig{
-		Durable:       "test-expired-window",
-		AckPolicy:     jetstream.AckExplicitPolicy,
-		AckWait:       30 * time.Second,
-		MaxAckPending: 1000,
-	})
+	const n = 3000
+	publishStatsEnvelopes(t, ctx, js, n)
+
+	f := &fakeInserter{}
+	const ackWait = 2 * time.Minute
+	c, err := NewConsumer(js, ConsumerConfig{
+		Stream: "STATS", Durable: "test-window-edge",
+		BatchRows: 100000, BatchWait: 5 * time.Millisecond, FetchBatch: 100,
+		AckWait: ackWait, MaxAckPending: 100000,
+	}, f)
 	if err != nil {
-		t.Fatalf("CreateOrUpdateConsumer: %v", err)
+		t.Fatalf("NewConsumer: %v", err)
 	}
 
-	// A batch window whose deadline has already passed, which is what Run's
-	// batchCtx is in the instant this race describes.
-	deadline := time.Now().Add(-time.Second)
-	expired, cancelExpired := context.WithDeadline(ctx, deadline)
-	defer cancelExpired()
+	runCtx, runCancel := context.WithCancel(ctx)
+	done := make(chan error, 1)
+	go func() { done <- c.Run(runCtx) }()
+	defer func() {
+		runCancel()
+		<-done
+	}()
 
-	_, err = cons.Fetch(10, jetstream.FetchContext(expired))
-	if err == nil {
-		t.Fatal("Fetch on an already-expired context returned no error; if the " +
-			"library stopped rejecting this synchronously, Run's handling of it " +
-			"needs revisiting")
+	cons, err := js.Consumer(ctx, "STATS", "test-window-edge")
+	for err != nil && ctx.Err() == nil {
+		// Run creates the consumer; it may not exist yet.
+		time.Sleep(10 * time.Millisecond)
+		cons, err = js.Consumer(ctx, "STATS", "test-window-edge")
 	}
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
-		t.Errorf("Fetch error %v is a context error after all -- Run's existing "+
-			"batch.Error() filtering would have covered it, and "+
-			"isFetchWindowClosed is now redundant rather than load-bearing", err)
+	if err != nil {
+		t.Fatalf("Consumer: %v", err)
 	}
-	if !errors.Is(err, jetstream.ErrInvalidOption) {
-		t.Fatalf("Fetch error = %v, want one wrapping jetstream.ErrInvalidOption -- "+
-			"isFetchWindowClosed keys on that identity", err)
+
+	// Half of AckWait: a run that needed a redelivery cannot finish inside
+	// it, and a healthy one finishes in a few seconds even under -race.
+	deadline := time.Now().Add(ackWait / 2)
+	var info *jetstream.ConsumerInfo
+	for {
+		info, err = cons.Info(ctx)
+		if err != nil {
+			t.Fatalf("Info: %v", err)
+		}
+		if info.AckFloor.Stream == n || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	if !isFetchWindowClosed(err, deadline) {
-		t.Errorf("isFetchWindowClosed(%v) = false for a window that has closed; "+
-			"this is the error Run must treat as a benign window close", err)
+	if info.AckFloor.Stream != n {
+		t.Fatalf("ack floor stuck at %d of %d with %d delivered and unacked, %d redelivered so far: "+
+			"the consumer dropped messages it was delivered",
+			info.AckFloor.Stream, n, info.NumAckPending, info.NumRedelivered)
 	}
-	// The other direction: the same error with time still left in the window
-	// is not a window close and must reach Run's real-failure path.
-	if isFetchWindowClosed(err, time.Now().Add(time.Minute)) {
-		t.Error("isFetchWindowClosed returned true while the window was still " +
-			"open -- that would swallow a genuine ErrInvalidOption")
+	if info.Delivered.Consumer != n {
+		t.Errorf("JetStream made %d deliveries of %d messages; every message should be delivered once",
+			info.Delivered.Consumer, n)
+	}
+	rows := 0
+	f.mu.Lock()
+	for _, r := range f.calls {
+		rows += r.Len()
+	}
+	f.mu.Unlock()
+	if rows != n {
+		t.Errorf("inserted %d rows, want %d", rows, n)
 	}
 }
 
-// TestConsumerIdleStreamRecordsNoFetchErrors is the behavioral statement of
-// the same thing: a consumer sitting on a stream nobody is publishing to is
-// the ordinary state of a low-rate stream (the dev stack's LS and PEER
-// streams are idle for hours), and it must produce no fetch errors at all.
+// TestConsumerIdleStreamRecordsNoFetchErrors pins that a consumer sitting on
+// a stream nobody is publishing to, the ordinary state of a low-rate stream
+// (LS and PEER can be idle for hours), produces no fetch errors at all.
 //
-// Every batch window here closes empty, so the loop exercises the two
-// benign exits -- the deadline elapsing inside Fetch, and the window closing
-// just before it -- over and over. Either one counted as a failure makes
-// vantage_sink_fetch_errors_total meaningless as the "durable consumer
-// deleted server-side" signal it exists to be, and drives the exponential
-// backoff (which resets only on a successful Insert) toward its 30s ceiling
-// on a healthy writer.
+// Every batch window here closes empty, so the loop exercises the two benign
+// exits -- the server ending a Fetch at the window's deadline, and the window
+// closing before the next Fetch is sent -- over and over. Either one counted
+// as a failure makes vantage_sink_fetch_errors_total meaningless as the
+// "durable consumer deleted server-side" signal it exists to be, and drives
+// the exponential backoff (which resets only on a successful Insert) toward
+// its 30s ceiling on a healthy writer.
 func TestConsumerIdleStreamRecordsNoFetchErrors(t *testing.T) {
 	js := natstest.RunJS(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
