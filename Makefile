@@ -23,8 +23,8 @@ check: ## Go gate: build every package, vet, unit tests (RACE=1 for the race det
 	@./scripts/go-check.sh
 
 # Pinned codegen tool versions (install with `go install <module>@<version>`):
-#   buf:           github.com/bufbuild/buf/cmd/buf@v1.50.0
-#   protoc-gen-go: google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+#   buf:           github.com/bufbuild/buf/cmd/buf@v1.73.0
+#   protoc-gen-go: google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
 #
 # Both are invoked from $GOBIN below by absolute path, and $GOBIN is
 # prepended to PATH for the duration of the command, so this target works

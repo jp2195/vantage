@@ -122,7 +122,7 @@ func TestOptionsRejectsAHalfKeypair(t *testing.T) {
 }
 
 // TestOptionsReportsAMissingFile: nats.RootCAs and nats.ClientCert each
-// validate eagerly while being applied (nats.go v1.49.0), so a path that does
+// validate eagerly while being applied (nats.go v1.54.0), so a path that does
 // not exist is a startup failure naming the path, not a handshake failure
 // later.
 func TestOptionsReportsAMissingFile(t *testing.T) {

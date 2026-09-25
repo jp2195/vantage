@@ -555,7 +555,7 @@ func TestRetryDeadlineRunsFromTheOriginalPublish(t *testing.T) {
 	}
 }
 
-// TestWaitConnectedDoesNotDependOnTheStatusEvent: nats.go v1.49.0 drops a
+// TestWaitConnectedDoesNotDependOnTheStatusEvent: nats.go v1.54.0 drops a
 // status listener whose previous event is still unread when the next one
 // arrives (sendStatusEvent), so after two quick reconnects the listener can
 // be gone. waitConnected must still notice the connection is back. The

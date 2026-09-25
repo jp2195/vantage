@@ -472,7 +472,7 @@ nats:
     # One uid for the whole pod, not one per container: the reloader
     # signals nats-server through the shared process namespace, and with
     # every capability dropped a process may signal only its own uid. 1000
-    # because nothing in these images needs root: nats:2.11.6-alpine run as
+    # because nothing in these images needs root: nats:2.11.10-alpine run as
     # 1000:1000 with every capability dropped and no-new-privileges starts
     # JetStream on a group-owned store and takes `--signal reload`.
     #

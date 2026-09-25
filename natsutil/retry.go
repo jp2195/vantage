@@ -79,7 +79,7 @@ const (
 	// backoffRetryWindow bounds how long a message keeps retrying a
 	// no-responders failure, measured from the first one. It exists because
 	// the same signal also means "no stream captures this subject", which
-	// is permanent. It covers a Raft election in nats-server v2.11: a
+	// is permanent. It covers a Raft election in nats-server v2.11 and v2.15: a
 	// follower waits 4-9 s (minElectionTimeoutDefault..
 	// maxElectionTimeoutDefault in server/raft.go) for a lost leader before
 	// it campaigns, so 20 s allows one full timeout, a second election
@@ -185,7 +185,7 @@ const (
 // Re-sent as soon as the connection is back:
 //
 //   - nats.ErrDisconnected. When the connection enters RECONNECTING,
-//     nats.go (v1.49.0, jetstream/publish.go resetPendingAcksOnReconnect)
+//     nats.go (v1.54.0, jetstream/publish.go resetPendingAcksOnReconnect)
 //     fails every publish still awaiting its PubAck with this error, at
 //     once. Whether the server stored the message is unknown; either way
 //     the same msg-id makes a re-send correct. This is the lame-duck
@@ -273,6 +273,10 @@ func retryClass(err error) retryKind {
 // no JetStream error code (nats-server v2.11, server/jetstream_cluster.go
 // processClusteredInboundMsg and server/raft.go). The description is matched
 // exactly because the same 503 also carries a storage write error.
+// nats-server v2.15 sends no PubAck when the proposal fails:
+// commitSingleMsg returns the error and processClusteredInboundMsg's callers
+// discard it, so there the publish times out instead and is retried as
+// jetstream.ErrAsyncPublishTimeout.
 func isNotLeader(err error) bool {
 	var apiErr *jetstream.APIError
 	return errors.As(err, &apiErr) && apiErr.Code == 503 && apiErr.ErrorCode == 0 &&
@@ -280,7 +284,7 @@ func isNotLeader(err error) bool {
 }
 
 // jsErrDuplicateInProcess is JetStream's JSStreamDuplicateMessageConflict
-// (nats-server v2.11, server/jetstream_errors_generated.go), which nats.go
+// (nats-server v2.11 and v2.15, server/jetstream_errors_generated.go), which nats.go
 // has no constant for.
 const jsErrDuplicateInProcess jetstream.ErrorCode = 10158
 
@@ -540,7 +544,7 @@ func (p *Publisher) resend(m *outgoing, backoff time.Duration, deadline time.Tim
 // if it closes, or errRetryDeadline at deadline.
 //
 // It wakes on the status listener and also reads the status every
-// connectedRecheck, because the listener is not reliable: nats.go v1.49.0's
+// connectedRecheck, because the listener is not reliable: nats.go v1.54.0's
 // sendStatusEvent, finding a listener's previous event still unread, reads
 // it off the channel and unregisters the listener as if it were closed. Two
 // status changes in quick succession -- a reconnect that drops again at once

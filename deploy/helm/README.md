@@ -667,11 +667,10 @@ server's streams were created outside any cluster, and the new cluster does
 not adopt them: once the server restarts clustered they are reported as not
 found, and about 30 seconds after the cluster forms that server deletes them
 from disk as orphans (`Detected orphaned stream` in its log). The writer's
-durable consumers go the same way. Measured with nats-server 2.11.6, the
-version the chart runs: 100 messages in a single-server stream, then the
-same store restarted as one of three clustered servers, gave "stream not
-found", the orphan line 30 seconds later, and an empty stream once the
-collector recreated it.
+durable consumers go the same way. Measured with nats-server 2.11.6: 100
+messages in a single-server stream, then the same store restarted as one of
+three clustered servers, gave "stream not found", the orphan line 30 seconds
+later, and an empty stream once the collector recreated it.
 
 So the move is a one-time, planned gap, and **routers are disconnected for
 all of it**: from stopping the collector in step 1 until it starts again in

@@ -265,7 +265,7 @@ An overview, applying the schema by hand, and the AS-holder-name data:
 ```
 make ui         # build the Vue app into webui/dist (npm + vite; embedded by the api binary)
 make dev-api    # rebuild UI + daemon and serve the app on 127.0.0.1:9473
-make generate   # buf codegen (needs buf@v1.50.0 + protoc-gen-go@v1.36.11 go-installed into $(go env GOPATH)/bin; see Makefile)
+make generate   # buf codegen (needs buf@v1.73.0 + protoc-gen-go@v1.36.12 go-installed into $(go env GOPATH)/bin; see Makefile)
 make check      # build every package, vet, unit tests
 make test       # full gate: race detector and a live ClickHouse
 make ui-test    # the UI test suite

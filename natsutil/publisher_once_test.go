@@ -56,7 +56,7 @@ func TestPublishOnceStoresTheMessage(t *testing.T) {
 // must make exactly ONE attempt, report the failure itself, and leave
 // nothing for Drain, OnError or OnRetry. The server's own inbound-message
 // counter is the witness: it sees every attempt, whatever the client does
-// with the replies. Against nats-server v2.11.15 and nats.go v1.49.0 it moves
+// with the replies. Against nats-server v2.15.0 and nats.go v1.54.0 it moves
 // by 3 for a default publish and by 1 with retries off.
 func TestPublishOnceMakesOneAttempt(t *testing.T) {
 	srv := natstest.RunServer(t)
