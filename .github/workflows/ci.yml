@@ -50,7 +50,7 @@ jobs:
     services:
       clickhouse:
         # clickhouse/clickhouse-server:24.8-alpine (multi-platform index)
-        image: clickhouse/clickhouse-server@sha256:b002e56ed5c16e224c312527f6fcba7e77216fec5d7a88a7828f59efc614feb5
+        image: clickhouse/clickhouse-server@sha256:7b9a0b6e9ab7ef79db5c4f8a9808f880258704eb7b4af9309f9029c16e727a80
         ports:
           - 9000:9000
         env:
