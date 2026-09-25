@@ -1,0 +1,10 @@
+# Paths that exist in the private archive but are never published. The
+# public repository is built from main without them, and
+# scripts/check-standalone.sh fails if any published file refers to one.
+# One path per line; blank lines and # comments are ignored.
+docs/superpowers
+.superpowers
+design_handoff_vantage
+docs/ui-fidelity
+lab
+deploy/clickhouse/archive

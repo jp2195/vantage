@@ -1,0 +1,202 @@
+{
+    "data": {
+        "unicast": [
+            {
+                "router_sysname": "",
+                "router_ip": "10.0.103.73",
+                "peer_ip": "10.0.0.80",
+                "collector": "dev-c1",
+                "rib": "in_pre",
+                "path_id": 6,
+                "next_hop": "10.0.0.80",
+                "as_path": [
+                    4200000002,
+                    65002,
+                    65000
+                ],
+                "origin_asn": 65000,
+                "med": null,
+                "local_pref": null,
+                "communities": [
+                    "65002:100",
+                    "65002:200"
+                ],
+                "large_communities": [
+                    "65002:1:1",
+                    "65002:2:2"
+                ],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "complete",
+                "family": "ipv4u",
+                "prefix": "10.97.0.0/16"
+            },
+            {
+                "router_sysname": "",
+                "router_ip": "10.0.103.73",
+                "peer_ip": "10.0.0.80",
+                "collector": "dev-c1",
+                "rib": "in_pre",
+                "path_id": 7,
+                "next_hop": "10.0.0.80",
+                "as_path": [
+                    4200000002,
+                    65002,
+                    65000
+                ],
+                "origin_asn": 65000,
+                "med": null,
+                "local_pref": null,
+                "communities": [
+                    "65002:100",
+                    "65002:200"
+                ],
+                "large_communities": [
+                    "65002:1:1",
+                    "65002:2:2"
+                ],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "complete",
+                "family": "ipv4u",
+                "prefix": "10.97.0.0/16"
+            },
+            {
+                "router_sysname": "",
+                "router_ip": "10.0.103.73",
+                "peer_ip": "10.1.0.17",
+                "collector": "dev-c1",
+                "rib": "in_pre",
+                "path_id": 0,
+                "next_hop": "10.1.0.17",
+                "as_path": [],
+                "origin_asn": null,
+                "med": null,
+                "local_pref": 100,
+                "communities": [],
+                "large_communities": [],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "complete",
+                "family": "ipv4u",
+                "prefix": "10.97.0.0/16"
+            },
+            {
+                "router_sysname": "7181fde60af4",
+                "router_ip": "172.22.0.201",
+                "peer_ip": "172.22.0.202",
+                "collector": "dev-c1",
+                "rib": "in_post",
+                "path_id": 0,
+                "next_hop": "172.22.0.202",
+                "as_path": [
+                    65001,
+                    65002
+                ],
+                "origin_asn": 65002,
+                "med": 0,
+                "local_pref": null,
+                "communities": [],
+                "large_communities": [
+                    "65001:1:1",
+                    "65001:2:2"
+                ],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "unknown",
+                "family": "ipv4u",
+                "prefix": "10.97.1.0/24"
+            },
+            {
+                "router_sysname": "nx-p3",
+                "router_ip": "10.0.103.74",
+                "peer_ip": "10.0.0.80",
+                "collector": "dev-c1",
+                "rib": "in_pre",
+                "path_id": 7,
+                "next_hop": "10.0.0.80",
+                "as_path": [
+                    4200000002,
+                    65002,
+                    65000
+                ],
+                "origin_asn": 65000,
+                "med": null,
+                "local_pref": null,
+                "communities": [
+                    "65002:100",
+                    "65002:200"
+                ],
+                "large_communities": [
+                    "65002:1:1",
+                    "65002:2:2"
+                ],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "complete",
+                "family": "ipv4u",
+                "prefix": "10.97.0.0/16"
+            },
+            {
+                "router_sysname": "nx-spine1",
+                "router_ip": "10.0.103.66",
+                "peer_ip": "10.0.0.80",
+                "collector": "dev-c1",
+                "rib": "in_pre",
+                "path_id": 6,
+                "next_hop": "10.0.0.80",
+                "as_path": [
+                    4200000002,
+                    65002,
+                    65000
+                ],
+                "origin_asn": 65000,
+                "med": null,
+                "local_pref": null,
+                "communities": [
+                    "65002:100",
+                    "65002:200"
+                ],
+                "large_communities": [
+                    "65002:1:1",
+                    "65002:2:2"
+                ],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "complete",
+                "family": "ipv4u",
+                "prefix": "10.97.0.0/16"
+            }
+        ],
+        "vpn": [
+            {
+                "router_sysname": "",
+                "router_ip": "10.0.103.73",
+                "peer_ip": "10.1.0.17",
+                "collector": "dev-c1",
+                "rib": "in_pre",
+                "path_id": 0,
+                "next_hop": "10.1.0.17",
+                "as_path": [],
+                "origin_asn": null,
+                "med": null,
+                "local_pref": 100,
+                "communities": [],
+                "large_communities": [],
+                "ext_communities": [],
+                "route_targets": [],
+                "dump_state": "complete",
+                "family": "lu4",
+                "rd": "",
+                "prefix": "10.97.0.0/16",
+                "label": 24005
+            }
+        ],
+        "evpn": []
+    },
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": 7
+    }
+}

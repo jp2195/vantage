@@ -1,0 +1,406 @@
+syntax = "proto3";
+package vantage.v1;
+
+import "google/protobuf/timestamp.proto";
+
+enum ParseFlag {
+  PARSE_FLAG_UNSPECIFIED = 0;
+  PARSE_FLAG_TS_COLLECTOR_FALLBACK = 1;   // QK_TS_ZERO: per-peer header ts was zero
+  PARSE_FLAG_ADDPATH_HEURISTIC = 2;       // add-path decided structurally, not by caps
+  PARSE_FLAG_ATTR_DISCARDED_7606 = 3;
+  PARSE_FLAG_TREAT_AS_WITHDRAW_7606 = 4;
+  PARSE_FLAG_VERSION_UNPARSED = 5;
+  PARSE_FLAG_UNKNOWN_FAMILY = 6;          // x{afi}-{safi} fallback in use
+  PARSE_FLAG_CAPS_MISSING = 7;            // RM before Peer-Up / no OPENs on record
+  // Some NLRI in this event was carried as raw bytes rather than decoded --
+  // an EVPN route type this build does not type, or an unknown family.
+  // Distinct from PARSE_FLAG_UNKNOWN_FAMILY, which means the family itself
+  // was unrecognized.
+  PARSE_FLAG_NLRI_UNTYPED = 8;
+  // BGP-LS carried an NLRI type this build does not decode (Node, Link and
+  // IPv4 and IPv6 Prefix NLRI, types 1 to 4, all decode). The bytes are
+  // preserved in raw_reach/raw_unreach.
+  PARSE_FLAG_LS_NLRI_UNDECODED = 9;
+  // BGP-LS carried a TLV type this build does not recognize -- either inside
+  // the BGP-LS Attribute (path attribute 29) or inside a Node/Link NLRI's own
+  // TLV list (including a node descriptor's nested sub-TLVs). Unlike
+  // PARSE_FLAG_LS_NLRI_UNDECODED (a whole NLRI *type* not handled), the
+  // NLRI/attribute here decoded successfully; only one of its TLVs did not.
+  // The raw TLV bytes are preserved in unknown_tlvs.
+  PARSE_FLAG_LS_TLV_UNKNOWN = 10;
+}
+
+enum PeerType {
+  PEER_TYPE_GLOBAL = 0;
+  PEER_TYPE_RD = 1;
+  PEER_TYPE_LOCAL = 2;
+  PEER_TYPE_LOC_RIB = 3;
+}
+
+message RouterId {
+  string ip = 1;
+  string sys_name = 2;
+}
+
+message RouterInfo {
+  string vendor = 1;   // "cisco", "juniper", "arista", "" if unknown
+  string os = 2;       // "iosxr", "nxos", "junos", "eos", "ios"
+  string version = 3;  // normalized, e.g. "10.2.3"; raw kept in sys_descr
+  string sys_descr = 4;
+}
+
+message PeerId {
+  PeerType type = 1;
+  bool post_policy = 2;         // L flag
+  string ip = 3;
+  uint32 asn = 4;
+  string bgp_id = 5;
+  uint64 distinguisher = 6;
+  // O flag (RFC 8671): these are routes the router *sent* to the peer,
+  // not routes it received. Crossed with post_policy this names which of
+  // the four RIB streams a message belongs to; the collector treats each
+  // as a distinct peer, with its own subject and sequence counter.
+  bool adj_rib_out = 7;
+}
+
+message Family {
+  uint32 afi = 1;
+  uint32 safi = 2;
+}
+
+message Prefix {
+  string prefix = 1;   // CIDR text, e.g. "10.0.0.0/24"
+  uint32 path_id = 2;  // 0 when add-path not in use
+}
+
+// VpnPrefix is one labeled, RD-scoped prefix from a vpn4 (RFC 4364) or lu4
+// (RFC 8277) MP_REACH/MP_UNREACH NLRI.
+message VpnPrefix {
+  string prefix = 1;           // CIDR text, e.g. "10.0.0.0/24"
+  uint32 path_id = 2;          // 0 when add-path not in use
+  string rd = 3;               // RFC 4364 §4.2 text: "65000:100", "10.0.0.1:1", "65536:1"
+  // labels: MPLS label stack, top first, 20-bit values. On vpn_withdrawn,
+  // 524288 is the RFC 3107/8277 withdraw sentinel (0x800000 on the wire,
+  // bottom-of-stack bit clear), not a real label, and must be ignored --
+  // but 524288 is ALSO a legal 20-bit label value (a genuine label of
+  // 524288 is 0x800001, S bit set), so this field alone cannot distinguish
+  // the two. Both are shifted (raw >> 4) identically by internal/bgp before
+  // reaching this wire form; this layer forwards the parser's determination
+  // verbatim rather than disambiguating it (see internal/bgp/nlri.go).
+  repeated uint32 labels = 4;
+}
+
+// EvpnRoute is one EVPN NLRI (RFC 7432 §7). Route types 2, 3 and 5 are decoded
+// into typed fields; every other type is carried in raw with route_type tagged.
+message EvpnRoute {
+  uint32 route_type = 1;
+  string rd = 2;
+  uint32 path_id = 3;
+  string mac = 4;              // type 2, "aa:bb:cc:dd:ee:ff"
+  string ip = 5;               // type 2, may be empty (MAC-only advertisement)
+  string originating_ip = 6;   // type 3
+  string prefix = 7;           // type 5, CIDR text
+  string gateway_ip = 8;       // type 5
+  uint32 ethernet_tag = 9;
+  string esi = 10;             // 10-byte Ethernet Segment Identifier, hex
+  // labels holds the RAW 24-bit value from the NLRI's label field. Its meaning
+  // depends on encapsulation (RFC 9012 / RFC 8365): an MPLS label is 20 bits in
+  // the high end, a VXLAN VNI is the full 24 bits unshifted. This package does
+  // not parse the Encapsulation Extended Community, so it does not guess --
+  // shifting unconditionally would silently halve every VNI on a VXLAN fabric.
+  repeated uint32 labels = 11;
+  bytes raw = 12;              // set when route_type is not decoded
+}
+
+message AsPathSegment {
+  uint32 type = 1;              // 1=SET 2=SEQUENCE
+  repeated uint32 asns = 2;
+}
+
+message Aggregator {
+  uint32 asn = 1;
+  string ip = 2;
+}
+
+message LargeCommunity {
+  uint32 global_admin = 1;
+  uint32 local_data1 = 2;
+  uint32 local_data2 = 3;
+}
+
+// ExtCommunity is one 8-byte extended community (RFC 4360 §3). The value's
+// shape comes from the high-order type octet, not the subtype, so an
+// unrecognized subtype still decodes structurally.
+message ExtCommunity {
+  uint32 type = 1;      // high octet, transitive bit included
+  uint32 sub_type = 2;
+  // value renders the six bytes after type and sub_type: "65000:100" for
+  // an AS-specific community, "10.0.0.1:5" for an IPv4-specific one,
+  // "52:31:d4:03:1b:08" for an EVPN router MAC, else "0x" and 12 hex digits.
+  string value = 3;
+  bytes raw = 4;        // always the 8 wire bytes, decoded or not
+}
+
+message UnknownAttr {
+  uint32 type = 1;
+  uint32 flags = 2;
+  bytes value = 3;
+}
+
+message PathAttributes {
+  uint32 origin = 1;                        // 0=IGP 1=EGP 2=INCOMPLETE
+  repeated AsPathSegment as_path = 2;
+  string next_hop = 3;
+  optional uint32 med = 4;
+  optional uint32 local_pref = 5;
+  bool atomic_aggregate = 6;
+  Aggregator aggregator = 7;
+  repeated uint32 communities = 8;
+  reserved 9; // was: repeated bytes ext_communities
+  // The name is reserved alongside the number. This repo's schema is
+  // additive-only within v1, enforced by `buf breaking` under WIRE_JSON
+  // (buf.yaml), and that ruleset counts a JSON name vanishing from a message
+  // as a break in its own right -- reserving the number alone does not keep
+  // the invariant. The typed replacement therefore takes RFC 4360's own
+  // spelling; the abbreviation only existed to match the deleted field.
+  reserved "ext_communities";
+  repeated ExtCommunity extended_communities = 11;
+  repeated LargeCommunity large_communities = 10;
+  repeated UnknownAttr unknown = 15;        // lossless fallback
+}
+
+message RouteEvent {
+  Family family = 1;
+  PathAttributes attrs = 2;
+  repeated Prefix announced = 3;
+  repeated Prefix withdrawn = 4;
+  bool end_of_rib = 5;
+  bytes raw_reach = 6;                       // MP_REACH attr value bytes
+  bytes raw_unreach = 7;                     // MP_UNREACH attr value bytes
+  repeated VpnPrefix vpn_announced = 8;
+  repeated VpnPrefix vpn_withdrawn = 9;
+  repeated EvpnRoute evpn_announced = 10;
+  repeated EvpnRoute evpn_withdrawn = 11;
+}
+
+// LsNodeDescriptor identifies one BGP-LS node (RFC 9552 §5.2.1.4). Every
+// field is part of the identity: a router-id is unique only within an AS and
+// area, so matching on it alone can attach a link to the wrong node.
+message LsNodeDescriptor {
+  uint32 asn = 1;
+  uint32 bgpls_id = 2;
+  uint32 area = 3;
+  bytes router_id = 4;                       // 4 bytes for OSPF, 6/7 for IS-IS
+}
+
+message LsNode {
+  uint32 protocol = 1;                       // RFC 9552 protocol-id
+  uint64 identifier = 2;
+  LsNodeDescriptor local = 3;
+  bool is_withdraw = 4;
+  string name = 5;
+  uint32 srgb_base = 6;
+  uint32 srgb_size = 7;
+  uint32 srlb_base = 8;
+  uint32 srlb_size = 9;
+  repeated uint32 sr_algorithms = 10;
+  bytes router_id_v4 = 11;
+  // unknown_tlvs holds TLVs from THIS node's own Node NLRI (including its
+  // node descriptor's nested sub-TLVs) that this build does not recognize
+  // -- distinct from LsEvent.unknown_tlvs, which is the
+  // shared BGP-LS Attribute's unknown TLVs (one attribute per UPDATE, RFC
+  // 9552 §5.3, so it is not per-node). sink/rows.go merges both into one
+  // ls_nodes.unknown_tlvs column, since the DDL has only one such column and
+  // "which container did an unrecognized TLV come from" is not information a
+  // topology consumer needs to act on.
+  map<uint32, bytes> unknown_tlvs = 12;
+}
+
+message LsLink {
+  uint32 protocol = 1;
+  uint64 identifier = 2;
+  LsNodeDescriptor local = 3;
+  LsNodeDescriptor remote = 4;
+  bytes local_ifaddr = 5;
+  bytes remote_ifaddr = 6;
+  uint32 link_local_id = 7;
+  uint32 link_remote_id = 8;
+  bool is_withdraw = 9;
+  // Repeated, not scalar: RFC 9085 2.2.1 permits several Adjacency SID TLVs
+  // on one link, and protected/unprotected pairs are ordinary in SR-MPLS. A
+  // scalar keeps only the last and loses half the SR data per link.
+  repeated LsAdjacencySid adj_sids = 10;
+  uint32 te_metric = 11;
+  uint32 igp_metric = 12;
+  uint32 admin_group = 13;
+  float max_bandwidth = 14;
+  // unknown_tlvs: see LsNode.unknown_tlvs -- same rationale, this link's own
+  // Link NLRI TLVs (including local/remote node descriptor sub-TLVs) rather
+  // than the shared BGP-LS Attribute's.
+  map<uint32, bytes> unknown_tlvs = 15;
+}
+
+// LsPrefix is a Topology Prefix NLRI (RFC 9552 5.2.3) with its prefix
+// attributes (RFC 9085 2.3) -- IPv4 (NLRI type 3) and IPv6 (type 4) both,
+// since 2026-09-01. One message carries both because RFC 9552 gives the two
+// types identical descriptors and prefix is a text field that carries its
+// own family; nothing here needs to say which type a row came from. Separate from LsNode and LsLink for the reason
+// that keeps those two apart: a prefix is a different
+// object with a different identity, and folding it into either would make one
+// message's fields meaningless for most of its rows.
+message LsPrefix {
+  uint32 protocol = 1;
+  uint64 identifier = 2;
+  // local is the node advertising reachability to this prefix. It is the same
+  // descriptor a Node NLRI carries, which is what lets ClickHouse derive the
+  // same node_key for both and join a prefix to its node.
+  LsNodeDescriptor local = 3;
+  bytes prefix = 4;                          // packed address bytes, 4 for IPv4
+  uint32 prefix_len = 5;
+  uint32 ospf_route_type = 6;                // TLV 264: 1 intra-area, 2 inter-area, ...
+  bool is_withdraw = 7;
+  // prefix_sid carries the node SID. has_prefix_sid distinguishes an absent
+  // TLV from a legitimately-zero index, and prefix_sid_flags changes what the
+  // value MEANS -- with V and L set it is an absolute label rather than an
+  // index into the SRGB.
+  uint32 prefix_sid = 8;
+  uint32 prefix_sid_flags = 9;
+  bool has_prefix_sid = 10;
+  uint32 prefix_metric = 11;
+  uint32 prefix_attr_flags = 12;             // TLV 1170
+  // unknown_tlvs: see LsNode.unknown_tlvs -- this prefix's own NLRI TLVs.
+  map<uint32, bytes> unknown_tlvs = 13;
+}
+
+message LsAdjacencySid {
+  uint32 sid = 1;
+  uint32 flags = 2;
+  uint32 weight = 3;
+}
+
+message LsEvent {
+  Family family = 1;
+  PathAttributes attrs = 2;
+  bytes raw_reach = 3;                       // MP_REACH attr value bytes
+  bytes raw_unreach = 4;                     // MP_UNREACH attr value bytes
+  repeated LsNode nodes = 5;
+  repeated LsLink links = 6;
+  map<uint32, bytes> unknown_tlvs = 7;       // BGP-LS attribute TLVs not decoded
+  // end_of_rib mirrors RouteEvent.end_of_rib (RFC 4724 §2): an LS End-of-RIB
+  // carries no NLRI at all, so without this field "the LS RIB finished
+  // converging" was unrepresentable in ClickHouse -- bgp.Update.EndOfRIB was
+  // already computed correctly, but LsEvent had nowhere to put it.
+  bool end_of_rib = 8;
+  repeated LsPrefix prefixes = 9;
+}
+
+message Capabilities {
+  bool four_byte_as = 1;
+  repeated Family addpath_families = 2;      // negotiated both directions
+  repeated Family mp_families = 3;
+
+  // The NEGOTIATED Hold Time in seconds: the smaller of the two the
+  // session's OPENs offered (RFC 4271 sec 4.2). Not a capability -- it is a
+  // fixed OPEN body field -- but it is negotiated from the same pair of
+  // messages and consumed by the same readers, so it travels with them.
+  //
+  // Zero is a VALUE: RFC 4271 says a hold time of 0 means the timer never
+  // expires, i.e. keepalives are off for this session. Readers must keep
+  // that apart from "no OPEN was observed", which is what hold_time_seen
+  // below is for -- proto3 scalars cannot tell an unset 0 from a real one.
+  uint32 hold_time = 4;
+  bool hold_time_seen = 5;
+
+  // There is deliberately NO keepalive field. RFC 4271's OPEN carries no
+  // such value; the keepalive interval is a local timer, conventionally
+  // hold_time/3, that a speaker never announces. A field here would give a
+  // convention the same standing as an observation.
+}
+
+message PeerEvent {
+  enum Kind {
+    KIND_UNSPECIFIED = 0;
+    KIND_UP = 1;
+    KIND_DOWN = 2;
+    // KIND_VIEW_LOST is the collector saying it stopped being able to see
+    // this peer, and it is NOT a Peer Down. A Peer Down is the router
+    // stating that a BGP session dropped, carried on the wire with a reason
+    // code (RFC 7854 sec 4.9). This is emitted when the BMP transport itself
+    // ends -- the router said nothing, and there is no reason code to
+    // report, so down_reason is left zero rather than invented.
+    //
+    // It exists because the absence of it was a live defect: KIND_DOWN was
+    // emitted only on a PeerDown message, so a collector whose TCP session
+    // simply dropped left its peers recorded up under what remains
+    // max(session_id) for that (collector, router) forever, and every
+    // current-state query served that frozen view as though it were live.
+    // Collapsing the two into KIND_DOWN would have fixed the staleness by
+    // fabricating a router statement; this keeps "the collector lost its
+    // view" and "the router reported a session down" as the separate facts
+    // they are.
+    KIND_VIEW_LOST = 3;
+  }
+  Kind kind = 1;
+  string local_ip = 2;
+  uint32 local_port = 3;
+  uint32 remote_port = 4;
+  bytes sent_open = 5;                       // raw OPEN incl. BGP header, on record
+  bytes recv_open = 6;
+  Capabilities caps = 7;
+  uint32 down_reason = 8;
+  bytes down_data = 9;
+}
+
+message StatsEvent {
+  map<uint32, uint64> counters = 1;          // BMP stat TLV type -> value
+}
+
+message RawEvent {
+  bytes bmp_msg = 1;                         // full original BMP message incl. common header
+  string parse_error = 2;
+  // mirrored distinguishes a message republished by mirror mode from one that
+  // failed to parse. Both land on vantage.v1.raw.{router}; without this a
+  // consumer can only infer the difference from parse_error being empty, which
+  // is also true of Termination.
+  bool mirrored = 3;
+}
+
+// CollectorBeat is a collector saying it is alive. Every collector publishes
+// one at startup, before it accepts a BMP session, and every 30 s after, on
+// vantage.v1.stats.beat.{collector} (subjects.Beat). It names no router and
+// no peer: its subject is the collector itself.
+//
+// started_at is when this collector PROCESS started, on the collector's own
+// clock, captured before any session exists. session_id is now().UnixNano()
+// on that same clock, so every session this process opens has an id at or
+// above started_at, and every session an earlier process under the same
+// collector_id opened has one below it. Readers take the newest started_at
+// per collector as its epoch.
+//
+// The envelope's ts_collector is when this beat was built. It is kept for
+// display only: readers decide liveness from the time the archive RECEIVED
+// the beat, never from this clock, so a collector with a wrong clock cannot
+// make itself stale or fresh.
+message CollectorBeat {
+  google.protobuf.Timestamp started_at = 1;
+}
+
+message Envelope {
+  string collector_id = 1;
+  RouterId router = 2;
+  PeerId peer = 3;
+  uint64 session_id = 4;
+  uint64 seq = 5;
+  google.protobuf.Timestamp ts_router = 6;
+  google.protobuf.Timestamp ts_collector = 7;
+  RouterInfo router_info = 8;
+  repeated ParseFlag parse_flags = 9;
+  oneof payload {
+    RouteEvent route = 10;
+    LsEvent ls = 11;
+    PeerEvent peer_event = 12;
+    StatsEvent stats = 13;
+    RawEvent raw = 14;
+    CollectorBeat beat = 15;
+  }
+}

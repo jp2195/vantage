@@ -1,0 +1,46 @@
+# deploy/dev/collector.yaml is vantage-collector's config for
+# docker-compose.dev.yml. Only nats_url and collector_id are set: every other
+# field (listen, metrics_listen, streams.*) is left to LoadConfig's built-in
+# defaults, which are already single-node-safe -- in particular,
+# streams.ls_replicas is left unset so LoadConfig defaults it to
+# streams.replicas (also unset, defaulting to 1), not natsutil's own
+# zero-value default of 3, which this single-node NATS container would
+# reject outright (see internal/collector/config.go's StreamsConfig doc
+# comment).
+nats_url: "nats://nats:4222"
+collector_id: "dev-c1"
+
+# admin_listen binds the mirror-arming API that `vantage capture` drives.
+# LoadConfig defaults it to 127.0.0.1:9470, which inside a container means the
+# container's own loopback and is therefore unreachable from the host. Bind it
+# to all interfaces in the container and publish it host-loopback-only in
+# docker-compose.dev.yml, so capture works from the dev box without exposing
+# the mirror API to the LAN.
+admin_listen: "0.0.0.0:9470"
+
+# Per-router identity for a lab fleet whose banners cannot self-identify.
+# XRd sends "26.1.1" as its entire BMP sysDescr -- a bare version with no
+# vendor token, unidentifiable from the wire by anything -- and n9kv sends
+# a chassis line that never says "NX-OS". Config supplies the identity,
+# the banner still supplies the version.
+#
+# FRR is deliberately absent: it lands on an ephemeral docker address that
+# changes every run, and its banner ("FRRouting 10.3_git") matches a built-in
+# anchor, so it identifies itself. That is the zero-config path still working,
+# and pinning an ephemeral IP here would be worse than useless.
+#
+# bmpgen's synthetic router (172.22.0.1) is absent for the same reason it is
+# synthetic: it is not a vendor.
+# Comments naming each entry's own lab hostname have been omitted: they
+# would point at a private lab's topology, and only the vendor/OS pairing
+# matters to this file.
+routers:
+  10.0.103.61: { vendor: cisco, os: iosxr }
+  10.0.103.62: { vendor: cisco, os: iosxr }
+  10.0.103.63: { vendor: cisco, os: iosxr }
+  10.0.103.64: { vendor: cisco, os: iosxr }
+  10.0.103.65: { vendor: cisco, os: iosxr }
+  10.0.103.66: { vendor: cisco, os: nxos }
+  10.0.103.67: { vendor: cisco, os: nxos }
+  10.0.103.68: { vendor: cisco, os: nxos }
+  10.0.103.74: { vendor: cisco, os: nxos }

@@ -1,0 +1,111 @@
+# Broad citation patterns for a one-off pre-launch sweep, run with
+#
+#   scripts/check-citations.sh --sweep
+#
+# which adds these to scripts/citation-patterns.txt. THEY RUN IN NO CI
+# PATH, and must not be moved into citation-patterns.txt: each one also
+# matches ordinary English ("the spec says", "during this phase", "the
+# previous round of retries"), so a hit here is a question for a person to
+# answer by reading the sentence, not a failure. A public reader cannot
+# follow a pointer at a plan, a brief or a review; where a hit is such a
+# pointer, say what it established in the comment itself.
+#
+# Format as in citation-patterns.txt. Every pattern needs a line in
+# scripts/testdata/citations/sweep-must-fail.txt that no other pattern (in
+# either file) matches, and sweep-must-pass.txt holds near misses.
+#
+# A numbered task in lowercase: "task 5 adds it", "tasks 3-5".
+\btask [0-9]{1,2}\b|\btasks [0-9]{1,2}-[0-9]{1,2}\b
+# A ledger of any kind.
+\bledgers?\b
+# A bare numbered finding: "finding 12".
+\b[Ff]indings? [0-9]+\b
+# The review that assigned finding labels, unqualified: "the final review".
+\b[Ff]inal review\b
+# The task a comment was written in: "this task's own seed", "the failure
+# this whole task exists to prevent".
+\b[Tt]his (task's|whole task)\b
+# A task's own documents: "the task's own report".
+\b[Tt]ask's (own )?(brief|report)\b
+# Other tasks in the same plan: "a later task adds one".
+\b(later|earlier) tasks?\b
+# The brief a task was written from. "a brief summary" and "in brief" do not match.
+\b([Tt]he|[Tt]his|[Tt]ask) brief\b
+\bbrief's\b
+# The plan the code was built from: "the original plan", "the plan's own
+# statement".
+\b([Tt]he original|[Aa]n earlier) plan\b|\b[Tt]he plan('s (own|text)| (said|says|asked|asks))\b
+# A numbered step of a brief: "Step 4b's principle", "the Step 5 sample".
+\bStep [0-9]{1,2}[a-z]?'s\b|\bStep [0-9]{1,2}[a-z]\b
+# An internal design spec: "the design doc", "the fidelity spec".
+\b(design|fidelity) (spec|doc)\b
+# A spec section. "RFC 7854 §4.3" does not match.
+\bspec §
+# The spec cited by line or in a parenthesis: "spec:120", "(spec: the lab)".
+\bspec:[0-9]|\(spec[:)]
+# The spec as an authority: "the spec calls this the slow path".
+\b[Tt]he spec('s\b| (requires|required|calls|argues|asked|shipped|names|named|says|said|defines|actually)\b)|\b[Pp]er the spec\b
+# The UI design package, shortened: "the handoff's rail width".
+\b[Tt]he handoff\b|\bhandoff's\b
+# A design document by possession: "the design's section 2".
+\b[Tt]he design's\b
+# A rule stated only in a plan: "the 'fail fast' global constraint".
+\b[Gg]lobal [Cc]onstraints?\b
+# A decision cited as one: "the ruling", "the widget ruling".
+\b[Tt]he ([A-Za-z0-9-]+ )?ruling\b
+# A dated decision without "the": "per a 2030-01-02 ruling".
+\b20[0-9]{2}-[0-9]{2}-[0-9]{2}('s)? ruling\b
+# The outcome of a decision: "the ruled remedy", "ruled 2030-01-02".
+\b[Tt]he ruled\b|\bruled (20[0-9]{2}-|in scope\b)
+# A numbered fix: "Fix 3 of the review", "fixes 2 and 3".
+\b[Ff]ix(es)? [0-9]{1,2}\b
+# A numbered round: "round 5's finding". The flag "-churn-rounds 50" does
+# not match.
+(^|[^-])\b[Rr]ounds? [0-9]{1,2}\b
+# The same, hyphenated: "the round-3 defect".
+\b[Rr]ound-[0-9]{1,2}\b
+# A round by position: "the leak this round closes". "this round trip"
+# does not match. A line end is not a sentence end, so none is matched
+# here: the joined-block pass sees the words that follow a wrap.
+\b([Tt]his|[Pp]revious|[Ee]arlier) round('s\b|,|\.|;|:|\)| [^t])
+# Rounds counted: "five rounds of fixing".
+\brounds? of (this fix|fixing)\b
+# A finding by severity in any case but capitals: "critical 2", "Minor 7".
+\b([Ii]mportant|[Mm]inor|[Cc]ritical)[- ][0-9]{1,2}\b
+# Findings by status: "both parked findings", "the Critical's fix".
+\b(parked|held-back) findings?\b|\bself-review\b|\b[Tt]he (Critical|Important|Minor)('s|-fix| fix)\b|\bopen Minor\b
+# A review as the actor: "a later review named it".
+\b([Aa] later|[Tt]he|[Tt]hat|[Aa]) review('s)? (found|caught|named|proposed|proved|reproduced|flagged|carried)\b|\b[Aa] later review\b
+# An audit as an authority: "what the audit actually warns against".
+\b[Tt]he audit('s\b| (actually )?(warns|found|asked|says|said)\b)
+# A manual browser check cited as an event: "a browser pass found".
+\b[Bb]rowser (sweeps?|pass (found|caught|on|against))\b
+# Who directed the work, broadly: "the controller's note", "the dispatch
+# warned".
+\b([Pp]er the controller|[Tt]he (controller|coordinator|dispatch)('s)? (asked|said|says|ruled|decided|flagged|noted|notes?|message|correction|instructions?|warned))\b
+# A numbered phase's parts: "the phase 2 plan".
+\b[Pp]hase[- ][0-9]{1,2} (plan|design|work)\b
+# The phase a comment was written in: "a route type this phase does not
+# decode". No line-end alternative, for the reason given for rounds above.
+\b[Tt]his (whole )?phase\b( (does|doesn't|did|didn't|has|had|is|was|exists)\b|[.;,:)]| \()
+# The slice a comment was written in: "before this slice".
+\b([Bb]efore|[Aa]fter|[Uu]ntil) (this|that) slice\b|\b[Tt]his slice('s (binding|own)| (exists|already|has now|shipped|added|landed|introduced))\b
+# A git branch as the author: "the two decoders this branch adds".
+\bthis branch (adds|added|fixed|fixes|ships|shipped|introduced|introduces)\b
+# A batch of work named after what it did: "the widget-scoping work".
+\b[Tt]he ([A-Za-z]+-)+(scoping|identity) work\b
+# A verification pass named after when it ran: "until this pass".
+\b([Uu]ntil|[Bb]efore) this pass\b
+# A fix cited with no antecedent: "before this fix".
+\b[Bb]efore (this|that) fix\b
+# A schema version from before the public history began: "schema v4",
+# "the schema-4 facts", "until schema 6". "json-schema-7.0.15" does not match.
+\b[Ss]chema([- ]version[- ]| v| )[2-9]\b|\b[Ss]chema-[2-9]( |$)
+# The private development database as a modifier: "dev-archive router".
+\bdev-archive\b
+# The comment's own edit history: "an earlier version of this test".
+\b([Ee]arlier|[Ee]arly|[Ff]irst|[Pp]revious|[Oo]riginal) (version|draft|cut)s? of (this|these|[a-z]+[A-Z][A-Za-z]*)\b
+# The same, without saying of what: "adapted from an earlier draft,".
+\b[Aa]n earlier draft( [a-z]+ed\b|,)
+# The comment describing itself: "this comment used to say".
+\b[Tt]his (comment|file|test|sentence|note) (used to|previously|once)\b|\bused to (say|claim)\b

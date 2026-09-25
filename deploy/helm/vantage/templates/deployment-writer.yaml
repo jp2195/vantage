@@ -1,0 +1,177 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "vantage.fullname" . }}-writer
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.writer.replicas }}
+  selector:
+    matchLabels:
+      {{- include "vantage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: writer
+  template:
+    metadata:
+      labels:
+        {{- include "vantage.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: writer
+      annotations:
+        # Roll the pods when the rendered config changes. Without this a
+        # helm upgrade that only alters the ConfigMap leaves the old config
+        # running, and the release reports success.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap-writer.yaml") . | sha256sum }}
+    spec:
+      # None of these pods talks to the Kubernetes API, so none gets a
+      # token to leak.
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      # The DSN problem, and how this solves it. sink.Config reads
+      # clickhouse_dsn from the YAML file, and the username that goes into it
+      # lives in the ClickHouse Secret (existingSecret carries it). A
+      # ConfigMap cannot interpolate an environment variable, so the
+      # ConfigMap (config-src, ../configmap-writer.yaml) carries everything
+      # except the DSN, and this init container writes the DSN line into a
+      # copy on the emptyDir below, where the main container reads the
+      # finished file.
+      #
+      # The PASSWORD never passes through here. The writer reads it from the
+      # Secret mounted at clickhouse_password_file (the clickhouse-auth
+      # volume), so it is in no rendered config and no environment variable,
+      # and the DSN below carries a username only -- the daemon refuses a DSN
+      # that also carries a password.
+      #
+      # This runs the ClickHouse image, not the writer's own image:
+      # Dockerfile.writer builds on gcr.io/distroless/static-debian12, which
+      # has no shell, so a "cp && echo >>" pipeline here has to come from an
+      # image that has one. schemaJob.image is already a chart value that
+      # points at one.
+      initContainers:
+        - name: render-config
+          image: "{{ .Values.schemaJob.image.repository }}:{{ .Values.schemaJob.image.tag }}"
+          imagePullPolicy: {{ .Values.schemaJob.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -e
+              cp /etc/vantage-src/writer.yaml /etc/vantage/writer.yaml
+              # ClickHouse is operator-managed, outside this chart's control,
+              # so nothing here can assume its username avoids '/', '@',
+              # ':', '"', '\' or a space -- any of which, dropped into the
+              # DSN unescaped, either breaks the authority ('/' or '@'
+              # truncate it early, the same way a path or a second userinfo
+              # delimiter would) or breaks the YAML this gets read back from
+              # ('"' or '\' end the quoted scalar early). Percent-encoding
+              # every byte sidesteps all of that in one pass: the output
+              # alphabet is just '%' and hex digits, which is legal inside a
+              # double-quoted YAML scalar AND inside RFC 3986 userinfo, and
+              # churl.Parse (clickhouse-go's net/url fork) decodes an escaped
+              # userinfo byte back to the exact original with no restriction
+              # on which byte values may be escaped there (unlike its
+              # host-component rules). Verified against the pinned
+              # clickhouse-go v2.48.0's lib/churl and against yaml.v3 with a
+              # hostile value containing '"', '\', '/', '@', '$' and a space,
+              # by running the rendered script unmodified in the
+              # clickhouse-server:24.8-alpine image (2026-09-05), whose
+              # busybox supplies od, tr and sed.
+              urlencode() {
+                printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n' | sed 's/../%&/g'
+              }
+              enc_user=$(urlencode "$CH_USER")
+              echo "clickhouse_dsn: \"clickhouse://${enc_user}@{{ include "vantage.clickhouseHost" . }}:{{ .Values.clickhouse.externalPort }}/{{ include "vantage.clickhouseDatabase" . }}\"" >> /etc/vantage/writer.yaml
+          env:
+            - name: CH_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vantage.clickhouseSecret" . }}
+                  key: username
+          volumeMounts:
+            - name: config-src
+              mountPath: /etc/vantage-src
+            - name: config
+              mountPath: /etc/vantage
+          resources: {{- toYaml .Values.schemaJob.resources | nindent 12 }}
+      containers:
+        - name: writer
+          image: "{{ .Values.images.writer.repository }}:{{ .Values.images.writer.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.images.writer.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            # The daemon is a static binary that writes nothing to disk: its
+            # config arrives on the emptyDir the init container fills, and it
+            # has no temp files, caches or state of its own.
+            readOnlyRootFilesystem: true
+          args: ["-config", "/etc/vantage/writer.yaml"]
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.writer.metricsPort }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/vantage
+            - name: clickhouse-auth
+              mountPath: {{ include "vantage.clickhousePasswordDir" . | quote }}
+              readOnly: true
+            {{- if .Values.nats.tls.enabled }}
+            - name: nats-tls
+              mountPath: {{ include "vantage.natsTLSDir" . | quote }}
+              readOnly: true
+            {{- end }}
+          # /healthz answers whenever the process is serving; /readyz only
+          # while NATS is connected and a ClickHouse ping succeeds. Liveness
+          # must not follow a dependency: restarting the writer does not
+          # bring ClickHouse back.
+          livenessProbe:
+            httpGet: {path: /healthz, port: metrics}
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: metrics}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.writer.resources | nindent 12 }}
+      volumes:
+        - name: config-src
+          configMap:
+            name: {{ include "vantage.fullname" . }}-writer
+        - name: config
+          emptyDir: {}
+        - name: clickhouse-auth
+          secret:
+            secretName: {{ include "vantage.clickhouseSecret" . }}
+            # Only the password: the username is already in the DSN.
+            items:
+              - key: password
+                path: password
+            # Readable through fsGroup: 65532 above; see the nats-tls
+            # volume below for why 0440 and not 0400.
+            defaultMode: 0440
+        {{- if .Values.nats.tls.enabled }}
+        - name: nats-tls
+          secret:
+            # Deliberately NOT in the checksum/config annotation above. The
+            # kubelet propagates a rewritten Secret into the mount, and
+            # nats.go re-reads these files on the next connection attempt --
+            # so a renewal needs no restart, and a checksum here would roll
+            # both daemons on every renewal for nothing.
+            secretName: {{ include "vantage.natsWriterSecret" . }}
+            # Secret-volume files come out owned root:root, and this pod
+            # runs as UID 65532 with no group bits set by default -- a mode
+            # unreadable to "other" is unreadable to the daemon too.
+            # fsGroup: 65532 above adds that UID as a supplementary group
+            # and kubelet normalizes the mount to defaultMode OR'd with the
+            # group-read bit, so tls.key lands at exactly 0440 regardless of
+            # whether this says 0400 or 0440. Measured on a v1.36.2 cluster.
+            defaultMode: 0440
+        {{- end }}

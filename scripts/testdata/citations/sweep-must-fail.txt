@@ -1,0 +1,44 @@
+// The seed is this task's own.
+// The task's own report says so.
+// A later task adds the widget.
+// Taken from the brief.
+// Following its brief's order, the decoder runs first.
+// The original plan had no widgets.
+// Step 4b's principle holds here.
+// See the fidelity spec for why.
+// The widget config (spec §8) is YAML.
+// spec:120 defers widgets.
+// The spec calls this the slow path.
+// The handoff's widget is blue.
+// It pins the design's section 2.
+// The "fail fast" global constraint applies.
+// It is the widget ruling, made a test.
+// Per a 2030-01-02 ruling, widgets are scoped.
+// The ruled remedy is blue widgets.
+// It pins Fix 3 of the review.
+// This is round 5's finding.
+// It was the round-3 defect.
+// The leak this round closes is the query string.
+// Five rounds of fixing came first.
+// This also pins critical 2.
+// It was done in task 5.
+// Recorded in the ledger.
+// This closes finding 12.
+// Added at the final review.
+// It closes both parked findings.
+// A later review named the widget.
+// What the audit actually warns against is a mix.
+// A browser pass found the rail empty.
+// The controller's note says so.
+// Nothing changes the phase 2 plan.
+// A route type this phase does not decode keeps its bytes.
+// Before this slice, widgets were refused.
+// These are the two decoders this branch adds.
+// It was added by the widget-scoping work.
+// It was listed here until this pass.
+// It returned 200 before this fix.
+// Set here since schema v4.
+// dev-archive router 10.0.0.1 held 20 rows.
+// An earlier version of this test asserted the opposite.
+// Adapted from an earlier draft, which mounted nothing.
+// This comment used to say 18.

@@ -1,0 +1,92 @@
+[
+  {
+    "Rows": [
+      {
+        "RouterSysName": "parity-r1",
+        "RouterIP": "10.250.1.1",
+        "PeerIP": "10.250.2.3",
+        "NextHop": "10.250.9.3",
+        "Collector": "parity-c1",
+        "RIB": "in_pre",
+        "Family": "ipv4u",
+        "Prefix": "198.18.11.0/24",
+        "PathID": 0,
+        "ASPath": [
+          65103,
+          65300
+        ],
+        "OriginASN": 65300,
+        "MED": null,
+        "LocalPref": null,
+        "Communities": [],
+        "LargeCommunities": [],
+        "ExtCommunities": [],
+        "RouteTargets": [],
+        "DumpState": "dumping"
+      },
+      {
+        "RouterSysName": "parity-r1",
+        "RouterIP": "10.250.1.1",
+        "PeerIP": "10.250.2.3",
+        "NextHop": "10.250.9.3",
+        "Collector": "parity-c1",
+        "RIB": "loc_rib",
+        "Family": "ipv4u",
+        "Prefix": "198.18.10.0/24",
+        "PathID": 0,
+        "ASPath": [
+          65103,
+          65995
+        ],
+        "OriginASN": 65995,
+        "MED": null,
+        "LocalPref": null,
+        "Communities": [],
+        "LargeCommunities": [],
+        "ExtCommunities": [],
+        "RouteTargets": [],
+        "DumpState": "complete"
+      }
+    ],
+    "Next": {
+      "Collector": "parity-c1",
+      "SessionID": 25002,
+      "Router": "10.250.1.1",
+      "Peer": "10.250.2.3",
+      "RIB": "",
+      "Last": [
+        "loc_rib",
+        "198.18.10.0/24",
+        0
+      ]
+    }
+  },
+  {
+    "Rows": [
+      {
+        "RouterSysName": "parity-r1",
+        "RouterIP": "10.250.1.1",
+        "PeerIP": "10.250.2.3",
+        "NextHop": "10.250.9.3",
+        "Collector": "parity-c1",
+        "RIB": "loc_rib",
+        "Family": "ipv4u",
+        "Prefix": "198.18.11.0/24",
+        "PathID": 0,
+        "ASPath": [
+          65103,
+          65300
+        ],
+        "OriginASN": 65300,
+        "MED": null,
+        "LocalPref": null,
+        "Communities": [],
+        "LargeCommunities": [],
+        "ExtCommunities": [],
+        "RouteTargets": [],
+        "DumpState": "complete"
+      }
+    ],
+    "Next": null
+  }
+]

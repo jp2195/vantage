@@ -1,0 +1,26 @@
+{{- if .Values.schemaJob.apply }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vantage.fullname" . }}-asnames
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+data:
+  # The AS holder name dictionary DDL (files/dictionaries/asnames.sql,
+  # asnames_meta.sql -- copies of deploy/clickhouse/asnames.sql and
+  # asnames_meta.sql), traveling the same .Files.Glob path
+  # configmap-schema.yaml already uses for schema.sql and the migrations.
+  #
+  # Unlike files/schema/*.sql, these two never join the schema_version
+  # sequence and are always safe to apply: CREATE DICTIONARY never reads
+  # the source file at apply time (ClickHouse's dictionaries_lazy_load),
+  # so job-schema.yaml applies both of them on every cluster, whether or
+  # not the AS holder name data is present on the ClickHouse host. With no
+  # data, both attach at status NOT_LOADED and every ASN renders as a bare
+  # number, which the UI already says on screen -- see deploy/helm/README.md.
+  #
+  # Placing that data is the OPERATOR'S job now. The chart used to be able
+  # to mount it (clickhouse.asnamesVolume) because it owned the ClickHouse
+  # pod; it no longer deploys one, so the file goes on their own host at
+  # the path deploy/clickhouse/asnames.sql reads from.
+{{ (.Files.Glob "files/dictionaries/*.sql").AsConfig | indent 2 }}
+{{- end }}

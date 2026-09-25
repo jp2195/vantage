@@ -1,0 +1,36 @@
+[
+  {
+    "RouterIP": "10.250.1.3",
+    "PeerIP": "10.250.2.6",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "ASN": 65250,
+    "State": "up",
+    "DumpStates": {},
+    "SessionID": 25301,
+    "Routes": 0,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:01:22Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  },
+  {
+    "RouterIP": "10.250.1.3",
+    "PeerIP": "10.250.2.7",
+    "Collector": "parity-c1",
+    "RIB": "in_pre",
+    "ASN": 65250,
+    "State": "up",
+    "DumpStates": {},
+    "SessionID": 25301,
+    "Routes": 0,
+    "HoldTime": 0,
+    "HoldTimeSeen": false,
+    "UpSince": "2030-01-01T00:01:23Z",
+    "MPFamilies": [],
+    "AddPathFamilies": [],
+    "SysDescr": ""
+  }
+]

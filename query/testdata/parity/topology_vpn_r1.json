@@ -1,0 +1,105 @@
+{
+  "Nodes": [
+    {
+      "ASN": 65101,
+      "Routes": 6,
+      "Origin": false,
+      "Transit": true,
+      "Peer": true,
+      "FirstSeen": "2030-01-01T00:00:48Z"
+    },
+    {
+      "ASN": 65400,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:48Z"
+    },
+    {
+      "ASN": 65401,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:49Z"
+    },
+    {
+      "ASN": 65402,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:50Z"
+    },
+    {
+      "ASN": 65403,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:51Z"
+    },
+    {
+      "ASN": 65404,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:52Z"
+    },
+    {
+      "ASN": 65405,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:00:54Z"
+    }
+  ],
+  "Edges": [
+    {
+      "Src": 65101,
+      "Dst": 65400,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:48Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65401,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:49Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65402,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:50Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65403,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:51Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65404,
+      "Routes": 1,
+      "LiveRoutes": 0,
+      "FirstSeen": "2030-01-01T00:00:52Z"
+    },
+    {
+      "Src": 65101,
+      "Dst": 65405,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:00:54Z"
+    }
+  ],
+  "Routes": 6
+}

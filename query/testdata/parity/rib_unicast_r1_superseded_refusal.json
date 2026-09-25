@@ -1,0 +1,5 @@
+{
+  "Err": "query: the session this walk was pinned to has been superseded: the walk is pinned to its collector's session 25001, which is no longer that collector's current session for 10.250.1.1 (25002) -- the router reconnected and re-dumped, so the pages already fetched describe a dump that no longer exists; restart the walk without a cursor",
+  "SessionChanged": true,
+  "BadFilter": false
+}

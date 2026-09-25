@@ -1,0 +1,44 @@
+{
+    "data": [
+        {
+            "router_ip": "172.22.0.11",
+            "router_sysname": "",
+            "peer_ip": "10.255.1.1",
+            "peer_asn": 65100,
+            "readvertise": 7,
+            "withdraw": 7,
+            "dump": 7,
+            "changes_per_second": 0.00016203703704167872,
+            "activity": [
+                {
+                    "bucket": "2026-09-20T22:00:00Z",
+                    "changes": 14
+                }
+            ]
+        },
+        {
+            "router_ip": "172.22.0.12",
+            "router_sysname": "7a35fd594265",
+            "peer_ip": "0.0.0.0",
+            "peer_asn": 65002,
+            "readvertise": 0,
+            "withdraw": 3,
+            "dump": 5,
+            "changes_per_second": 3.472222222321687e-05,
+            "activity": [
+                {
+                    "bucket": "2026-09-20T22:00:00Z",
+                    "changes": 3
+                }
+            ]
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": null,
+        "churn_bucket": "1h0m0s",
+        "churn_from": "2026-09-20T16:48:25.636530396Z",
+        "churn_to": "2026-09-21T16:48:25.636527921Z"
+    }
+}

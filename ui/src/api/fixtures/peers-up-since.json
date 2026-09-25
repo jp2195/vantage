@@ -1,0 +1,89 @@
+{
+    "data": [
+        {
+            "router_ip": "10.0.103.61",
+            "peer_ip": "10.255.0.2",
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "asn": 65000,
+            "state": "up",
+            "dump_states": {},
+            "session_id": "1787091198766107609",
+            "routes": 0,
+            "hold_time": null,
+            "mp_families": [],
+            "addpath_families": [],
+            "sys_descr": "",
+            "up_since": "2026-08-18T22:13:18.766453Z"
+        },
+        {
+            "router_ip": "10.0.103.61",
+            "peer_ip": "10.255.0.3",
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "asn": 65000,
+            "state": "up",
+            "dump_states": {},
+            "session_id": "1787091198766107609",
+            "routes": 0,
+            "hold_time": null,
+            "mp_families": [],
+            "addpath_families": [],
+            "sys_descr": "",
+            "up_since": "2026-08-18T22:13:18.766417Z"
+        },
+        {
+            "router_ip": "10.0.103.61",
+            "peer_ip": "10.255.0.4",
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "asn": 65000,
+            "state": "up",
+            "dump_states": {},
+            "session_id": "1787091198766107609",
+            "routes": 0,
+            "hold_time": null,
+            "mp_families": [],
+            "addpath_families": [],
+            "sys_descr": "",
+            "up_since": "2026-08-18T22:13:18.766353Z"
+        },
+        {
+            "router_ip": "10.0.103.61",
+            "peer_ip": "10.255.0.5",
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "asn": 65000,
+            "state": "up",
+            "dump_states": {},
+            "session_id": "1787091198766107609",
+            "routes": 0,
+            "hold_time": null,
+            "mp_families": [],
+            "addpath_families": [],
+            "sys_descr": "",
+            "up_since": "2026-08-18T22:13:18.766257Z"
+        },
+        {
+            "router_ip": "10.0.103.61",
+            "peer_ip": "10.255.0.7",
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "asn": 65000,
+            "state": "up",
+            "dump_states": {},
+            "session_id": "1787091198766107609",
+            "routes": 0,
+            "hold_time": null,
+            "mp_families": [],
+            "addpath_families": [],
+            "sys_descr": "",
+            "up_since": "2026-08-18T22:13:18.766206Z"
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": null
+    }
+}

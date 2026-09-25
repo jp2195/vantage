@@ -1,0 +1,25 @@
+{
+    "data": [
+        {
+            "ts_collector": "2026-09-06T19:14:29.787271Z",
+            "ts_router": "2026-09-06T19:14:29.753944Z",
+            "seq": "5",
+            "session_id": "1788722065877779361",
+            "router_ip": "10.0.0.80",
+            "peer_ip": "172.31.0.90",
+            "collector": "vantage-collector-0",
+            "rib": "in_pre",
+            "family": "ipv4u",
+            "prefix": "10.10.1.0/24",
+            "path_id": 0,
+            "action": "announce",
+            "next_hop": "172.31.0.90",
+            "as_path": []
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": null
+    }
+}

@@ -1,0 +1,92 @@
+{
+    "data": {
+        "unicast": {
+            "nodes": [
+                {
+                    "asn": 65001,
+                    "routes": 4,
+                    "roles": [
+                        "transit"
+                    ],
+                    "first_seen": "2026-09-11T22:39:28.659855Z"
+                },
+                {
+                    "asn": 65002,
+                    "routes": 4,
+                    "roles": [
+                        "origin",
+                        "transit"
+                    ],
+                    "first_seen": "2026-09-11T22:39:28.659855Z"
+                },
+                {
+                    "asn": 64511,
+                    "routes": 1,
+                    "roles": [
+                        "origin"
+                    ],
+                    "first_seen": "2026-09-11T22:41:31.795931Z"
+                },
+                {
+                    "asn": 65003,
+                    "routes": 1,
+                    "roles": [
+                        "transit"
+                    ],
+                    "first_seen": "2026-09-11T22:39:28.659969Z"
+                },
+                {
+                    "asn": 65004,
+                    "routes": 1,
+                    "roles": [
+                        "origin"
+                    ],
+                    "first_seen": "2026-09-11T22:39:28.659969Z"
+                }
+            ],
+            "edges": [
+                {
+                    "src": 65001,
+                    "dst": 65002,
+                    "routes": 3,
+                    "live_routes": 3,
+                    "first_seen": "2026-09-11T22:39:28.659855Z"
+                },
+                {
+                    "src": 65001,
+                    "dst": 65003,
+                    "routes": 1,
+                    "live_routes": 1,
+                    "first_seen": "2026-09-11T22:39:28.659969Z"
+                },
+                {
+                    "src": 65002,
+                    "dst": 64511,
+                    "routes": 1,
+                    "live_routes": 0,
+                    "first_seen": "2026-09-11T22:41:31.795931Z"
+                },
+                {
+                    "src": 65003,
+                    "dst": 65004,
+                    "routes": 1,
+                    "live_routes": 1,
+                    "first_seen": "2026-09-11T22:39:28.659969Z"
+                }
+            ]
+        },
+        "vpn": {
+            "nodes": [],
+            "edges": []
+        },
+        "evpn": {
+            "nodes": [],
+            "edges": []
+        }
+    },
+    "meta": {
+        "next_cursor": null,
+        "warnings": [],
+        "total_matched": 5
+    }
+}

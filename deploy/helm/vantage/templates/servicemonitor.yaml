@@ -1,0 +1,39 @@
+{{- /*
+One ServiceMonitor per daemon, for the Prometheus Operator. Off by default:
+the monitoring.coreos.com CRDs exist only where the operator is installed,
+and a ServiceMonitor on a cluster without them fails the install.
+*/ -}}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+{{- range $component := list "collector" "writer" "api" }}
+{{- if index $.Values.metrics.serviceMonitor $component }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "vantage.fullname" $ }}-{{ $component }}
+  namespace: {{ $.Values.metrics.serviceMonitor.namespace | default $.Release.Namespace }}
+  labels:
+    {{- include "vantage.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $component }}
+    {{- with $.Values.metrics.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  namespaceSelector:
+    matchNames: [{{ $.Release.Namespace | quote }}]
+  selector:
+    matchLabels:
+      {{- include "vantage.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      {{- with $.Values.metrics.serviceMonitor.interval }}
+      interval: {{ . }}
+      {{- end }}
+      {{- with $.Values.metrics.serviceMonitor.scrapeTimeout }}
+      scrapeTimeout: {{ . }}
+      {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

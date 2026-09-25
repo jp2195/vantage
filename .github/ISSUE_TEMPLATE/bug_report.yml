@@ -1,0 +1,44 @@
+name: Bug report
+description: Something vantage did that it should not have, or did not do that it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: What you observed
+      description: The actual output, screen or number. Paste it rather than paraphrasing it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: And how you know. "The router's CLI shows 12 routes" is evidence; "it should be more" is not.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: Commands, API requests or UI steps, in order.
+  - type: input
+    id: component
+    attributes:
+      label: Component
+      placeholder: collector, writer, API, UI, Helm chart, dev stack
+  - type: input
+    id: version
+    attributes:
+      label: vantage commit
+      placeholder: output of `git rev-parse --short HEAD`
+  - type: input
+    id: router
+    attributes:
+      label: Router vendor and OS version
+      description: For anything protocol-related. BMP behavior is very vendor-specific; docs/quirks.md lists the known quirks.
+      placeholder: e.g. NX-OS 10.4(3), IOS-XR 24.2.1, FRR 10.1
+  - type: textarea
+    id: capture
+    attributes:
+      label: Packet capture or logs
+      description: A BMP pcap is the most useful thing you can attach. Strip anything you do not want to share.

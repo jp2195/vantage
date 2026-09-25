@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vantage.fullname" . }}-bmp
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+  {{- with .Values.collector.service.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.collector.service.type }}
+  {{- with .Values.collector.service.loadBalancerIP }}
+  loadBalancerIP: {{ . | quote }}
+  {{- end }}
+  {{- if eq .Values.collector.service.type "LoadBalancer" }}
+  {{- with include "vantage.bmpSourceRanges" . }}
+  # Dropped at the load balancer, where the implementation supports it, as
+  # well as by the collector's own allowed_sources/trusted_proxies check.
+  loadBalancerSourceRanges: {{- . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  {{- if has .Values.collector.service.type (list "LoadBalancer" "NodePort") }}
+  # Local, not Cluster. A router's source address is what identifies it --
+  # collector/server.go derives router_ip from conn.RemoteAddr() -- and
+  # Cluster-mode SNAT would rewrite every router to a node address, collapsing
+  # the whole fleet onto one identity. Only for the two types that take
+  # external traffic: the API server rejects the field on a ClusterIP Service.
+  externalTrafficPolicy: Local
+  {{- end }}
+  selector:
+    {{- include "vantage.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: collector
+  ports:
+    - name: bmp
+      port: {{ .Values.collector.bmpPort }}
+      targetPort: bmp
+      protocol: TCP

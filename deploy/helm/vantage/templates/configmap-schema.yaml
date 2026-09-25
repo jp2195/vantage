@@ -1,0 +1,12 @@
+{{- if .Values.schemaJob.apply }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vantage.fullname" . }}-schema
+  labels: {{- include "vantage.labels" . | nindent 4 }}
+data:
+  # .Files.Get reads from the chart directory at package time, so schema.sql
+  # and the migrations travel inside the chart. The Job therefore has no
+  # dependency on the repository being checked out where it runs.
+{{ (.Files.Glob "files/schema/*.sql").AsConfig | indent 2 }}
+{{- end }}

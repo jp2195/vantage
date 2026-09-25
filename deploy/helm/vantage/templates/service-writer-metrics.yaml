@@ -1,0 +1,20 @@
+# The writer serves nothing but its metrics and health endpoints, so it had no
+# Service at all. This headless one gives Prometheus (directly, or through the
+# optional ServiceMonitor) a stable name to discover the writer's pods by.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vantage.fullname" . }}-writer
+  labels:
+    {{- include "vantage.labels" . | nindent 4 }}
+    app.kubernetes.io/component: writer
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- include "vantage.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: writer
+  ports:
+    - name: metrics
+      port: {{ .Values.writer.metricsPort }}
+      targetPort: metrics

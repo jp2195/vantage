@@ -1,0 +1,257 @@
+{
+  "uid": "vantage-evpn-churn",
+  "title": "EVPN churn",
+  "tags": [
+    "vantage",
+    "routes"
+  ],
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": true,
+  "timezone": "",
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "route_type",
+        "label": "Route type",
+        "description": "Which EVPN route type to look at. The picker is built from the types actually present, so it cannot offer one no panel renders, and it shows the RFC 7432 name alongside the number because a bare 3 is not a usable option. Defaults to All.",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "query": "SELECT toString(route_type) AS __value, concat(toString(route_type), ' - ', multiIf(route_type = 1, 'Ethernet auto-discovery', route_type = 2, 'MAC/IP advertisement', route_type = 3, 'Inclusive multicast', route_type = 4, 'Ethernet segment', route_type = 5, 'IP prefix', concat('type ', toString(route_type)))) AS __text FROM vantage.route_evpn FINAL WHERE $__timeFilter(ts_collector) GROUP BY route_type ORDER BY route_type",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "refresh": 2,
+        "sort": 0,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "custom",
+        "name": "rib",
+        "label": "RIB stream",
+        "description": "Which of the RFC 8671 adj-RIB streams to read, or loc_rib for RFC 9069 Loc-RIB. Every EVPN row in this archive is in_pre, so this control changes nothing on today's data -- it is here because the table can hold the others and a panel that ignored it would be wrong the moment one arrives.",
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "What we know",
+      "description": "How much of the EVPN table is moving, for the current $route_type and $rib. A route counts as flapping when a withdrawal of it is followed by the SAME route being advertised again -- a withdrawal that is simply the last thing known about a route is not a flap, and counting it as one would make every route that was ever removed look unstable. `median_seconds_away` is the middle gap between a withdrawal and its return, and reads 0 when nothing flapped.",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT argMax(routes, (obs, collector_id)) AS routes, argMax(routes_flapping, (obs, collector_id)) AS routes_flapping, argMax(flap_cycles, (obs, collector_id)) AS flap_cycles, argMax(median_seconds_away, (obs, collector_id)) AS median_seconds_away FROM ( SELECT w.collector_id AS collector_id, count() AS obs, uniqExact((w.route, w.rd, w.router)) AS routes, uniqExactIf((w.route, w.rd, w.router), w.is_flap = 1) AS routes_flapping, countIf(w.is_flap = 1) AS flap_cycles, round(if(countIf(w.is_flap = 1) = 0, 0, quantileIf(0.5)(w.gap, w.is_flap = 1)), 1) AS median_seconds_away FROM ( SELECT multiIf(route_type = 2, if(ip != '', concat(mac, ' / ', ip), mac), route_type = 5, prefix, route_type = 3, concat('IMET tag ', toString(ethernet_tag)), concat('type ', toString(route_type))) AS route, multiIf(route_type = 1, 'Ethernet auto-discovery', route_type = 2, 'MAC/IP advertisement', route_type = 3, 'Inclusive multicast', route_type = 4, 'Ethernet segment', route_type = 5, 'IP prefix', concat('type ', toString(route_type))) AS type_name, rd, if(router_sysname = '', '(no sysName TLV)', router_sysname) AS router, collector_id, is_withdraw, ts_collector AS ts, stream_seq AS sseq, any(ts_collector) OVER (PARTITION BY collector_id, router_ip, peer_ip, rib, route_type, rd, mac, ip, prefix, ethernet_tag, path_id ORDER BY ts_collector, stream_seq ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS nxt, any(is_withdraw) OVER (PARTITION BY collector_id, router_ip, peer_ip, rib, route_type, rd, mac, ip, prefix, ethernet_tag, path_id ORDER BY ts_collector, stream_seq ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS nxt_w, toUInt8(is_withdraw = 1 AND nxt_w = 0 AND nxt > ts_collector) AS is_flap, if(is_flap = 1, dateDiff('millisecond', ts_collector, nxt) / 1000, 0) AS gap FROM vantage.route_evpn FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND match(toString(route_type), '^($route_type)$') ) AS w GROUP BY collector_id )"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "table",
+      "title": "Most unstable routes",
+      "description": "One row per EVPN route, ordered by how often it went away and came back.\n\n`route` is the field that identifies each type: a type 2 is named by its MAC (with its IP when it carries one), a type 5 by its prefix, a type 3 by its Ethernet tag. `route_type` is part of the route's identity, not decoration -- a MAC advertisement and an IP-prefix route can share a Route Distinguisher and are not the same route.\n\n`flaps` counts completed cycles: withdrawn, then advertised again. `withdrawals` counts every withdrawal including a final one that never returned, which is why the two columns differ and why a route with withdrawals but no flaps is one that is simply gone. `seconds_away` is the SUM of those gaps, so a route that flapped briefly many times and one that vanished for a long while are told apart by reading it against `flaps`.\n\nThe same route seen from two routers is two rows on purpose: a leaf and the route reflector above it can disagree about how much a MAC moved, and averaging that away is what this dashboard exists to avoid. Top 50.",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT route, type_name, rd, router, argMax(advertisements, (observations, collector_id)) AS advertisements, argMax(withdrawals, (observations, collector_id)) AS withdrawals, argMax(flaps, (observations, collector_id)) AS flaps, argMax(seconds_away, (observations, collector_id)) AS seconds_away, argMax(state, (observations, collector_id)) AS state, argMax(last_seen, (observations, collector_id)) AS last_seen FROM ( SELECT w.route AS route, w.type_name AS type_name, w.rd AS rd, w.router AS router, w.collector_id AS collector_id, count() AS observations, countIf(w.is_withdraw = 0) AS advertisements, countIf(w.is_withdraw = 1) AS withdrawals, countIf(w.is_flap = 1) AS flaps, round(sumIf(w.gap, w.is_flap = 1), 3) AS seconds_away, argMax(if(w.is_withdraw = 1, 'withdrawn', 'advertised'), (w.ts, w.sseq)) AS state, max(w.ts) AS last_seen FROM ( SELECT multiIf(route_type = 2, if(ip != '', concat(mac, ' / ', ip), mac), route_type = 5, prefix, route_type = 3, concat('IMET tag ', toString(ethernet_tag)), concat('type ', toString(route_type))) AS route, multiIf(route_type = 1, 'Ethernet auto-discovery', route_type = 2, 'MAC/IP advertisement', route_type = 3, 'Inclusive multicast', route_type = 4, 'Ethernet segment', route_type = 5, 'IP prefix', concat('type ', toString(route_type))) AS type_name, rd, if(router_sysname = '', '(no sysName TLV)', router_sysname) AS router, collector_id, is_withdraw, ts_collector AS ts, stream_seq AS sseq, any(ts_collector) OVER (PARTITION BY collector_id, router_ip, peer_ip, rib, route_type, rd, mac, ip, prefix, ethernet_tag, path_id ORDER BY ts_collector, stream_seq ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS nxt, any(is_withdraw) OVER (PARTITION BY collector_id, router_ip, peer_ip, rib, route_type, rd, mac, ip, prefix, ethernet_tag, path_id ORDER BY ts_collector, stream_seq ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS nxt_w, toUInt8(is_withdraw = 1 AND nxt_w = 0 AND nxt > ts_collector) AS is_flap, if(is_flap = 1, dateDiff('millisecond', ts_collector, nxt) / 1000, 0) AS gap FROM vantage.route_evpn FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND match(toString(route_type), '^($route_type)$') ) AS w GROUP BY route, type_name, rd, router, collector_id ) GROUP BY route, type_name, rd, router ORDER BY flaps DESC, withdrawals DESC, seconds_away DESC, route LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "timeseries",
+      "title": "Re-advertisements, session dumps and withdrawals",
+      "description": "What changed in each bucket, with the collection artifact drawn separately instead of mixed in.\n\nEach row is classified on its own, before any bucketing: an advertisement that is the FIRST observation of its route inside its BMP session is that session's table dump -- the router restating what it already held -- and lands in `session_dump`. Every other advertisement is a genuine re-advertisement and lands in `readvertise`. The route's identity is the whole EVPN NLRI tuple query/evpnroutes.go already groups by (collector, router, peer, rib, route_type, rd, prefix, mac, ip, ethernet_tag, esi, path_id), and the order within a session is (seq, stream_seq), never the untrustworthy ts_router.\n\nThat tuple cannot be shortened the way a unicast route's can. An EVPN route is not identified by a prefix: a type 2 MAC/IP route has no prefix at all and a type 3 IMET route has neither prefix nor MAC nor IP, so route_type, rd and ethernet_tag are what identify those. Two rows differing only in `ip` are two routes -- the \"MAC only\" advertisement and the \"MAC plus IP\" one for the same MAC -- and two differing only in `esi` or `path_id` are two routes for the same reason. Drop any component and two distinct routes merge, at which point the second route's own table dump is misread as a change.\n\n`withdraw` is every withdrawal, uncorrected, and that is deliberate rather than an oversight: a table dump advertises, it never withdraws, so no withdrawal is a session artifact and there is nothing to subtract. Correcting it symmetrically would delete real withdrawals -- 12 of route_unicast's 1,619 in a lab archive are the first thing said about their route in their session. route_evpn has 0 such rows among its 246 withdrawals (measured 2026-09-10), so the is_withdraw = 0 guard costs this archive nothing today and is kept because the asymmetry is structural rather than because a row happens to need it.\n\nThis panel previously plotted countIf(is_withdraw = 0) AS advertisements, which is message volume and cannot tell a re-dump from a change. Measured on a lab archive, 2026-09-10: of the 658 advertisements it reported, 507 were session table dumps and only 151 were genuine re-advertisements -- a 4.4x overstatement of what moved. The identical defect was fixed on route-churn on 2026-09-10, where a 2.06M-row rig proved a bucket that was 100% session re-dump and a bucket that was 100% genuine churn both reported the same number.\n\nCorrecting it by bucket instead -- count() - uniqExact(session_id) -- was measured and rejected there: it subtracts the sessions VISIBLE IN THE BUCKET, so on a route genuinely re-advertised 99 times inside one session it captured 99 of 99 at one-day buckets and 0 of 99 at one minute. $__timeInterval picks the bucket width from the dashboard's time range, so that remedy would have changed this panel's meaning silently as an operator zoomed. The per-row classification is independent of bucket width.\n\nThe classification is bounded by the panel's own time range, so a route first dumped BEFORE the window opens has its earliest in-window observation counted as the dump: at the left edge only, up to one re-advertisement per route per session is not counted. Widening the range recovers it.\n\nFINAL is load-bearing here, not decoration. An at-least-once re-delivery of a re-advertisement is a second row with the same (seq, stream_seq), so neither copy is the session minimum and both would count. Time is filtered on ts_collector, not ts_router: ts_router comes from the BMP per-peer header and is not trustworthy -- a router with a zero clock reports 1970 (the QK_TS_ZERO quirk), so filtering on it would silently drop rows from the window an operator selected.\n\nEVERY NUMBER HERE IS ONE COLLECTOR'S. Two collectors watching one router both write down the same events, and these three series name things the ROUTER did -- it re-advertised a route, it re-dumped after a session reset, it withdrew one -- so summing the observers would make a fabric look busier for being watched twice. The collector is chosen PER ROUTER as the one that saw the most, and that collector's series is what is plotted. A collector that has fallen behind looks like nothing at all here; the other one wins. Summing across ROUTERS is still addition -- they are disjoint network entities -- so a collector watching part of the fleet does not blank the routers it never sees.\n\nThe choice is made ONCE OVER THE WHOLE TIME RANGE, not per bucket, and that is not a detail. A per-bucket choice defends against two copies of one event only when both land in the same bucket, and the column the bucketing reads -- ts_collector -- is precisely the column two collectors disagree about. So it failed exactly where duplication is most likely: a collector that joins, leaves, restarts or is replayed to at a different time has its copies compared against nothing and added. Measured on a lab archive on 2026-09-20, router 172.22.0.8 held 20 rows under dev-c1 and 8 under dev-c2 carrying the SAME two ts_router values -- one captured session replayed to a second collector two days later -- and a per-bucket choice reported all 28. Choosing once over the range also stops consecutive points being drawn by different observers, which put a step in the chart that no router caused.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "WITH classified AS (\n  SELECT $__timeInterval(ts_collector) AS t,\n         router_ip,\n         collector_id,\n         is_withdraw,\n         is_withdraw = 0 AND (seq, stream_seq) = min((seq, stream_seq)) OVER (\n           PARTITION BY collector_id, router_ip, peer_ip, rib, session_id,\n                        route_type, rd, prefix, mac, ip, ethernet_tag, esi, path_id\n         ) AS is_session_dump\n  FROM vantage.route_evpn FINAL\n  WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$')\n    AND match(toString(route_type), '^($route_type)$')\n),\nper_bucket AS (\n  SELECT t, router_ip, collector_id,\n         countIf(NOT is_session_dump AND is_withdraw = 0) AS readvertise,\n         countIf(is_withdraw = 1)                         AS withdraw,\n         countIf(is_session_dump)                         AS session_dump,\n         readvertise + withdraw + session_dump            AS total\n  FROM classified\n  GROUP BY t, router_ip, collector_id\n),\nover_window AS (\n  SELECT *, sum(total) OVER (PARTITION BY router_ip, collector_id) AS window_total\n  FROM per_bucket\n)\nSELECT t,\n       sum(readvertise)  AS readvertise,\n       sum(withdraw)     AS withdraw,\n       sum(session_dump) AS session_dump\nFROM (\n  SELECT *, max((window_total, collector_id)) OVER (PARTITION BY router_ip) AS best\n  FROM over_window\n)\nWHERE (window_total, collector_id) = best\nGROUP BY t\nORDER BY t"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "readvertise"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#2a78d6",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "withdraw"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#eb6834",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "session_dump"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "#898781",
+                  "mode": "fixed"
+                }
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "dash": [
+                    6,
+                    6
+                  ],
+                  "fill": "dash"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {}
+    },
+    {
+      "type": "table",
+      "title": "Flap cycles",
+      "description": "Every completed withdrawal-and-return individually, longest gap first -- the evidence behind the counts above. `withdrawn_at` and `returned_at` are the two observations that bound the gap, so a cycle can be checked against the raw table rather than trusted.\n\nA route's LAST withdrawal never appears here, because nothing followed it: the pairing that builds this panel looks one observation forward and requires it to be later than the withdrawal. Without that requirement the final row of every route pairs with an empty timestamp and reports a gap of minus fifty-six years. Top 50.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT w.collector_id AS collector, w.route AS route, w.type_name AS type_name, w.rd AS rd, w.router AS router, w.ts AS withdrawn_at, w.nxt AS returned_at, round(w.gap, 3) AS seconds_away FROM ( SELECT multiIf(route_type = 2, if(ip != '', concat(mac, ' / ', ip), mac), route_type = 5, prefix, route_type = 3, concat('IMET tag ', toString(ethernet_tag)), concat('type ', toString(route_type))) AS route, multiIf(route_type = 1, 'Ethernet auto-discovery', route_type = 2, 'MAC/IP advertisement', route_type = 3, 'Inclusive multicast', route_type = 4, 'Ethernet segment', route_type = 5, 'IP prefix', concat('type ', toString(route_type))) AS type_name, rd, if(router_sysname = '', '(no sysName TLV)', router_sysname) AS router, collector_id, is_withdraw, ts_collector AS ts, stream_seq AS sseq, any(ts_collector) OVER (PARTITION BY collector_id, router_ip, peer_ip, rib, route_type, rd, mac, ip, prefix, ethernet_tag, path_id ORDER BY ts_collector, stream_seq ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS nxt, any(is_withdraw) OVER (PARTITION BY collector_id, router_ip, peer_ip, rib, route_type, rd, mac, ip, prefix, ethernet_tag, path_id ORDER BY ts_collector, stream_seq ROWS BETWEEN 1 FOLLOWING AND 1 FOLLOWING) AS nxt_w, toUInt8(is_withdraw = 1 AND nxt_w = 0 AND nxt > ts_collector) AS is_flap, if(is_flap = 1, dateDiff('millisecond', ts_collector, nxt) / 1000, 0) AS gap FROM vantage.route_evpn FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND match(toString(route_type), '^($route_type)$') ) AS w WHERE w.is_flap = 1 ORDER BY seconds_away DESC, withdrawn_at DESC LIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

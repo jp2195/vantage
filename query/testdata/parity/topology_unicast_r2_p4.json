@@ -1,0 +1,30 @@
+{
+  "Nodes": [
+    {
+      "ASN": 65104,
+      "Routes": 1,
+      "Origin": false,
+      "Transit": true,
+      "Peer": true,
+      "FirstSeen": "2030-01-01T00:01:11Z"
+    },
+    {
+      "ASN": 65600,
+      "Routes": 1,
+      "Origin": true,
+      "Transit": false,
+      "Peer": false,
+      "FirstSeen": "2030-01-01T00:01:11Z"
+    }
+  ],
+  "Edges": [
+    {
+      "Src": 65104,
+      "Dst": 65600,
+      "Routes": 1,
+      "LiveRoutes": 1,
+      "FirstSeen": "2030-01-01T00:01:11Z"
+    }
+  ],
+  "Routes": 1
+}

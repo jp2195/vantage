@@ -1,0 +1,164 @@
+{
+  "uid": "vantage-top-l3vpn-prefixes",
+  "title": "Top L3VPN prefixes",
+  "tags": [
+    "vantage",
+    "routes"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "",
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "family",
+        "label": "Family",
+        "description": "Narrows the ranking to one address family. vantage.route_vpn is really \"labeled routes\" discriminated by this column: vpn4/vpn6 are L3VPN and carry a Route Distinguisher, lu4 is labeled unicast and carries none. Defaults to All, which is why the RD column has a spelled-out fallback rather than a blank.",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "query": "SELECT DISTINCT family FROM vantage.route_vpn FINAL ORDER BY family",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "refresh": 2,
+        "sort": 0,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "custom",
+        "name": "rib",
+        "label": "RIB stream",
+        "description": "Which of the RFC 8671 adj-RIB streams to rank, or loc_rib for RFC 9069 Loc-RIB -- the router's own table after best-path selection. Defaults to All.",
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "What we know",
+      "description": "Scale of the labeled-route table for the current $family and $rib. `prefixes` counts DISTINCT (RD, prefix) pairs rather than prefixes, because one prefix exported by two VRFs is two routes and collapsing them understates the table. `rds` excludes the empty Route Distinguisher, so an lu4-only selection reads 0 rather than 1 -- labeled unicast has no RD to count. `withdrawals` counts withdrawal messages in range, not routes currently withdrawn.\n\nONE COLLECTOR'S VIEW PER ROUTER. route_vpn is dual-collector on the live archive (178 rows to 14), and two collectors watching one router both write down everything it says. `sessions` means \"survived this many re-dumps\" and a withdrawal is something the router did on the wire, so neither may scale with how many collectors happened to be watching -- measured 2026-09-20, the shared route groups reported 28 sessions where the best single vantage point saw 14.\n\nThe rows of the collector that saw each (route, router) most are kept whole and everything else is computed over those, so a row can never carry one collector's answer beside another's. PER ROUTER is the other half: summing across routers is addition -- two routers carrying one prefix are two real advertisements -- while summing across collectors is double-counting, so a quiet router is never discarded because a chatty one shares its prefix. `routers` was always honest, being a uniqExact over router_ip with no collector in it, and does not move.",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT uniqExact((rd, prefix))      AS prefixes,\n       uniqExactIf(rd, rd != '')    AS rds,\n       uniqExact(router_ip)         AS routers,\n       countIf(is_withdraw = 1)     AS withdrawals\nFROM (\n  SELECT family, rd, prefix, router_ip, session_id, is_withdraw, ts_collector\n  FROM (\n    SELECT *,\n           (observations, collector_id) AS mine,\n           max(mine) OVER (PARTITION BY family, rd, prefix, router_ip) AS best\n    FROM (\n      SELECT *,\n             count() OVER (PARTITION BY family, rd, prefix, router_ip, collector_id) AS observations\n      FROM (\n    SELECT family, rd, prefix, router_ip, collector_id, session_id,\n           is_withdraw, ts_collector\n    FROM vantage.route_vpn FINAL\n    WHERE $__timeFilter(ts_collector)\n      AND match(toString(rib), '^($rib)$')\n      AND match(family, '^($family)$')\n      )\n    )\n  )\n  WHERE mine = best\n)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "table",
+      "title": "Top prefixes",
+      "description": "Which labeled routes are most widely and most persistently present, ranked by routers then sessions. One row per (family, RD, prefix).\n\n`sessions` and `observations` are deliberately separate columns and NEITHER is a churn count. Every router in this archive re-dumps its whole table on each BMP session, and none of them re-advertises a labeled route inside one session -- across all 31 (RD, prefix, router) keys, observations and sessions are the same number. So a column called \"changes\" here would be counting how often XRd hit its nine-minute reset, which is why this dashboard does not have one. Read `sessions` as \"survived this many re-dumps\" and `observations` as the raw message count; when they diverge, something was genuinely re-sent or withdrawn inside a session.\n\n`withdrawals` counts withdrawal messages; a route that ends withdrawn is still ranked rather than hidden, because instability is what a tops view is being read for. Top 50.\n\nONE COLLECTOR'S VIEW PER ROUTER. route_vpn is dual-collector on the live archive (178 rows to 14), and two collectors watching one router both write down everything it says. `sessions` means \"survived this many re-dumps\" and a withdrawal is something the router did on the wire, so neither may scale with how many collectors happened to be watching -- measured 2026-09-20, the shared route groups reported 28 sessions where the best single vantage point saw 14.\n\nThe rows of the collector that saw each (route, router) most are kept whole and everything else is computed over those, so a row can never carry one collector's answer beside another's. PER ROUTER is the other half: summing across routers is addition -- two routers carrying one prefix are two real advertisements -- while summing across collectors is double-counting, so a quiet router is never discarded because a chatty one shares its prefix. `routers` was always honest, being a uniqExact over router_ip with no collector in it, and does not move. `sessions` is also a ranking key here, so the inflation did not just misreport a number -- it reordered the table by observer count.",
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT family,\n       if(rd = '', '(none: this family carries no RD)', rd) AS rd,\n       prefix,\n       uniqExact(router_ip)     AS routers,\n       uniqExact(session_id)    AS sessions,\n       count()                  AS observations,\n       countIf(is_withdraw = 1) AS withdrawals,\n       max(ts_collector)        AS last_seen\nFROM (\n  SELECT family, rd, prefix, router_ip, session_id, is_withdraw, ts_collector\n  FROM (\n    SELECT *,\n           (observations, collector_id) AS mine,\n           max(mine) OVER (PARTITION BY family, rd, prefix, router_ip) AS best\n    FROM (\n      SELECT *,\n             count() OVER (PARTITION BY family, rd, prefix, router_ip, collector_id) AS observations\n      FROM (\n    SELECT family, rd, prefix, router_ip, collector_id, session_id,\n           is_withdraw, ts_collector\n    FROM vantage.route_vpn FINAL\n    WHERE $__timeFilter(ts_collector)\n      AND match(toString(rib), '^($rib)$')\n      AND match(family, '^($family)$')\n      )\n    )\n  )\n  WHERE mine = best\n)\nGROUP BY family, rd, prefix\nORDER BY routers DESC, sessions DESC, observations DESC, prefix\nLIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "table",
+      "title": "Top RDs",
+      "description": "Which VRFs carry the most, ranked by DISTINCT prefixes rather than by rows -- a VRF whose router resets often would otherwise outrank one that genuinely carries more, for the reason set out on the panel above. `sessions` is every DISTINCT BMP session that carried anything in this RD -- a union across its prefixes, not a sum of their counts, so a session carrying three of this RD's prefixes counts once. It still runs higher than any single prefix's count. Labeled unicast has no Route Distinguisher and appears under a spelled-out fallback rather than an empty cell next to real RDs. Top 50.\n\nONE COLLECTOR'S VIEW PER ROUTER. route_vpn is dual-collector on the live archive (178 rows to 14), and two collectors watching one router both write down everything it says. `sessions` means \"survived this many re-dumps\" and a withdrawal is something the router did on the wire, so neither may scale with how many collectors happened to be watching -- measured 2026-09-20, the shared route groups reported 28 sessions where the best single vantage point saw 14.\n\nThe rows of the collector that saw each (route, router) most are kept whole and everything else is computed over those, so a row can never carry one collector's answer beside another's. PER ROUTER is the other half: summing across routers is addition -- two routers carrying one prefix are two real advertisements -- while summing across collectors is double-counting, so a quiet router is never discarded because a chatty one shares its prefix. `routers` was always honest, being a uniqExact over router_ip with no collector in it, and does not move. `sessions` is also a ranking key here, so the inflation did not just misreport a number -- it reordered the table by observer count.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT family,\n       if(rd = '', '(none: this family carries no RD)', rd) AS rd,\n       uniqExact(prefix)     AS prefixes,\n       uniqExact(router_ip)  AS routers,\n       uniqExact(session_id) AS sessions\nFROM (\n  SELECT family, rd, prefix, router_ip, session_id, is_withdraw, ts_collector\n  FROM (\n    SELECT *,\n           (observations, collector_id) AS mine,\n           max(mine) OVER (PARTITION BY family, rd, prefix, router_ip) AS best\n    FROM (\n      SELECT *,\n             count() OVER (PARTITION BY family, rd, prefix, router_ip, collector_id) AS observations\n      FROM (\n    SELECT family, rd, prefix, router_ip, collector_id, session_id,\n           is_withdraw, ts_collector\n    FROM vantage.route_vpn FINAL\n    WHERE $__timeFilter(ts_collector)\n      AND match(toString(rib), '^($rib)$')\n      AND match(family, '^($family)$')\n      )\n    )\n  )\n  WHERE mine = best\n)\nGROUP BY family, rd\nORDER BY prefixes DESC, routers DESC, rd\nLIMIT 50"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

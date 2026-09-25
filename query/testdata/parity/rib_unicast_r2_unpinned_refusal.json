@@ -1,0 +1,5 @@
+{
+  "Err": "query: invalid filter: router 10.250.1.2 is monitored by 2 collectors (parity-c1, parity-c2); a RIB walk is pinned to one (collector, session) and there is nothing here to choose with -- ask Routers for each collector's own session and start the walk with a RIBCursor naming the one you want",
+  "SessionChanged": false,
+  "BadFilter": true
+}

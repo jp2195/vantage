@@ -1,0 +1,197 @@
+{
+  "uid": "vantage-asn-view",
+  "title": "ASN view",
+  "tags": [
+    "vantage",
+    "routes"
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": true,
+  "timezone": "",
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "asn",
+        "label": "ASN",
+        "description": "Which autonomous system to look at, drawn from every ASN that appears anywhere in an AS_PATH -- not only from the ones that originate a prefix. Three of the seven ASNs in this archive are pure transit and would be unselectable otherwise. Defaults to All, which makes the inventory below a fleet-wide list rather than a single row.",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "query": "SELECT DISTINCT arrayJoin(arrayDistinct(as_path)) AS asn FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND notEmpty(as_path) ORDER BY asn",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "refresh": 2,
+        "sort": 0,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "custom",
+        "name": "rib",
+        "label": "RIB stream",
+        "description": "Which of the RFC 8671 adj-RIB streams to read, or loc_rib for RFC 9069 Loc-RIB -- the router's own table after best-path selection. Defaults to All.",
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "table",
+      "title": "ASNs",
+      "description": "Every ASN in the selected RIB streams that appears anywhere in an AS_PATH, with what it does. `originated` counts prefixes whose path ENDS at it, `transited` counts prefixes whose path merely passes through -- an ASN can do both and this archive has none that do, so the two columns are not redundant. Both count DISTINCT prefixes, so an ASN that prepends itself five times still counts each prefix once. Both count only prefixes whose most recent observation is an advertisement: a withdrawn route reads as zero here, and is still listed -- marked -- in the Prefixes table below. `neighbours` is how many distinct ASNs sit next to it in a path, which is what makes multi-homing visible; an ASN is never its own neighbor, even when a path names it twice in a row. With $asn on All this is the whole fleet; picking one narrows it to that row.",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT e.asn AS asn, uniqExactIf(e.prefix, e.is_origin = 1) AS originated, uniqExactIf(e.prefix, e.is_origin = 0) AS transited, uniqExact(e.router_ip) AS routers, uniqExactArray(e.nbrs) AS neighbours FROM ( SELECT x.router_ip AS router_ip, x.prefix AS prefix, x.asn AS asn, x.as_path AS as_path, toUInt8(x.asn = x.as_path[-1]) AS is_origin, arrayFilter(n -> n != x.asn, arrayDistinct(arrayConcat(arrayMap(i -> x.as_path[i - 1], arrayFilter(i -> x.as_path[i] = x.asn AND i > 1, range(1, length(x.as_path) + 1))), arrayMap(i -> x.as_path[i + 1], arrayFilter(i -> x.as_path[i] = x.asn AND i < length(x.as_path), range(1, length(x.as_path) + 1)))))) AS nbrs FROM ( SELECT l.router_ip AS router_ip, l.router_sysname AS router_sysname, l.peer_ip AS peer_ip, l.rib AS rib, l.prefix AS prefix, l.as_path AS as_path, l.is_withdraw AS is_withdraw, l.next_hop AS next_hop, l.session_id AS session_id, l.last_seen AS last_seen, arrayJoin(arrayDistinct(l.as_path)) AS asn FROM ( SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id ) AS l WHERE notEmpty(l.as_path) AND l.is_withdraw = 0 ) AS x ) AS e WHERE match(toString(e.asn), '^($asn)$') GROUP BY asn ORDER BY originated DESC, transited DESC, asn"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "stat",
+      "title": "What we know",
+      "description": "The same counts as the table above, for $asn alone, plus the depth the table cannot show. `longest_path` is the greatest number of AS hops on any path through $asn -- hops as sent, so a prepended path counts every copy, because that is exactly what prepending is for. On this archive it never exceeds 2. Like the inventory, every count here ignores routes whose latest observation is a withdrawal.",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT uniqExactIf(e.prefix, e.is_origin = 1) AS originated, uniqExactIf(e.prefix, e.is_origin = 0) AS transited, uniqExact(e.router_ip) AS routers, uniqExactArray(e.nbrs) AS neighbours, toUInt64(max(length(e.as_path))) AS longest_path FROM ( SELECT x.router_ip AS router_ip, x.prefix AS prefix, x.asn AS asn, x.as_path AS as_path, toUInt8(x.asn = x.as_path[-1]) AS is_origin, arrayFilter(n -> n != x.asn, arrayDistinct(arrayConcat(arrayMap(i -> x.as_path[i - 1], arrayFilter(i -> x.as_path[i] = x.asn AND i > 1, range(1, length(x.as_path) + 1))), arrayMap(i -> x.as_path[i + 1], arrayFilter(i -> x.as_path[i] = x.asn AND i < length(x.as_path), range(1, length(x.as_path) + 1)))))) AS nbrs FROM ( SELECT l.router_ip AS router_ip, l.router_sysname AS router_sysname, l.peer_ip AS peer_ip, l.rib AS rib, l.prefix AS prefix, l.as_path AS as_path, l.is_withdraw AS is_withdraw, l.next_hop AS next_hop, l.session_id AS session_id, l.last_seen AS last_seen, arrayJoin(arrayDistinct(l.as_path)) AS asn FROM ( SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id ) AS l WHERE notEmpty(l.as_path) AND l.is_withdraw = 0 ) AS x ) AS e WHERE match(toString(e.asn), '^($asn)$')"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "table",
+      "title": "Prefixes",
+      "description": "Every prefix whose AS_PATH touches $asn, and how. A row is a (prefix, ASN) pair rather than a prefix: a route whose path names four ASNs is four rows, one per ASN, which is why `asn` is a column -- on $asn = All the same prefix appears once per ASN in its path, and without that column the `origin` and `transit` rows next to each other read as the table contradicting itself. `role` is `origin` when `asn` is the LAST element of the path and `transit` otherwise -- AS_PATH is ordered nearest-first, so the origin is the far end, not the near one. Each pair shows the most recent observation of that (router, peer, RIB, prefix, path-id) across the dashboard's time range. Unlike the panels above, a route whose latest observation was a withdrawal IS listed here, marked `withdrawn`: \"where did it go\" is a question this table should answer rather than an empty result. It is deliberately NOT scoped to each router's current BMP session -- most routers in this archive have no prefixes in their newest session, so scoping would empty the table. Read `session_current` instead: 0 means the observation rests on a session that has since been superseded.\n\nA router two collectors both watch has one BMP session per collector, so every row here is resolved per collector and the collector that heard it leads the row. `session_current` compares each row against ITS OWN collector's current session: resolved on the router alone it would be the larger of two unrelated session ids, and one collector's entire live view would read 0. The same scoping is why the two collectors' sightings of one prefix are two rows rather than one attributed to whichever arrived last.",
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT x.collector_id AS collector, x.prefix AS prefix, x.asn AS asn, if(x.asn = x.as_path[-1], 'origin', 'transit') AS role, arrayStringConcat(arrayMap(a -> toString(a), x.as_path), ' ') AS as_path, x.router_sysname AS router, IPv6NumToString(x.peer_ip) AS peer, toString(x.rib) AS rib, if(x.is_withdraw = 1, 'withdrawn', 'advertised') AS state, x.next_hop AS next_hop, x.last_seen AS last_seen, toUInt8(x.session_id = s.sid) AS session_current FROM ( SELECT l.collector_id AS collector_id, l.router_ip AS router_ip, l.router_sysname AS router_sysname, l.peer_ip AS peer_ip, l.rib AS rib, l.prefix AS prefix, l.as_path AS as_path, l.is_withdraw AS is_withdraw, l.next_hop AS next_hop, l.session_id AS session_id, l.last_seen AS last_seen, arrayJoin(arrayDistinct(l.as_path)) AS asn FROM ( SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id ) AS l WHERE notEmpty(l.as_path) ) AS x LEFT JOIN ( SELECT collector_id, router_ip, max(session_id) AS sid FROM vantage.peer_current GROUP BY collector_id, router_ip ) AS s ON s.collector_id = x.collector_id AND s.router_ip = x.router_ip WHERE match(toString(x.asn), '^($asn)$') ORDER BY collector, prefix, asn, router, peer"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "type": "table",
+      "title": "Adjacent ASNs",
+      "description": "Who $asn is next to in an AS_PATH, and on how many distinct prefixes. `toward collector` is the neighbor nearer the router that reported the route; `toward origin` is the neighbor nearer the network that announced it. An origin AS reached through three different upstreams appears as three `toward collector` rows, which is how multi-homing reads here -- collapsing them would hide it. Consecutive duplicates from AS_PATH prepending are excluded: an ASN is not adjacent to itself. Withdrawn routes are excluded, matching the inventory rather than the Prefixes table.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT p.asn AS asn, p.nbr AS neighbour, p.dir AS direction, uniqExact(p.prefix) AS prefixes FROM ( SELECT l.prefix AS prefix, arrayJoin(arrayConcat(arrayMap(i -> (l.as_path[i], l.as_path[i - 1], 'toward collector'), range(2, length(l.as_path) + 1)), arrayMap(i -> (l.as_path[i], l.as_path[i + 1], 'toward origin'), range(1, length(l.as_path))))) AS pair, pair.1 AS asn, pair.2 AS nbr, pair.3 AS dir FROM ( SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_unicast FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, path_id ) AS l WHERE notEmpty(l.as_path) AND l.is_withdraw = 0 ) AS p WHERE p.asn != p.nbr AND match(toString(p.asn), '^($asn)$') GROUP BY asn, neighbour, direction ORDER BY asn, direction, neighbour"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ]
+}

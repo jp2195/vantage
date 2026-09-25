@@ -1,0 +1,161 @@
+{
+  "uid": "vantage-looking-glass-vpn",
+  "title": "L3VPN looking glass",
+  "tags": [
+    "vantage",
+    "routes",
+    "l3vpn"
+  ],
+  "description": "Which VRFs carry an address, and how current that knowledge is. Companion to the unicast Looking glass; this one reads vantage.route_vpn, which holds labeled routes of every family, not only L3VPN.",
+  "schemaVersion": 39,
+  "version": 2,
+  "editable": true,
+  "timezone": "",
+  "refresh": "",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "type": "textbox",
+        "name": "target",
+        "label": "Address or prefix",
+        "description": "An address (10.88.5.7) or a prefix (10.88.5.0/24), v4 or v6. A typed prefix is reduced to its network address, so it finds the routes COVERING that address rather than the routes contained within it. Empty means show everything. Text that is not an address returns no rows rather than an error.",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "options": [],
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "custom",
+        "name": "rib",
+        "label": "RIB stream",
+        "description": "Which of the RFC 8671 adj-RIB streams to search, or loc_rib for RFC 9069 Loc-RIB. Defaults to All.",
+        "query": "in_pre,in_post,out_pre,out_post,loc_rib",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "type": "query",
+        "name": "family",
+        "label": "Family",
+        "description": "Narrows the search to one address family. vantage.route_vpn is really \"labeled routes\" discriminated by this column: vpn4/vpn6 are L3VPN and carry a Route Distinguisher, lu4 is labeled unicast and carries none, by design. Defaults to All, so the dashboard answers the broad question first and narrows on request. This is a QUERY variable, not a fixed list, so it cannot fall out of step with what the table holds -- a family the decoder has no registered name for arrives as x{afi}-{safi} and still appears here.",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "query": "SELECT DISTINCT family FROM vantage.route_vpn FINAL ORDER BY family",
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "options": [],
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": false,
+        "refresh": 2,
+        "hide": 0,
+        "skipUrlSync": false
+      },
+      {
+        "name": "collector",
+        "label": "Collector",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "vantage-clickhouse"
+        },
+        "multi": true,
+        "includeAll": true,
+        "refresh": 2,
+        "query": "SELECT DISTINCT collector_id FROM vantage.peer_current ORDER BY collector_id"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "What we know — $collector",
+      "description": "Framing for the table below, for the same $target, $rib and $family. \"VRFs carrying it\" counts distinct non-empty Route Distinguishers whose latest observation is an advertisement -- so a withdrawn route reads as zero, and an lu4-only result reads as zero too, because labeled unicast has no VRF. \"From a superseded session\" counts rows resting on a BMP session that is no longer the router's current one. One tile per collector. A router two collectors both watch has one BMP session per collector, so these numbers describe the collector named in the heading and nothing else, and \"from a superseded session\" compares every row against ITS OWN collector's current session -- compared against the larger of two unrelated session ids, one collector's live routes all read as stale.",
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "repeat": "collector",
+      "repeatDirection": "h",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT countDistinctIf(m.rd, m.rd != '' AND m.is_withdraw = 0) AS vrfs_carrying_it, toUInt64(max(m.prefix_len)) AS most_specific, countIf(m.session_id != s.sid) AS from_superseded_session FROM ( WITH toIPv6OrNull(splitByChar('/', ${target:sqlstring})[1]) AS target, splitByChar('/', prefix)[1] AS net, toIPv6OrNull(net) AS netaddr, toUInt8OrNull(splitByChar('/', prefix)[2]) AS len, toUInt8(coalesce(len, 0) + if(position(net, ':') > 0, 0, 96)) AS len6, IPv6CIDRToRange(coalesce(netaddr, toIPv6('::')), len6) AS rng SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, rd, family, path_id, coalesce(len, 0) AS prefix_len, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(route_targets, (ts_collector, stream_seq)) AS route_targets, argMax(labels, (ts_collector, stream_seq)) AS labels, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_vpn FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND match(family, '^($family)$') AND (${target:sqlstring} = '' OR (target IS NOT NULL AND netaddr IS NOT NULL AND len IS NOT NULL AND target >= rng.1 AND target <= rng.2)) GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, rd, family, path_id, prefix_len ) AS m LEFT JOIN ( SELECT collector_id, router_ip, max(session_id) AS sid FROM vantage.peer_current GROUP BY collector_id, router_ip ) AS s ON s.collector_id = m.collector_id AND s.router_ip = m.router_ip WHERE m.collector_id = '$collector'"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Covering routes",
+      "description": "Every labeled route whose prefix contains $target, grouped by collector and most specific first WITHIN each collector, one row per (router, peer, RIB, RD, prefix, path-id) showing that key's most recent observation. RD is part of the key on purpose: one prefix exported by two VRFs is two different routes, and a query keyed on prefix alone silently picks one. lu4 rows show \"(none: this family carries no RD)\" rather than a blank, because for that family the absence is design and not missing data. Route targets, not the RD, are what actually decide VRF import. Not scoped to each router's current BMP session -- read session_current, where 0 means the observation rests on a session since superseded. A route whose latest observation was a withdrawal is shown, marked withdrawn.\n\nIt ignores $collector deliberately: a dual-homed router's session is one per collector, so the table lists every collector's routes at once, in a leading collector column, rather than narrowing to the one the picker names. session_current is decided against the session of the collector that heard the row, so a row is never marked stale because a DIFFERENT collector happens to hold a higher session id.\n\nA withdrawn labeled route carries 524288 (0x800000 >> 4) in place of a label -- the RFC 3107 / RFC 8277 withdraw sentinel, which the proto defining the field calls \"not a real label, and must be ignored\". It is stripped, because rendering it puts a protocol constant in the `labels` column on the same row as state = withdrawn. It cannot be recognized by value alone -- a genuine label of 524288 is legal and arrives identically shifted -- so is_withdraw is what distinguishes them.",
+      "gridPos": {
+        "h": 18,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "vantage-clickhouse"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "vantage-clickhouse"
+          },
+          "editorType": "sql",
+          "queryType": "sql",
+          "format": 1,
+          "refId": "A",
+          "rawSql": "SELECT m.collector_id AS collector, m.prefix AS prefix, if(m.rd = '', '(none: this family carries no RD)', m.rd) AS rd, m.family AS family, m.router_sysname AS router, IPv6NumToString(m.peer_ip) AS peer, toString(m.rib) AS rib, if(m.is_withdraw = 1, 'withdrawn', 'advertised') AS state, m.next_hop AS next_hop, arrayStringConcat(m.route_targets, ' ') AS route_targets, arrayStringConcat(arrayMap(x -> toString(x), if(m.is_withdraw = 1, arrayFilter(l -> l != 524288, m.labels), m.labels)), ' ') AS labels, arrayStringConcat(arrayMap(x -> toString(x), m.as_path), ' ') AS as_path, m.last_seen AS last_seen, toUInt8(m.session_id = s.sid) AS session_current FROM ( WITH toIPv6OrNull(splitByChar('/', ${target:sqlstring})[1]) AS target, splitByChar('/', prefix)[1] AS net, toIPv6OrNull(net) AS netaddr, toUInt8OrNull(splitByChar('/', prefix)[2]) AS len, toUInt8(coalesce(len, 0) + if(position(net, ':') > 0, 0, 96)) AS len6, IPv6CIDRToRange(coalesce(netaddr, toIPv6('::')), len6) AS rng SELECT collector_id, router_ip, router_sysname, peer_ip, rib, prefix, rd, family, path_id, coalesce(len, 0) AS prefix_len, argMax(is_withdraw, (ts_collector, stream_seq)) AS is_withdraw, argMax(next_hop, (ts_collector, stream_seq)) AS next_hop, argMax(route_targets, (ts_collector, stream_seq)) AS route_targets, argMax(labels, (ts_collector, stream_seq)) AS labels, argMax(as_path, (ts_collector, stream_seq)) AS as_path, argMax(session_id, (ts_collector, stream_seq)) AS session_id, max(ts_collector) AS last_seen FROM vantage.route_vpn FINAL WHERE $__timeFilter(ts_collector) AND match(toString(rib), '^($rib)$') AND match(family, '^($family)$') AND (${target:sqlstring} = '' OR (target IS NOT NULL AND netaddr IS NOT NULL AND len IS NOT NULL AND target >= rng.1 AND target <= rng.2)) GROUP BY collector_id, router_ip, router_sysname, peer_ip, rib, prefix, rd, family, path_id, prefix_len ) AS m LEFT JOIN ( SELECT collector_id, router_ip, max(session_id) AS sid FROM vantage.peer_current GROUP BY collector_id, router_ip ) AS s ON s.collector_id = m.collector_id AND s.router_ip = m.router_ip ORDER BY collector, m.prefix_len DESC, rd, router, peer, prefix"
+        }
+      ]
+    }
+  ]
+}

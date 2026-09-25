@@ -1,0 +1,118 @@
+{
+    "data": [
+        {
+            "router_ip": "172.22.0.8",
+            "peer_ip": "0.0.0.0",
+            "collector": "dev-c1",
+            "rib": "loc_rib",
+            "asn": 65010,
+            "state": "view_lost",
+            "dump_states": {},
+            "session_id": "1789750424502141066",
+            "routes": 0,
+            "hold_time": 180,
+            "mp_families": [
+                "ipv4u"
+            ],
+            "addpath_families": [],
+            "sys_descr": "FRRouting 10.3_git",
+            "up_since": "2026-09-18T16:53:44.502934Z"
+        },
+        {
+            "router_ip": "172.22.0.8",
+            "peer_ip": "0.0.0.0",
+            "collector": "dev-c2",
+            "rib": "loc_rib",
+            "asn": 65010,
+            "state": "stale",
+            "dump_states": {
+                "evpn": "complete",
+                "ipv4u": "complete",
+                "ipv6u": "complete",
+                "vpn4": "complete",
+                "vpn6": "complete"
+            },
+            "session_id": "1790256447428733222",
+            "routes": 0,
+            "hold_time": 180,
+            "mp_families": [
+                "ipv4u"
+            ],
+            "addpath_families": [],
+            "sys_descr": "FRRouting 10.3_git",
+            "up_since": "2026-09-24T13:27:27.429139Z"
+        },
+        {
+            "router_ip": "172.22.0.8",
+            "peer_ip": "172.31.0.90",
+            "collector": "dev-c1",
+            "rib": "in_pre",
+            "asn": 65010,
+            "state": "view_lost",
+            "dump_states": {},
+            "session_id": "1789750424502141066",
+            "routes": 0,
+            "hold_time": 180,
+            "mp_families": [
+                "ipv4u",
+                "vpn4",
+                "ipv6u",
+                "vpn6",
+                "evpn"
+            ],
+            "addpath_families": [
+                "ipv4u",
+                "vpn4",
+                "ipv6u",
+                "vpn6",
+                "evpn"
+            ],
+            "sys_descr": "FRRouting 10.3_git",
+            "up_since": "2026-09-18T16:53:44.503654Z"
+        },
+        {
+            "router_ip": "172.22.0.8",
+            "peer_ip": "172.31.0.90",
+            "collector": "dev-c2",
+            "rib": "in_pre",
+            "asn": 65010,
+            "state": "stale",
+            "dump_states": {
+                "evpn": "complete",
+                "ipv4u": "complete",
+                "ipv6u": "complete",
+                "vpn4": "complete",
+                "vpn6": "complete"
+            },
+            "session_id": "1790256447428733222",
+            "routes": 4,
+            "hold_time": 180,
+            "mp_families": [
+                "ipv4u",
+                "vpn4",
+                "ipv6u",
+                "vpn6",
+                "evpn"
+            ],
+            "addpath_families": [
+                "ipv4u",
+                "vpn4",
+                "ipv6u",
+                "vpn6",
+                "evpn"
+            ],
+            "sys_descr": "FRRouting 10.3_git",
+            "up_since": "2026-09-24T13:27:27.429354Z"
+        }
+    ],
+    "meta": {
+        "next_cursor": null,
+        "warnings": [
+            {
+                "code": "collector_stale",
+                "message": "at least one row in this answer comes from a collector that has not been heard from in over 1m30s, so it is that collector's last view rather than a current one; its peers read \"stale\""
+            }
+        ],
+        "total_matched": null
+    }
+}

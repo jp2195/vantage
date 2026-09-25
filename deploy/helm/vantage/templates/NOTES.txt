@@ -1,0 +1,41 @@
+vantage {{ .Chart.AppVersion }} installed into namespace {{ .Release.Namespace }}.
+
+Point a router's BMP configuration at:
+
+  kubectl -n {{ .Release.Namespace }} get svc {{ include "vantage.fullname" . }}-bmp \
+    -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+  port {{ .Values.collector.bmpPort }}
+
+Read an API token:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "vantage.fullname" . }}-api \
+    -o jsonpath='{.data.{{ (first .Values.api.tokens).name }}}' | base64 -d
+
+Query it:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "vantage.fullname" . }}-api {{ .Values.api.port }}:{{ .Values.api.port }}
+  curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:{{ .Values.api.port }}/v1/routers
+{{- if not .Values.collector.allowedSources }}
+
+WARNING: collector.allowedSources is empty, so the collector accepts BMP
+from any address that can reach port {{ .Values.collector.bmpPort }}. Set it to your
+routers' prefixes and keep the BMP Service off the internet; see "Exposing
+the BMP port" in deploy/helm/README.md.
+{{- end }}
+{{- if not .Values.nats.tls.enabled }}
+
+WARNING: NATS runs in plaintext (nats.tls.enabled=false). Anything that can
+reach it can publish into the pipeline.
+{{- end }}
+{{- if and .Values.metrics.serviceMonitor.enabled .Values.nats.enabled (not (dig "promExporter" "enabled" false .Values.nats)) }}
+
+NOTE: ServiceMonitors cover vantage's own daemons, but NATS is not being
+scraped. Set nats.promExporter.enabled and nats.promExporter.podMonitor.enabled
+to add it; see "Prometheus" in deploy/helm/README.md.
+{{- end }}
+{{- if and (dig "promExporter" "enabled" false .Values.nats) .Values.networkPolicy.enabled (not .Values.networkPolicy.nats.metricsFrom) }}
+
+WARNING: the NATS exporter is on, but networkPolicy.nats.metricsFrom is empty,
+so the NetworkPolicy blocks Prometheus from reaching it.
+{{- end }}
