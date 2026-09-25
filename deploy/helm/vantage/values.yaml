@@ -621,7 +621,7 @@ schemaJob:
   apply: true
   image:
     repository: clickhouse/clickhouse-server
-    tag: 24.8-alpine
+    tag: 26.6
     pullPolicy: IfNotPresent
   resources:
     requests: {cpu: 100m, memory: 128Mi}
