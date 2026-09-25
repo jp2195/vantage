@@ -34,7 +34,7 @@ permissions: {}
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     permissions:
       contents: read
     # ClickHouse for sink's live tests (see chtest.DSN, dialed via
@@ -102,6 +102,10 @@ jobs:
         run: make standalone-check
 
       - name: apply clickhouse schema
+        env:
+          # The service's own container; its image is pinned by digest, so a
+          # lookup by image tag finds nothing.
+          CLICKHOUSE_CONTAINER: ${{ job.services.clickhouse.id }}
         run: |
           # The clickhouse service above starts before this job's steps
           # (including checkout), so deploy/clickhouse/schema.sql can't be
@@ -130,8 +134,7 @@ jobs:
           # clickhouse-client --multiquery runs the whole DDL script as one
           # invocation, which is what docker-compose.dev.yml's
           # initdb.d mount relies on the server doing for it locally.
-          container="$(docker ps -q --filter ancestor=clickhouse/clickhouse-server:24.8-alpine)"
-          docker exec -i "$container" clickhouse-client -u vantage --password vantage --multiquery < deploy/clickhouse/schema.sql
+          docker exec -i "$CLICKHOUSE_CONTAINER" clickhouse-client -u vantage --password vantage --multiquery < deploy/clickhouse/schema.sql
 
       # sink's TestSchemaJobRetentionStepIsIdempotent renders the chart's
       # schema Job and runs its retention step in the Job's own image
@@ -140,7 +143,9 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: v3.18.6
-      - run: helm dependency build deploy/helm/vantage
+      # helm dependency build resolves Chart.lock's repository by URL, and
+      # only among repositories added to this helm client.
+      - run: helm repo add nats https://nats-io.github.io/k8s/helm/charts/ && helm dependency build deploy/helm/vantage
 
       # -race, not a plain run. Several tests in this repo only discriminate
       # under the detector -- natsutil's TestPublisherConcurrentPublishAndDrain
@@ -323,7 +328,9 @@ jobs:
           version: v3.18.6
       # Dependencies must be fetched before lint: a chart with unfetched
       # subchart dependencies fails lint for a reason unrelated to the chart.
-      - run: helm dependency build deploy/helm/vantage
+      # helm dependency build resolves Chart.lock's repository by URL, and
+      # only among repositories added to this helm client.
+      - run: helm repo add nats https://nats-io.github.io/k8s/helm/charts/ && helm dependency build deploy/helm/vantage
       - run: helm lint deploy/helm/vantage
       # template is the real check. lint accepts a chart whose templates
       # produce invalid YAML; template does not.

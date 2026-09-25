@@ -417,9 +417,10 @@ reference for the chart — values, BMP ingress, NATS TLS, AS holder names,
 uninstalling — and this section only summarizes the points that most often
 decide whether an install works.
 
-Fetch the chart's dependency first (`helm dependency build
-deploy/helm/vantage`, or `make chart-deps` from the repository root): the
-NATS subchart is not vendored.
+Fetch the chart's dependency first, because the NATS subchart is not
+vendored: `helm repo add nats https://nats-io.github.io/k8s/helm/charts/`
+then `helm dependency build deploy/helm/vantage`, or `make chart-deps` from
+the repository root, which runs both.
 
 ### Images
 

@@ -366,6 +366,7 @@ jobs:
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
+          helm repo add nats https://nats-io.github.io/k8s/helm/charts/
           helm dependency build deploy/helm/vantage
           helm package deploy/helm/vantage --destination "${RUNNER_TEMP}/chart"
           test -f "${RUNNER_TEMP}/chart/vantage-${VERSION}.tgz"

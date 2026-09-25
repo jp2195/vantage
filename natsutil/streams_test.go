@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -513,62 +514,105 @@ func TestPublishFailureSurfaces(t *testing.T) {
 // workload hits only sometimes. Under -race the same version reports a DATA
 // RACE on every run, because the race detector flags the concurrent
 // Add/Wait itself rather than waiting for the timing to line up.
+//
+// Each round guarantees the overlap rather than hoping for it: the writers
+// keep publishing until a Drain is seen waiting and then publish more, so
+// Publish runs while Drain waits in every round. Only then do they stop.
+// Drain waits for the publisher to go idle, which it cannot do while
+// writers publish without pause (see Drain), so every round's Drain must be
+// able to finish once they stop. An earlier version drained 50 times while
+// the writers never stopped, and passed only where the server acked faster
+// than eight writers could publish. On a slower machine the async window
+// stayed full, acks flowing at thousands a second, and a Drain never saw
+// the publisher idle.
 func TestPublisherConcurrentPublishAndDrain(t *testing.T) {
 	js := natstest.RunJS(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	if err := EnsureStreams(ctx, js, testOpts); err != nil {
 		t.Fatal(err)
 	}
 	p := NewPublisher(js)
+	draining := func() bool {
+		p.mu.Lock()
+		defer p.mu.Unlock()
+		return p.idle != nil
+	}
 
-	// Publishers run until told to stop rather than for a fixed count: the
-	// contended window is Publish landing *while* a Drain is waiting, and a
-	// fixed count lets every writer finish before the drain loop overlaps it,
-	// which is exactly when this stops testing anything.
-	const writers = 8
-	var wg sync.WaitGroup // test-side only; not the Publisher's accounting
-	stop := make(chan struct{})
-	errCh := make(chan error, writers+1)
-
-	for g := range writers {
-		wg.Add(1)
-		go func(g int) {
-			defer wg.Done()
-			for i := 0; ; i++ {
-				select {
-				case <-stop:
+	const (
+		writers = 8
+		rounds  = 20
+		// afterDrain is how many publishes each round makes, across all
+		// writers, after a Drain was seen waiting.
+		afterDrain = 200
+	)
+	var published atomic.Int64
+	for round := range rounds {
+		var wg sync.WaitGroup // test-side only; not the Publisher's accounting
+		stop := make(chan struct{})
+		errCh := make(chan error, writers)
+		for g := range writers {
+			wg.Go(func() {
+				for i := 0; ; i++ {
+					select {
+					case <-stop:
+						return
+					default:
+					}
+					err := p.Publish(testEvent(fmt.Sprintf("r%d-g%d-%d", round, g, i)))
+					if err == nil {
+						published.Add(1)
+						continue
+					}
+					// The client stalls once too many publishes are in
+					// flight. That is backpressure, not a correctness
+					// failure, so back off and keep going rather than
+					// failing the test.
+					if strings.Contains(err.Error(), "stalled") {
+						time.Sleep(time.Millisecond)
+						continue
+					}
+					errCh <- err
 					return
-				default:
 				}
-				err := p.Publish(testEvent(fmt.Sprintf("g%d-%d", g, i)))
-				if err == nil {
-					continue
-				}
-				// The client stalls once too many publishes are in flight.
-				// That is backpressure, not a correctness failure, so back
-				// off and keep going rather than failing the test.
-				if strings.Contains(err.Error(), "stalled") {
-					time.Sleep(time.Millisecond)
-					continue
-				}
-				errCh <- err
-				return
-			}
-		}(g)
-	}
-
-	for i := range 50 {
-		if err := p.Drain(20 * time.Second); err != nil {
-			errCh <- fmt.Errorf("drain %d: %w", i, err)
-			break
+			})
 		}
-	}
-	close(stop)
-	wg.Wait()
-	close(errCh)
-	for err := range errCh {
-		t.Error(err)
+
+		// Start Drains until one is seen waiting. A Drain that finds the
+		// publisher idle returns at once, so it may take a few.
+		drained := make(chan error, 1)
+		for waiting := false; !waiting; {
+			go func() { drained <- p.Drain(20 * time.Second) }()
+			for !waiting {
+				if waiting = draining(); waiting {
+					break
+				}
+				select {
+				case err := <-drained:
+					if err != nil {
+						t.Fatalf("round %d: drain: %v", round, err)
+					}
+				case <-time.After(time.Millisecond):
+					continue
+				}
+				break
+			}
+		}
+		for start := published.Load(); published.Load() < start+afterDrain; {
+			if ctx.Err() != nil {
+				t.Fatalf("round %d: the writers stopped publishing", round)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		close(stop)
+		wg.Wait()
+		close(errCh)
+		for err := range errCh {
+			t.Errorf("round %d: publish: %v", round, err)
+		}
+		if err := <-drained; err != nil {
+			t.Fatalf("round %d: drain: %v", round, err)
+		}
 	}
 
 	if err := p.Drain(20 * time.Second); err != nil {

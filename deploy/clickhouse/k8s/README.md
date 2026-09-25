@@ -260,6 +260,7 @@ TLS is on by default and the chart generates no keys, so the render fails
 without them:
 
 ```bash
+helm repo add nats https://nats-io.github.io/k8s/helm/charts/
 helm dependency build deploy/helm/vantage
 deploy/nats-tls/gen-certs.sh --release vantage --namespace "$NS"
 kubectl apply -n "$NS" -f nats-tls/secrets.yaml
