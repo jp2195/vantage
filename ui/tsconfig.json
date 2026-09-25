@@ -17,7 +17,13 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
 
-    "baseUrl": ".",
+    // Listed, not discovered: TypeScript loads no @types package unless it
+    // is named here. `node` is for the files below that run under Node;
+    // `vite/client` declares the `*.css` modules that main.ts imports for
+    // their side effect, which the compiler otherwise rejects as an
+    // unresolved import.
+    "types": ["node", "vite/client"],
+
     "paths": {
       "@/*": ["./src/*"]
     }
