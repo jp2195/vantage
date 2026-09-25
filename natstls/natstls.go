@@ -18,7 +18,7 @@
 // config.
 //
 // Rotation needs no code here. nats.RootCAs and nats.ClientCert each store a
-// CALLBACK that reads its files when invoked (nats.go v1.49.0,
+// CALLBACK that reads its files when invoked (nats.go v1.54.0,
 // Options.RootCAsCB and Options.TLSCertCB), and nats.go invokes it per
 // connection attempt -- so a renewed certificate is picked up by the next
 // reconnect with no reload plumbing, no SIGHUP handler and no file watcher.

@@ -355,7 +355,7 @@ func TestErrFindsURLErrorThroughWrapping(t *testing.T) {
 // it never inspects the original (possibly multi-segment) config value at
 // all. It reads e.URL directly off whichever *url.Error surfaces, and
 // nats.go's own parseServerURL calls net/url.Parse on exactly one segment
-// at a time (confirmed by reading nats.go@v1.49.0's source) -- so e.URL is
+// at a time (confirmed by reading nats.go@v1.54.0's source) -- so e.URL is
 // always already a single segment, never the joined list, regardless of
 // where in a multi-server value that segment came from. This constructs the
 // *url.Error the way nats.go's own code would for each of three positions
@@ -591,7 +591,7 @@ func TestNatsURLRedactsSingleSegmentShorthand(t *testing.T) {
 }
 
 // TestNatsURLRedactsATokenOnlyURL covers a credential that does not live in
-// the password position at all. nats.go's connectProto (v1.49.0) reads:
+// the password position at all. nats.go's connectProto (v1.54.0) reads:
 //
 //	if _, ok := u.Password(); !ok { token = u.Username() }
 //
@@ -914,7 +914,7 @@ func TestQueryParameterSetsAreDisjoint(t *testing.T) {
 
 // TestNatsURLDropsAnyQueryParameter pins the NATS side of the same rule.
 // nats.go reads no query parameter at all (parseServerURL and connectProto,
-// v1.49.0, look only at the scheme, userinfo and host), so there is no
+// v1.54.0, look only at the scheme, userinfo and host), so there is no
 // parameter whose value is known to be safe, and any query an operator
 // wrote is rendered as the marker rather than echoed.
 func TestNatsURLDropsAnyQueryParameter(t *testing.T) {

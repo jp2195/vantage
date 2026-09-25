@@ -108,7 +108,7 @@ const redactedMarker = "REDACTED"
 
 // natsDefaultScheme is the scheme nats.go's own parseServerURL prepends to a
 // segment that contains no "://" before handing it to net/url.Parse
-// (nats.go@v1.49.0), which is what makes a bare "user:pass@host:4222" legal
+// (nats.go@v1.54.0), which is what makes a bare "user:pass@host:4222" legal
 // NATS configuration. Both the validator (CheckNatsURL) and the renderer
 // (NatsURL) prepend it, so the two agree on what they are looking at -- see
 // natsSegmentURL for what went wrong when only one of them did.
@@ -149,7 +149,7 @@ type policy struct {
 	// .go's fromDSN, v2.48.0), so a colonless userinfo is a bare username,
 	// and this package's contract is to keep usernames.
 	//
-	// For a NATS URL it is. nats.go's connectProto (v1.49.0) does:
+	// For a NATS URL it is. nats.go's connectProto (v1.54.0) does:
 	//
 	//	if _, ok := u.Password(); !ok { token = u.Username() }
 	//
@@ -225,7 +225,7 @@ var clickHousePolicy = policy{
 
 // natsPolicy renders one NATS server URL. nats.go reads no query parameter
 // at all -- its URL handling looks only at the scheme, userinfo and host
-// (parseServerURL and connectProto, v1.49.0) -- so no parameter is on the
+// (parseServerURL and connectProto, v1.54.0) -- so no parameter is on the
 // safe list and any query an operator wrote is rendered as the marker
 // rather than echoed.
 var natsPolicy = policy{bareUserinfoIsCredential: true}
@@ -832,7 +832,7 @@ func withNatsScheme(seg string) string {
 //
 // For NATS this validator's grammar genuinely is nats.go's: nats.go's own
 // URL parsing calls net/url.Parse directly (confirmed by reading
-// nats.go@v1.49.0's parseServerURL), the same function this validator
+// nats.go@v1.54.0's parseServerURL), the same function this validator
 // calls, so CheckURL (used per-segment via CheckNatsURL below) accepts and
 // rejects exactly what nats.Connect would.
 //

@@ -131,11 +131,11 @@ func TestConnectWithoutTLSConfigIsPlaintext(t *testing.T) {
 	defer nc.Close()
 
 	// NOT nc.TLSRequired(): that returns nc.info.TLSRequired (nats.go
-	// v1.49.0:6167), which is what the SERVER advertised -- false against a
+	// v1.54.0:6539), which is what the SERVER advertised -- false against a
 	// plaintext server whatever Connect did with the config, so the assertion
 	// could never fail. TLSConnectionState inspects the connection this
 	// client actually holds and returns ErrConnectionNotTLS when it is not a
-	// *tls.Conn (nats.go:2352), which is the question being asked.
+	// *tls.Conn (nats.go:2585), which is the question being asked.
 	if _, err := nc.TLSConnectionState(); !errors.Is(err, nats.ErrConnectionNotTLS) {
 		t.Errorf("TLSConnectionState() returned %v, want ErrConnectionNotTLS -- "+
 			"the connection negotiated TLS against a plaintext server", err)

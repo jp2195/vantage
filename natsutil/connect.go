@@ -22,7 +22,7 @@ import (
 //
 // is safe in both operands. nats.go parses each server URL with
 // net/url.Parse and returns the resulting *url.Error (parseServerURL,
-// v1.49.0), which carries the raw segment -- password included -- and is
+// v1.54.0), which carries the raw segment -- password included -- and is
 // what redact.Err recognizes structurally, at any depth of wrapping.
 //
 // The URL is passed to nats.Connect exactly as the operator wrote it. It is
