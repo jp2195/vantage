@@ -137,11 +137,13 @@ export function ribKey(family: RibFamily, scope: RibScope) {
 /**
  * Refetches a query on a timer for as long as something is using it.
  *
- * The installed Pinia Colada (0.21.7, per node_modules/@pinia/colada's own
+ * The installed Pinia Colada (1.4.5, per node_modules/@pinia/colada's own
  * package.json) has no `refetchInterval` option -- `UseQueryOptions` in its
  * shipped .d.ts still carries only `gcTime`, `enabled`, `refetchOnMount`,
  * `refetchOnReconnect`, `refetchOnWindowFocus`, `staleTime` and
- * `ssrCatchError`, none of which polls a screen nobody is touching.
+ * `ssrCatchError`, none of which polls a screen nobody is touching. (Polling
+ * lives in a separate package, @pinia/colada-plugin-auto-refetch, which
+ * this project does not use.)
  * REFETCH_MS still has to mean something, so this drives it directly: a
  * plain timer that calls the query's own `refetch`, torn down when the
  * component that started it unmounts. `getCurrentScope()` guards the
@@ -150,8 +152,8 @@ export function ribKey(family: RibFamily, scope: RibScope) {
  * for `onScopeDispose` to attach to, and Vue warns rather than no-ops.
  *
  * The tick itself is skipped while a fetch is already running. Colada's own
- * `fetch` action (node_modules/@pinia/colada/dist/index.mjs, around lines
- * 389-424) unconditionally aborts any pending call before starting a new
+ * `fetch` action (node_modules/@pinia/colada/dist/index.mjs, lines 437-472
+ * in 1.4.5) unconditionally aborts any pending call before starting a new
  * one -- there is no framework-level de-dupe to lean on. Ticking into a
  * request slower than REFETCH_MS would abort it, restart it, and abort
  * that one too, forever: the request would never complete, and the same
@@ -160,7 +162,12 @@ export function ribKey(family: RibFamily, scope: RibScope) {
  * replacing it with the new one already made that false) -- so the screen
  * would sit on stale data with nothing on screen saying so. `isLoading` is
  * the alias Colada gives `asyncStatus.value === 'loading'`, and checking it
- * here is the whole fix.
+ * here is the whole fix. It holds across a replaced call because the same
+ * action returns asyncStatus to 'idle' only when the call settling is still
+ * `entry.pending`, so an aborted call that answers late leaves the query
+ * loading. Before 1.4.2 that reset ran for every call, and a late answer
+ * from an aborted request reopened the window this guard closes.
+ * queries.test.ts holds both behaviors against the real library.
  */
 export function pollWhileMounted(isLoading: Ref<boolean>, refetch: () => unknown): void {
   const id = setInterval(() => {
