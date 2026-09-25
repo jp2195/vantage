@@ -435,8 +435,8 @@ describe('useRibPage request ordering', () => {
 
 describe('pollWhileMounted', () => {
   it('does not poll into a fetch that is still in flight', () => {
-    // Colada's own `fetch` action (node_modules/@pinia/colada/dist/index.js,
-    // around lines 596-634) unconditionally aborts any pending call and
+    // Colada's own `fetch` action (node_modules/@pinia/colada/dist/index.mjs,
+    // around lines 389-424) unconditionally aborts any pending call and
     // starts a fresh one -- there is no framework-level de-dupe underneath
     // this. Ticking into a request slower than REFETCH_MS would abort it,
     // restart it, and abort that one too, forever: the request would never
