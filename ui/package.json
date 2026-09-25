@@ -25,11 +25,11 @@
     "@types/node": "22.20.3",
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.1",
-    "jsdom": "^25.0.1",
+    "jsdom": "^30.1.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vite": "^8.3.0",
-    "vitest": "^4.1.11",
+    "vitest": "^5.0.1",
     "vue-tsc": "^2.1.10"
   },
   "overrides": {
