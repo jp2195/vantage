@@ -864,6 +864,14 @@ func TestHelmChartPodsMeetRestrictedPodSecurity(t *testing.T) {
 			if psc["fsGroup"] == nil {
 				t.Error("the NATS pod sets no fsGroup, so its non-root uid cannot write the JetStream volume")
 			}
+			// The subchart does not roll the NATS pods on a config change
+			// (its podTemplate.configChecksumAnnotation is off); the reloader
+			// applies it by signaling nats-server, which it can only see
+			// through a shared process namespace.
+			if nats["shareProcessNamespace"] != true {
+				t.Error("the NATS pod does not share its process namespace, so the reloader cannot " +
+					"signal nats-server and a changed config is never applied")
+			}
 			for _, c := range cs {
 				cm := c.(map[string]any)
 				if own, ok := dig(cm, "securityContext", "runAsUser").(int); ok && own != uid {
