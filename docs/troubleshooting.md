@@ -102,7 +102,7 @@ passed` (60s since the event was first sent, typically NATS unreachable for
 that long, or a stream that keeps timing out), or `retry attempts
 exhausted` (16 attempts; in practice a stream leader that keeps answering
 `duplicate message id is in process` for a publish it staged and then
-dropped, which nats-server 2.11 can do for up to 2 minutes after a leader
+dropped, which nats-server 2.11 could do for up to 2 minutes after a leader
 change). A `publish failed` whose `err` says `too many publishes already
 retrying` is a different case: 4096 publishes to the same stream were
 already being retried, and none finished within 10s (after the first such
