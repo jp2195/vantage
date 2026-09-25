@@ -14,6 +14,10 @@
 // and the Dockerfile base images to tag plus digest; Renovate moves both.
 // The ClickHouse service image in .github/workflows/ci.yml is pinned by
 // digest alone, with no tag to track: bump it by hand.
+//
+// ClickHouse images follow its long-term-support releases only (the .3 and
+// .8 of each year), which are supported for a year; the monthly releases
+// between them are supported for three months.
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   extends: [
@@ -34,6 +38,10 @@
   },
   osvVulnerabilityAlerts: true,
   packageRules: [
+    {
+      matchPackageNames: ['clickhouse/clickhouse-server'],
+      allowedVersions: '/^[0-9]+\\.(3|8)(\\.[0-9]+)*(-alpine)?$/',
+    },
     {
       matchManagers: ['gomod'],
       matchUpdateTypes: ['minor', 'patch', 'digest'],
