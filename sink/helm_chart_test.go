@@ -215,7 +215,7 @@ func helmTemplate(t *testing.T, args ...string) ([]byte, error) {
 		}
 		if strings.Contains(stderr.String(), "found in Chart.yaml, but missing in charts/") {
 			skipWithoutTool(t, "the chart's dependencies are not built: run "+
-				"`helm dependency build deploy/helm/vantage`")
+				"`make chart-deps`")
 		}
 		return nil, fmt.Errorf("%v: %s", err, stderr.String())
 	}

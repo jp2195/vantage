@@ -1,0 +1,63 @@
+// Dependency updates, weekly, for Go modules, the UI's npm packages, GitHub
+// Actions, the Dockerfile base images, docker-compose.dev.yml and the Helm
+// chart's NATS dependency.
+//
+// minimumReleaseAge: a version is proposed only once it has been published
+// for 7 days, so a compromised release that is caught and pulled within the
+// week never reaches a pull request here. Security fixes skip the wait.
+//
+// Minor, patch and digest updates are grouped into one pull request per
+// manager to keep the volume low; a major update gets a pull request of its
+// own, since it is the kind that needs reading. Nothing merges on its own.
+//
+// Actions stay pinned to a full commit SHA with the version in a comment,
+// and the Dockerfile base images to tag plus digest; Renovate moves both.
+// The ClickHouse service image in .github/workflows/ci.yml is pinned by
+// digest alone, with no tag to track: bump it by hand.
+{
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  extends: [
+    'config:recommended',
+    'helpers:pinGitHubActionDigests',
+    ':dependencyDashboard',
+  ],
+  schedule: ['before 6am on monday'],
+  timezone: 'America/New_York',
+  minimumReleaseAge: '7 days',
+  internalChecksFilter: 'strict',
+  prConcurrentLimit: 10,
+  automerge: false,
+  postUpdateOptions: ['gomodTidy'],
+  vulnerabilityAlerts: {
+    schedule: ['at any time'],
+    minimumReleaseAge: null,
+  },
+  osvVulnerabilityAlerts: true,
+  packageRules: [
+    {
+      matchManagers: ['gomod'],
+      matchUpdateTypes: ['minor', 'patch', 'digest'],
+      groupName: 'Go modules (minor and patch)',
+    },
+    {
+      matchManagers: ['npm'],
+      matchUpdateTypes: ['minor', 'patch'],
+      groupName: 'UI npm packages (minor and patch)',
+    },
+    {
+      matchManagers: ['github-actions'],
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pinDigest'],
+      groupName: 'GitHub Actions (minor and patch)',
+    },
+    {
+      matchManagers: ['dockerfile', 'docker-compose'],
+      matchUpdateTypes: ['minor', 'patch', 'digest', 'pinDigest'],
+      groupName: 'container images (minor and patch)',
+    },
+    {
+      matchManagers: ['helmv3'],
+      matchUpdateTypes: ['minor', 'patch'],
+      groupName: 'Helm chart dependencies (minor and patch)',
+    },
+  ],
+}

@@ -80,6 +80,7 @@ CHART_DEPS := deploy/helm/vantage/charts/nats-$(NATS_CHART_VERSION).tgz
 chart-deps: $(CHART_DEPS) ## Fetch the Helm chart's dependencies (the NATS subchart) into deploy/helm/vantage/charts
 
 $(CHART_DEPS): deploy/helm/vantage/Chart.lock deploy/helm/vantage/Chart.yaml
+	helm repo add nats https://nats-io.github.io/k8s/helm/charts/ --force-update >/dev/null
 	helm dependency build deploy/helm/vantage
 	@test -f $@ || { echo "chart-deps: helm did not write $@" >&2; exit 1; }
 	@touch $@

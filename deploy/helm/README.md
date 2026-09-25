@@ -13,6 +13,7 @@ the text says so.
 
 ## Quick start
 
+    helm repo add nats https://nats-io.github.io/k8s/helm/charts/
     helm dependency build deploy/helm/vantage
 
     kubectl create namespace vantage
@@ -97,10 +98,13 @@ version and `.gitignore` excludes the fetched `.tgz` from `charts/`, so a
 fresh clone has `Chart.yaml` and `Chart.lock` but no `charts/nats-*.tgz`.
 Every `helm install`/`upgrade`/`template`/`lint` command fails until you run:
 
+    helm repo add nats https://nats-io.github.io/k8s/helm/charts/
     helm dependency build deploy/helm/vantage
 
-or, from the repository root, `make chart-deps`, which runs the same command
-and skips it when the fetched chart is already current.
+or, from the repository root, `make chart-deps`, which runs the same commands
+and skips them when the fetched chart is already current. The `helm repo add`
+is required: `helm dependency build` finds `Chart.lock`'s repository only
+among repositories already added to your helm client.
 
 Run `build`, not `update`. `build` fetches exactly what `Chart.lock` pins;
 `update` re-resolves against the NATS repository's current index, can pick up

@@ -135,7 +135,7 @@ func renderRetentionStep(t *testing.T, ctx context.Context, days int) (image, sc
 	).CombinedOutput()
 	if err != nil {
 		skipWithoutTool(t, fmt.Sprintf("helm could not render the chart (install helm and run "+
-			"`helm dependency build deploy/helm/vantage`): %v\n%s", err, out))
+			"`make chart-deps`): %v\n%s", err, out))
 	}
 	var job struct {
 		Spec struct {
