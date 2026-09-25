@@ -27,10 +27,10 @@
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^30.1.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.7.2",
+    "typescript": "^6.0.3",
     "vite": "^8.3.0",
     "vitest": "^5.0.1",
-    "vue-tsc": "^2.1.10"
+    "vue-tsc": "^3.3.11"
   },
   "overrides": {
     "js-yaml": "^4.3.2"
