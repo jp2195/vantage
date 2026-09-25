@@ -3,7 +3,7 @@ import { defineComponent, h, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import type { Meta } from '@/api/generated'
-import { PiniaColada } from '@pinia/colada'
+import { PiniaColada, useQuery } from '@pinia/colada'
 import { effectScope } from 'vue'
 import collectionDumpsFixture from './fixtures/collection-dumps.json'
 import collectionFlagsFixture from './fixtures/collection-flags.json'
@@ -436,12 +436,13 @@ describe('useRibPage request ordering', () => {
 describe('pollWhileMounted', () => {
   it('does not poll into a fetch that is still in flight', () => {
     // Colada's own `fetch` action (node_modules/@pinia/colada/dist/index.mjs,
-    // around lines 389-424) unconditionally aborts any pending call and
+    // lines 437-472 in 1.4.5) unconditionally aborts any pending call and
     // starts a fresh one -- there is no framework-level de-dupe underneath
     // this. Ticking into a request slower than REFETCH_MS would abort it,
     // restart it, and abort that one too, forever: the request would never
     // complete, and the abort is swallowed rather than surfaced, so the
-    // screen would sit on stale data with no sign anything is wrong.
+    // screen would sit on stale data with no sign anything is wrong. The
+    // next test holds that premise against the real library.
     vi.useFakeTimers()
 
     const isLoading = ref(false)
@@ -461,6 +462,51 @@ describe('pollWhileMounted', () => {
     // second tick must be skipped rather than aborting it and trying again.
     vi.advanceTimersByTime(REFETCH_MS)
     expect(refetch).toHaveBeenCalledTimes(1)
+  })
+
+  it("rests on Colada's refetch aborting a fetch in flight, and on isLoading covering its replacement", async () => {
+    // The test above hands pollWhileMounted a hand-made ref, so it proves
+    // the guard and nothing about the library the guard exists for. This
+    // one asks the real useQuery the two things queries.ts's comment claims
+    // of it. First: `refetch` during a pending fetch starts a second request
+    // and aborts the first, rather than joining it. If a Colada release
+    // starts de-duplicating, this fails and the guard's reason is gone.
+    // Second: `isLoading` stays true while the replacement is still out,
+    // even after the aborted request settles. 0.21.7 flipped it to false
+    // at that moment, which reopened the window the guard closes; 1.4.2
+    // fixed it, and this holds the fix.
+    const calls: { signal: AbortSignal; resolve: (v: string) => void }[] = []
+    const q = inColadaApp(() =>
+      useQuery({
+        key: ['poll-guard-premise'],
+        query: ({ signal }) =>
+          new Promise<string>((resolve) => {
+            calls.push({ signal, resolve })
+          }),
+      }),
+    )
+    await flushPromises()
+    expect(calls).toHaveLength(1)
+    expect(q.isLoading.value).toBe(true)
+
+    const second = q.refetch()
+    await flushPromises()
+    expect(calls).toHaveLength(2)
+    expect(calls[0].signal.aborted).toBe(true)
+    expect(calls[1].signal.aborted).toBe(false)
+
+    // The aborted request answers late. Nothing it says may land, and the
+    // query is still waiting on the replacement.
+    calls[0].resolve('superseded')
+    await flushPromises()
+    expect(q.data.value).toBeUndefined()
+    expect(q.isLoading.value).toBe(true)
+
+    calls[1].resolve('current')
+    await second
+    await flushPromises()
+    expect(q.data.value).toBe('current')
+    expect(q.isLoading.value).toBe(false)
   })
 
   it('stops when the scope that started it goes away', async () => {

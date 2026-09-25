@@ -15,7 +15,8 @@ import { formatClock } from '@/lib/formatClock'
 // isPending aliases state.status === 'pending' -- true only until the
 // first response ever lands, false for the rest of this screen's life no
 // matter how many refetches follow (checked against
-// ui/node_modules/@pinia/colada/dist/index.mjs, the useQuery return object).
+// ui/node_modules/@pinia/colada/dist/index.mjs, the useQuery return object,
+// lines 725-737 in 1.4.5).
 // DataTable's `loading` prop means "there is nothing to show yet, block
 // everything"; that is isPending's meaning. Wiring isLoading here instead
 // would blank an already-populated table on every poll tick and print
