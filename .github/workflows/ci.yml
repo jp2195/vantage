@@ -34,7 +34,7 @@ permissions: {}
 jobs:
   ci:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     permissions:
       contents: read
     # ClickHouse for sink's live tests (see chtest.DSN, dialed via
