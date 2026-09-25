@@ -137,10 +137,11 @@ export function ribKey(family: RibFamily, scope: RibScope) {
 /**
  * Refetches a query on a timer for as long as something is using it.
  *
- * The installed Pinia Colada (0.13.8, per node_modules/@pinia/colada's own
+ * The installed Pinia Colada (0.21.7, per node_modules/@pinia/colada's own
  * package.json) has no `refetchInterval` option -- `UseQueryOptions` in its
- * shipped .d.ts carries only `staleTime`, `gcTime` and the three
- * `refetchOn*` triggers, none of which polls a screen nobody is touching.
+ * shipped .d.ts still carries only `gcTime`, `enabled`, `refetchOnMount`,
+ * `refetchOnReconnect`, `refetchOnWindowFocus`, `staleTime` and
+ * `ssrCatchError`, none of which polls a screen nobody is touching.
  * REFETCH_MS still has to mean something, so this drives it directly: a
  * plain timer that calls the query's own `refetch`, torn down when the
  * component that started it unmounts. `getCurrentScope()` guards the
@@ -149,8 +150,8 @@ export function ribKey(family: RibFamily, scope: RibScope) {
  * for `onScopeDispose` to attach to, and Vue warns rather than no-ops.
  *
  * The tick itself is skipped while a fetch is already running. Colada's own
- * `fetch` action (node_modules/@pinia/colada/dist/index.js, around lines
- * 596-634) unconditionally aborts any pending call before starting a new
+ * `fetch` action (node_modules/@pinia/colada/dist/index.mjs, around lines
+ * 389-424) unconditionally aborts any pending call before starting a new
  * one -- there is no framework-level de-dupe to lean on. Ticking into a
  * request slower than REFETCH_MS would abort it, restart it, and abort
  * that one too, forever: the request would never complete, and the same
