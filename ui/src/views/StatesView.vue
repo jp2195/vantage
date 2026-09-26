@@ -41,6 +41,15 @@ const columns: Column<RouterEntity>[] = [
   { id: 'last_seen', header: 'Last seen', width: '180px' },
 ]
 
+// Three of the four columns are fixed px, 410px between them, and
+// table-layout:fixed hands Router only what is left: on a 390px phone that
+// was nothing, and Router rendered 0px wide with its header cut off. The
+// floor holds the fixed columns plus Router's 22% of the floor itself, and
+// that 22% holds a 12-character sysName such as 4a8063e2ed30 (123px with
+// its padding, measured in Chromium): 560 x 22% is 123px. Below it the
+// table scrolls inside its own card, the same pattern RoutersView uses.
+const STATES_MIN_WIDTH = '560px'
+
 const rows = routers.data.slice(0, 3) as RouterEntity[]
 const complete = { warnings: [], total_matched: null } as unknown as Meta
 /** A real warning body, copied from what the daemon sends rather than invented. */
@@ -72,7 +81,7 @@ const dumping = {
         <code>loading &amp;&amp; rows.length === 0</code> is the gate, so a poll tick cannot blank a
         populated table.
       </p>
-      <DataTable :columns="columns" :rows="[]" :loading="true" />
+      <DataTable :columns="columns" :min-width="STATES_MIN_WIDTH" :rows="[]" :loading="true" />
     </section>
 
     <section class="block" data-state="empty">
@@ -83,7 +92,7 @@ const dumping = {
         This is the one state with two distinct causes and one block — nothing in an
         API answer distinguishes an empty result from one your filters excluded.
       </p>
-      <DataTable :columns="columns" :rows="[]" :meta="complete" />
+      <DataTable :columns="columns" :min-width="STATES_MIN_WIDTH" :rows="[]" :meta="complete" />
     </section>
 
     <section class="block" data-state="error">
@@ -95,6 +104,7 @@ const dumping = {
       </p>
       <DataTable
         :columns="columns"
+        :min-width="STATES_MIN_WIDTH"
         :rows="rows"
         :meta="complete"
         :error="new Error('rr02.fra did not respond in 30 s')"
@@ -112,7 +122,7 @@ const dumping = {
         warnings array is a claim, and dropping it makes a complete answer and an unexamined one
         look identical.
       </p>
-      <DataTable :columns="columns" :rows="rows" :meta="dumping">
+      <DataTable :columns="columns" :min-width="STATES_MIN_WIDTH" :rows="rows" :meta="dumping">
         <template #cell-last_seen="{ row }">{{
           formatClock((row as RouterEntity).last_seen)
         }}</template>

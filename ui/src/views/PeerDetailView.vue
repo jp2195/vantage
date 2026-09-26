@@ -183,6 +183,14 @@ const prefixChurnColumns: Column<PrefixChurn>[] = [
   { id: 'sessions', header: 'Sessions', numeric: true, width: '17%' },
 ]
 
+// The four numeric headers alone need 433px with their padding (measured in
+// Chromium: RE-ADVERTISED 121, WITHDRAWN 103, OBSERVATIONS 118, SESSIONS
+// 91), more than the panel's whole width at every viewport -- 416px at
+// 1440 -- so with no floor they were cut off at every width. The floor is
+// where the tightest of them fits its own share: Re-advertised's 121px at
+// 17% needs 712px. Below that the table scrolls inside its own card.
+const PREFIX_CHURN_MIN_WIDTH = '712px'
+
 /**
  * useEvents is a cursor WALK, and a walk fetches on reload() -- setting the
  * scope ref alone asks for nothing. Without this the screen rendered "no
@@ -534,6 +542,7 @@ const endpoints = computed(() => {
               :meta="prefixChurn.data.value?.meta"
               :loading="prefixChurn.isPending.value"
               :error="prefixChurn.error.value ?? undefined"
+              :min-width="PREFIX_CHURN_MIN_WIDTH"
             >
               <template #cell-prefix="{ row }">
                 <span class="mono">{{ (row as PrefixChurn).prefix }}</span>

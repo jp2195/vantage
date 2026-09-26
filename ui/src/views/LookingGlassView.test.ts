@@ -6,7 +6,8 @@ import history from '@/api/fixtures/routes-history.json'
 import topology from '@/api/fixtures/topology.json'
 import PathGraph from '@/components/PathGraph.vue'
 import DataTable from '@/components/DataTable.vue'
-import { columnsOf } from '@/test-support/columnsOf'
+import { columnsOf, tableMinWidthPx } from '@/test-support/columnsOf'
+import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
 import DumpStateMark from '@/components/DumpStateMark.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import { inventedColumns } from '@/test-support/columnGuard'
@@ -1263,4 +1264,29 @@ describe('LookingGlassView, collector axis', () => {
         'one route seen twice is two identical rows with nothing to tell them apart',
     ).toBe(true)
   })
+})
+
+// The Paths table had no floor, so its percentage columns shrank with the
+// screen: on a 390px phone six of eight headers were cut off, and at a
+// 1024px viewport, where the table is 652px, COLLECTOR still was. The floor
+// holds the fixed columns plus the percentages taken of the floor itself,
+// as RoutersView's does, and at the floor -- the narrowest the table ever
+// gets -- every header fits its column. Header widths are the label plus
+// the cell's 36px of padding, measured in Chromium; jsdom computes no
+// layout.
+it('floors the Paths table where every header fits its column', async () => {
+  route.query = {}
+  const w = await mountSearched()
+  const floor = tableMinWidthPx(w)
+  expect(floor).toBeDefined()
+  const columns = columnsOf(w)
+  expect(declaredTotalAt(columns, floor!)).toBeLessThanOrEqual(floor!)
+  const HEADER_PX = {
+    prefix: 74, rib: 54, path_id: 77, router_sysname: 79, peer_ip: 64,
+    collector: 99, next_hop: 91, as_path: 81,
+  }
+  expect(crampedAt(columns, floor!, HEADER_PX)).toEqual([])
+  // A prefix does not wrap: 10.255.0.2/32 needs 130px, and at 14% a phone
+  // cut 10.91.0.0/16 off.
+  expect(crampedAt(columns, floor!, { prefix: 130 })).toEqual([])
 })

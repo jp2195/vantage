@@ -5,7 +5,8 @@ import events from '@/api/fixtures/events.json'
 import twoCollectors from '@/api/fixtures/events-two-collectors.json'
 import routers from '@/api/fixtures/routers.json'
 import peers from '@/api/fixtures/peers.json'
-import { columnWidths, columnsOf } from '@/test-support/columnsOf'
+import { columnWidths, columnsOf, tableMinWidthPx } from '@/test-support/columnsOf'
+import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
 import { inventedColumns } from '@/test-support/columnGuard'
 import type { EventScope } from '@/api/queries'
 
@@ -711,5 +712,37 @@ describe('SessionHistoryView', () => {
     const widths = columnWidths(w)
     expect(widths.length).toBeGreaterThan(0)
     expect(widths.filter((x) => !x)).toEqual([])
+  })
+})
+
+// Four columns are fixed px and table-layout:fixed pays them first, so with
+// no floor a 390px phone left the percentage columns 0px wide with their
+// headers cut off. The floor holds the fixed columns plus the percentages
+// taken of the floor itself, as RoutersView's does, and at the floor --
+// the narrowest the table ever gets -- every column holds what it was cut
+// off at. Collector holds its header (99px), Router a 12-character sysName such as
+// 4a8063e2ed30 (123px), and ASN a ten-digit 4-byte ASN such as 4200000002
+// (109px), which at 84px read "42000...".
+// Widths are each value or header plus the cell's 36px of padding, measured
+// in Chromium; jsdom computes no layout.
+describe('SessionHistoryView table floor', () => {
+  it('floors the table wide enough for its fixed columns and its values', async () => {
+    scopeChosen = true
+    const w = mount(SessionHistoryView)
+    await chooseScope(w)
+    const floor = tableMinWidthPx(w)
+    expect(floor).toBeDefined()
+    const columns = columnsOf(w)
+    expect(declaredTotalAt(columns, floor!)).toBeLessThanOrEqual(floor!)
+    expect(crampedAt(columns, floor!, { peer_asn: 109, router_sysname: 123, collector: 99, down_reason: 80 })).toEqual([])
+  })
+
+  // A floor above the table's own width on a desktop would make it scroll
+  // there for nothing; the bound is the table's 958px at a 1024px viewport, measured.
+  it('does not bind on a desktop', async () => {
+    scopeChosen = true
+    const w = mount(SessionHistoryView)
+    await chooseScope(w)
+    expect(tableMinWidthPx(w)!).toBeLessThanOrEqual(958)
   })
 })
