@@ -248,9 +248,15 @@ function search(opts: { fromUrl?: boolean } = {}) {
 // updates-per-second and a sparkline have no field on this shape; a
 // column for any of them could only be filled by inventing a number.
 const columns: Column<UnicastRoute>[] = [
-  { id: 'prefix', header: 'Prefix', width: '14%' },
+  // 16%: at the Paths floor below that is 133px, which holds a /32 such as
+  // 10.255.0.2/32 (130px with its padding, measured in Chromium). At 14% a
+  // phone read 10.91.0.0/16 as "10.91.0.0/..." -- the two points came from
+  // AS path, which wraps.
+  { id: 'prefix', header: 'Prefix', width: '16%' },
   { id: 'rib', header: 'RIB', width: '88px' },
-  { id: 'path_id', header: 'Path ID', numeric: true, width: '74px' },
+  // 78px, not 74: PATH ID needs 77px with its padding (measured in
+  // Chromium), and at the Paths floor below this column gets exactly its px.
+  { id: 'path_id', header: 'Path ID', numeric: true, width: '78px' },
   { id: 'router_sysname', header: 'Router', width: '12%' },
   { id: 'peer_ip', header: 'Peer', width: '12%' },
   // /v1/routes is one row per (collector, router, peer, rib, prefix,
@@ -264,10 +270,23 @@ const columns: Column<UnicastRoute>[] = [
   // would present one collector's attributes as THE route's. The counts
   // beside the table dedupe (see distinctRoutes) because "how many paths"
   // is a question about the network; the table shows what was observed.
-  { id: 'collector', header: 'Collector', width: '10%' },
+  //
+  // 12%, not 10%: the COLLECTOR header needs 99px with its padding
+  // (measured in Chromium), and 10% of the 652px table a 1024px viewport
+  // leaves cut it off. The two points came from AS path, which wraps.
+  { id: 'collector', header: 'Collector', width: '12%' },
   { id: 'next_hop', header: 'Next hop', width: '12%' },
-  { id: 'as_path', header: 'AS path', width: '20%' },
+  { id: 'as_path', header: 'AS path', width: '16%' },
 ]
+
+// Two of the eight columns are fixed px, 166px between them, and the rest
+// are percentages of whatever the table is given. With no floor they
+// shrank with the screen, and on a 390px phone six of eight headers were
+// cut off. The floor holds the fixed columns plus the percentages taken of
+// the floor itself (166 + 80% of 830 = 830), and Collector's 12% of it is
+// 99.6px, its header's 99. Below it the table scrolls inside its own card,
+// the pattern RoutersView uses.
+const PATHS_MIN_WIDTH = '830px'
 
 // findRoutes answers with a RouteFanout -- { unicast, vpn, evpn } -- because
 // one prefix can be carried in several families at once. v1 renders the
@@ -640,6 +659,7 @@ function compareSeq(a: string, b: string): number {
       :meta="data?.meta"
       :loading="isPending"
       :error="error ?? undefined"
+      :min-width="PATHS_MIN_WIDTH"
     >
       <template #cell-as_path="{ row }">
         <span class="mono">{{ (row as UnicastRoute).as_path.join(' ') }}</span>

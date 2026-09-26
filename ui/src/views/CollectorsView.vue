@@ -306,10 +306,16 @@ function barTop(rows: number, peak: number): number {
   return 40 - drawnBarHeight(rows, peak)
 }
 
+// Address is sized for a dotted quad such as 10.0.103.67, which does not
+// wrap and needs 98px with its padding (measured in Chromium). At 25% it
+// got 97px in the narrowest desktop card, 388px at a 1366px viewport, and
+// every such address read "10.0.103...". 28% gives it 106px at the 380px
+// floor and more everywhere above it. Router and Peers both wrap, so the
+// three points came from them.
 const routerColumns: Column<CollectorRouter>[] = [
-  { id: 'sysname', header: 'Router', width: '40%' },
-  { id: 'ip', header: 'Address', width: '25%' },
-  { id: 'peers_up', header: 'Peers', width: '35%' },
+  { id: 'sysname', header: 'Router', width: '38%' },
+  { id: 'ip', header: 'Address', width: '28%' },
+  { id: 'peers_up', header: 'Peers', width: '34%' },
 ]
 
 // A floor for the card's router table, so that on a phone, where the card

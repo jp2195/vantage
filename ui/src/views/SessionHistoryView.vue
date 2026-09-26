@@ -231,10 +231,24 @@ const columns: Column<PeerEvent>[] = [
   { id: 'kind', header: 'Kind', width: '112px' },
   { id: 'collector', header: 'Collector', width: '11%' },
   { id: 'rib', header: 'RIB', width: '92px' },
-  { id: 'down_reason', header: 'Reason', width: '26%' },
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '84px' },
+  { id: 'down_reason', header: 'Reason', width: '20%' },
+  // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
+  // padding (measured in Chromium); 84px cut it to "42000...".
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px' },
   { id: 'router_sysname', header: 'Router', width: '16%' },
 ]
+
+// Four of the seven columns are fixed px, 494px between them, and
+// table-layout:fixed hands the three percentage columns only what is left:
+// on a 390px phone that was nothing, and Collector, Reason and Router
+// rendered 0px wide with their headers cut off. The floor holds the fixed
+// columns plus the percentages taken of the floor itself (494 + 47% of
+// 933 = 933), the pattern RoutersView uses. At the floor Collector's 11%
+// is 102px, which holds its 99px header, and Router's 16% holds a
+// 12-character sysName (123px). Reason went from 26% to 20% so that the
+// floor stays under the table's 958px at a 1024px viewport; above the
+// floor the browser spreads the slack over every column as before.
+const SESSION_HISTORY_MIN_WIDTH = '933px'
 </script>
 
 <template>
@@ -288,6 +302,7 @@ const columns: Column<PeerEvent>[] = [
         :loading="walk.loading.value"
         :error="walk.error.value"
         :row-attrs="rowAttrs"
+        :min-width="SESSION_HISTORY_MIN_WIDTH"
       >
         <template #cell-router_sysname="{ row }">{{ routerLabel(row.router_sysname) }}</template>
         <template #cell-ts_collector="{ row }">

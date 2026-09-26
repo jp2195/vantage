@@ -100,10 +100,25 @@ const columns: Column<PeerEvent>[] = [
   { id: 'router_sysname', header: 'Router', width: '13%' },
   { id: 'peer_ip', header: 'Peer', width: '13%' },
   { id: 'collector', header: 'Collector', width: '11%' },
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '84px' },
+  // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
+  // padding (measured in Chromium). At 84px it read "42000..." at every
+  // width, 1440 included.
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px' },
   { id: 'rib', header: 'RIB', width: '92px' },
-  { id: 'down_reason', header: 'Reason', width: '22%' },
+  { id: 'down_reason', header: 'Reason', width: '18%' },
 ]
+
+// Four of the eight columns are fixed px, 494px between them, and
+// table-layout:fixed hands the four percentage columns only what is left:
+// on a 390px phone that was nothing, and Router, Peer, Collector and Reason
+// rendered 0px wide with their headers cut off. The floor holds the fixed
+// columns plus the percentages taken of the floor itself (494 + 55% of
+// 1098 = 1098), the pattern RoutersView uses. At the floor Peer's 13% is
+// 143px, which holds 2001:db8:5549:3::1 (142px), and Router's holds a
+// 12-character sysName (123px). Reason went from 22% to 18% so that the
+// floor stays under the table's 1199px at a 1280px viewport; above the
+// floor the browser spreads the slack over every column as before.
+const EVENTS_MIN_WIDTH = '1098px'
 </script>
 
 <template>
@@ -155,6 +170,7 @@ const columns: Column<PeerEvent>[] = [
       :loading="walk.isPending.value"
       :error="walk.error.value ?? undefined"
       :row-attrs="rowAttrs"
+      :min-width="EVENTS_MIN_WIDTH"
     >
       <template #cell-router_sysname="{ row }">{{ routerLabel(row.router_sysname) }}</template>
       <template #cell-collector="{ row }">

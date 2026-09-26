@@ -7,6 +7,10 @@ import events from '@/api/fixtures/events.json'
 import twoCollectors from '@/api/fixtures/events-two-collectors.json'
 import flapping from '@/api/fixtures/events-flapping-peer.json'
 import ResultMeta from '@/components/ResultMeta.vue'
+import DataTable from '@/components/DataTable.vue'
+import { tableMinWidthPx } from '@/test-support/columnsOf'
+import type { GuardedColumn } from '@/test-support/columnGuard'
+import { crampedAt } from '@/test-support/tableFloor'
 
 // Set inside each test below, never left at these initial values: every
 // test must pass alone via `-t`, so each assigns fixture/pending/loading
@@ -732,4 +736,30 @@ describe('PeerDetailView session facts', () => {
     await nextTick()
     expect(w.find('[data-sys-descr]').text()).toBe('Cisco IOS XR Software, Version 24.1.1')
   })
+})
+
+// The prefix-churn panel is 416px wide at a 1440px viewport, and its four
+// numeric headers alone need 433px, so with no floor they were cut off at
+// every width. At the floor -- the narrowest the table ever gets -- each
+// header fits its column, and below it the table scrolls inside its card.
+// Header widths are the label plus the cell's 36px of padding, measured in
+// Chromium; jsdom computes no layout.
+it('floors the prefix-churn table where every header fits its column', async () => {
+  route.params = { router: peers.data[1].router_ip, peer: peers.data[1].peer_ip }
+  fixture = peers
+  pending = false
+  loading = false
+  eventRows = events.data
+  const w = mountDetail()
+  await nextTick()
+  const section = w.get('[data-section="churn-prefixes"]')
+  const floor = tableMinWidthPx(section as never)
+  expect(floor).toBeDefined()
+  const table = section.findComponent(DataTable as never) as unknown as {
+    props(name: string): GuardedColumn[]
+  }
+  const widths = table.props('columns').map((c) => (c as { width?: string }).width ?? '')
+  expect(widths.reduce((n, x) => n + parseFloat(x), 0)).toBe(100)
+  const HEADER_PX = { prefix: 74, readvertise: 121, withdraw: 103, observations: 118, sessions: 91 }
+  expect(crampedAt(table.props('columns'), floor!, HEADER_PX)).toEqual([])
 })

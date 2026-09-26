@@ -2,7 +2,8 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import type { Collector, CollectorActivity, CollectorRouter } from '@/api/generated'
-import { tableMinWidthPx } from '@/test-support/columnsOf'
+import { columnsOf, tableMinWidthPx } from '@/test-support/columnsOf'
+import { crampedAt } from '@/test-support/tableFloor'
 
 // Same mechanism SessionHistoryView.test.ts and RoutesView.test.ts document:
 // useCollectors hands the component a ref, and this module variable is
@@ -515,4 +516,23 @@ it("floors the card's router table without narrowing it on a desktop", () => {
   const floor = tableMinWidthPx(card(w, 'dev-c1') as never)
   expect(floor).toBeDefined()
   expect(floor!).toBeLessThanOrEqual(386)
+})
+
+// A dotted quad does not wrap, so an Address column narrower than one cuts
+// it off: at 25% the column was 97px in the narrowest desktop card, 388px at
+// a 1366px viewport, and every address such as 10.0.103.67 read
+// "10.0.103...". The floor is the narrowest the table ever gets, so every
+// column is checked there. Widths are each value or header plus the cell's
+// 36px of padding, measured in Chromium; jsdom computes no layout.
+it("sizes the router table's columns for a full address at the floor", () => {
+  collectorsRef.value = envelope([makeCollector()])
+  const w = mount(CollectorsView)
+  const table = card(w, 'dev-c1')
+  const floor = tableMinWidthPx(table as never)
+  expect(floor).toBeDefined()
+  const columns = columnsOf(table as never)
+  const widths = columns.map((c) => (c as { width?: string }).width ?? '')
+  expect(widths.every((x) => x.endsWith('%'))).toBe(true)
+  expect(widths.reduce((n, x) => n + parseFloat(x), 0)).toBe(100)
+  expect(crampedAt(columns, floor!, { sysname: 79, ip: 98, peers_up: 71 })).toEqual([])
 })
