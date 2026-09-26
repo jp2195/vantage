@@ -947,7 +947,12 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
    viewport the graph collapsed to 0 wide and the legend painted over the
    rail's text. The same 500px floor applies here because the canvas is the
    same 580-unit viewBox scaled into the pane. */
-.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+/* overflow-x: auto so that on a phone, where the pane is narrower than
+   the canvas's 500px floor, the graph scrolls inside the pane -- the same
+   thing a wide table does inside its card -- instead of pushing the whole
+   page 174px sideways at a 390px viewport. It never scrolls on a desktop,
+   where the pane is wider than its content. */
+.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
 .controls { margin: 8px 0 0; }
 .controls button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }

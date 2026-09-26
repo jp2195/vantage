@@ -597,7 +597,12 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
    1024, 1000 and 920 (canvas 1025 / 865 / 609 / 585 / 505px in both). The
    rail wraps at 914 and below, which is where 500 + 16 gap + 317 rail no
    longer fits the pane's content box. */
-.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+/* overflow-x: auto so that on a phone, where the pane is narrower than
+   the canvas's 500px floor, the graph scrolls inside the pane -- the same
+   thing a wide table does inside its card -- instead of pushing the whole
+   page 174px sideways at a 390px viewport. It never scrolls on a desktop,
+   where the pane is wider than its content. */
+.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
 .rail { width: 300px; flex: none; border-left: 1px solid var(--divider); padding-left: 16px; }
 .rail h2 { margin: 0 0 4px; font: 600 13px var(--font-data); color: var(--ink); }

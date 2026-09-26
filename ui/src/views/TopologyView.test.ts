@@ -11,6 +11,7 @@ import { capturedMeta } from '@/test-support/capturedMeta'
 import { formatClock } from '@/lib/formatClock'
 import type { AsEdge, AsName, AsNode, Graph, Meta, TopologyFanout } from '@/api/generated'
 import type { TopologyScope } from '@/api/queries'
+import { declarationsOf } from '@/test-support/styleText'
 
 // The captured answer, off the wire (ui/src/api/fixtures/README.md): GET
 // /v1/topology?router=172.22.0.7&peer=172.31.0.90 against a lab
@@ -882,4 +883,13 @@ describe('TopologyView', () => {
       expect(w.find('[data-asnames-truncated]').exists()).toBe(false)
     })
   })
+})
+
+// The canvas has a measured 500px floor (see the .canvas rule's comment), so
+// on a 390px phone the pane is narrower than its content. Without its own
+// scroller the graph pushed the whole page 174px sideways; with one it
+// scrolls inside the pane, as a wide table does inside its card. jsdom
+// applies no component stylesheet, so this reads the rule itself.
+it('scrolls a graph wider than the screen inside its own pane', () => {
+  expect(declarationsOf('views/TopologyView.vue', '.pane')).toContain('overflow-x: auto')
 })

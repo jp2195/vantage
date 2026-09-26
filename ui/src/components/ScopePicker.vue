@@ -361,8 +361,14 @@ const unlistedPeer = computed<string | undefined>(() => {
 </template>
 
 <style scoped>
-.picker { display: flex; gap: 14px; align-items: flex-end; }
-label { display: flex; flex-direction: column; gap: 4px; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-select { font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); }
+/* Wraps, and each control may be narrower than its longest option. A
+   <select> is as wide as its longest option by default, and a peer option
+   reads "10.0.0.80 · AS4200000002 · 2 collectors": on a 390px phone the
+   Peer and Collector controls ran 199px past the right edge and the whole
+   page scrolled sideways, on Routes and on Session history. Nothing changes
+   where the three fit on one line. */
+.picker { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
+label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+select { max-width: 100%; font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); }
 .ambiguous { margin: 8px 0 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
 </style>
