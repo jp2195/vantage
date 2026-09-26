@@ -214,7 +214,7 @@ probe runs as root with default capabilities, so a cluster that warns at the
 for it; the pod still starts, and step 7 deletes it.
 
 ```bash
-kubectl -n "$NS" run ch-probe --image=clickhouse/clickhouse-server:24.8-alpine \
+kubectl -n "$NS" run ch-probe --image=clickhouse/clickhouse-server:26.8-alpine \
   --restart=Never --command -- sleep 3600
 kubectl -n "$NS" wait --for=condition=Ready pod/ch-probe --timeout=2m
 
@@ -240,7 +240,7 @@ API take:
 ```bash
 kubectl -n "$NS" exec ch-probe -- clickhouse-client --host "$CH_SVC" \
   --user vantage --password "$CHPASS" --query "SELECT version()"
-# Expect a 24.8.x version string.
+# Expect a 26.8.x version string.
 ```
 
 `clickhouse-values.yaml` restricts the `vantage` user's `networks` to the
@@ -369,14 +369,22 @@ when the pod restarts. See `deploy/helm/README.md`, "AS holder names
   needed about 502 MiB against a 460.80 MiB tracked ceiling).
   `clickhouse-values.yaml` sets a 4Gi limit and a 2Gi request. Size it for
   your own nodes, but set it.
-- **ClickHouse is pinned to `24.8-alpine`** via the top-level `imageTag`,
+- **ClickHouse is pinned to `26.8-alpine`** via the top-level `imageTag`,
   which applies to both the ClickHouse server and Keeper images (both tags
   exist on Docker Hub). The cluster chart's own default (its `Chart.yaml`
   `appVersion` is `"latest"`) would otherwise silently pull whatever is
-  newest. Every schema decision, migration and query in this repository was
-  measured against the 24.8 line (24.8.14), the same image
-  `docker-compose.dev.yml`, CI and the chart's schema Job use. Do not run
-  this schema against another version without re-verifying it.
+  newest. The schema and every query in this repository are tested against
+  the 26.8 LTS line, the same line `docker-compose.dev.yml`, CI and the
+  chart's schema Job use. Do not run this schema against another version
+  without re-verifying it: `CREATE TABLE ... AS` alone changed what it
+  copies between two LTS lines (see the current-table header in
+  `deploy/clickhouse/schema.sql`).
+- The operator run described in this README (v0.0.7) ran ClickHouse 24.8;
+  the move to 26.8 was verified by rendering this chart, not by a new live
+  install. The operator documents no supported range of ClickHouse
+  versions. It reads the server version with a probe Job and, from 25.12
+  on, requires a `named-collections-key` in `spec.externalSecret`, which
+  these values do not use (the operator generates its own).
 - **Keeper cannot be disabled.** `ClickHouseCluster.spec.keeperClusterRef`
   is a required field in the v0.0.7 CRD, confirmed with `kubectl explain
   clickhousecluster.spec --recursive` and stated in the operator's own docs

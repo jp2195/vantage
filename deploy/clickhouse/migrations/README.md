@@ -23,9 +23,9 @@ of these history tables must, in the same file:
 2. Backfill the column in the current table if its existing rows need a
    value other than the default.
 
-The view needs no change. On ClickHouse 24.8 a `SELECT *` view reads the
-history table's columns when each block is inserted and writes them to the
-current table by name. A new column reaches the current table once the
+The view needs no change. On ClickHouse 24.8 and 26.8 a `SELECT *` view
+reads the history table's columns when each block is inserted and writes
+them to the current table by name. A new column reaches the current table once the
 current table has it, and until then the view drops it without an error.
 After migrating, insert or wait for a new row and check that its value
 reached the current table. If it did not, the running version behaves

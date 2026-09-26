@@ -31,13 +31,13 @@
 # either real password or digest: the placeholders below are only ever
 # applied with --set overriding them.
 
-# Pins BOTH the ClickHouse server and Keeper images to 24.8-alpine: the same
-# image docker-compose.dev.yml, CI and the vantage chart's schema Job run, and
-# the only version every schema decision, migration and query in this
-# repository has been measured against. The chart's own default (its
+# Pins BOTH the ClickHouse server and Keeper images to 26.8-alpine, the 26.8
+# LTS line: the same line docker-compose.dev.yml, CI and the vantage chart's
+# schema Job run, and the one the schema and every query in this repository
+# is tested against. The chart's own default (its
 # Chart.yaml appVersion is literally "latest") would silently pull whatever
 # is newest on install -- never leave this unset.
-imageTag: "24.8-alpine"
+imageTag: "26.8-alpine"
 
 clickhouse:
   enabled: true

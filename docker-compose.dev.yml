@@ -239,7 +239,7 @@ services:
     depends_on: [clickhouse]
     restart: on-failure
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8-alpine
+    image: clickhouse/clickhouse-server:26.8-alpine
     # 8123 is HTTP (Grafana's datasource), 9000 is the native protocol (the
     # writer). Both published on loopback only: this is a dev stack, and the
     # database should not be reachable from the LAN.
