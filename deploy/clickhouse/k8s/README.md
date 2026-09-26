@@ -163,9 +163,11 @@ helm install vantage-ch \
   --set clickhouse.spec.settings.extraUsersConfig.users.vantage.password_sha256_hex="$CHPASS_SHA256" \
   --set clickhouse.spec.settings.extraUsersConfig.users.default.password_sha256_hex="$DEFAULT_SHA256" \
   --wait --wait-for-jobs --timeout 15m
-# This chart renders only the two custom resources, so --wait returns as soon
-# as they exist; the operator starts the pods after helm exits. Wait on the
-# resources themselves before reading pod names.
+# This chart renders only the two custom resources, and the operator starts
+# the pods from them, so --wait cannot tell when the database is serving:
+# Helm 3 returns as soon as the resources exist, and Helm 4 reads only what
+# their status reports. Wait on the resources themselves before reading pod
+# names.
 kubectl -n "$NS" wait --for=condition=Ready --timeout=15m \
   clickhousecluster/vantage-ch-clickhouse-cluster \
   keepercluster/vantage-ch-clickhouse-cluster
@@ -284,9 +286,10 @@ which matches this setup. The chart always uses the `vantage` database; there
 is no setting for it.
 
 `--wait-for-jobs` is not optional. The chart applies the schema from a Job
-(`schemaJob.apply`, default `true`), and `--wait` alone says nothing about
-Jobs, so a failed schema Job would otherwise leave a release Helm reports
-as successful.
+(`schemaJob.apply`, default `true`), and `--wait` alone does not wait for a
+Job to finish (Helm 3 skips Jobs, Helm 4 counts a started Job as ready), so
+a failed schema Job would otherwise leave a release Helm reports as
+successful.
 
 ## 7. Verify the schema landed
 

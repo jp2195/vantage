@@ -11,6 +11,25 @@ The examples below install a release named `vantage` into a namespace named
 Substitute your own names; where a resource name depends on the release name,
 the text says so.
 
+## Helm versions
+
+The chart supports Helm 3 and Helm 4, and CI lints and renders it with a
+release of each on every change (the `helm` job in
+`.github/workflows/ci.yml` names the versions). The commands in this
+document are the same for both; the differences that reach an install are:
+
+- **`--wait`.** Helm 4 waits with kstatus instead of Helm 3's readiness
+  checks. Neither waits for a Job to finish without `--wait-for-jobs` (see
+  "ClickHouse" below), and Helm 4's `--wait` no longer waits for the
+  BMP `LoadBalancer` Service to get an address, so the address command in
+  the release notes can print nothing for a while after `helm install`
+  returns.
+- **Server-side apply.** Helm 4 installs a new release with server-side
+  apply. A release installed with Helm 3 keeps client-side apply when Helm 4
+  upgrades it, so switching the CLI needs no migration step.
+- **`helm registry login`** takes a host name only in Helm 4
+  (`helm registry login ghcr.io`), not a URL or repository path.
+
 ## Quick start
 
     helm repo add nats https://nats-io.github.io/k8s/helm/charts/
@@ -225,10 +244,12 @@ the Secret's `username` key, which each pod's `render-config` init container
 percent-encodes into `clickhouse_dsn`.
 
 Pass `--wait-for-jobs` alongside `--wait` on every install and upgrade. The
-schema is applied by a Job, and `--wait` covers Pods, PVCs, Services and
-workload controllers but not Jobs. Measured with the same chart and the same
-failing schema Job, one flag apart: `--wait` alone exited 0 and reported the
-upgrade successful while the Job was still on its first attempt;
+schema is applied by a Job, and `--wait` alone does not wait for a Job to
+finish: Helm 3's `--wait` covers Pods, PVCs, Services and workload
+controllers but not Jobs, and Helm 4's counts a Job as ready as soon as it
+has started. Measured with the same chart and the same failing schema Job,
+one flag apart, on both: `--wait` alone exited 0 and reported the upgrade
+successful while the Job was still on its first attempt;
 `--wait --wait-for-jobs` exited 1 with `UPGRADE FAILED`. Without the flag, a
 schema failure leaves a release Helm calls successful and a database that is
 not on the version the chart ships.

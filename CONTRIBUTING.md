@@ -51,8 +51,10 @@ make standalone-check  # no published file cites an internal path, a commit SHA 
 ClickHouse skips there, and its summary line says how many did. `make test`
 refuses to skip: it fails if ClickHouse is not reachable on
 `VANTAGE_CH_NATIVE_PORT` (default 9000), which is what CI does too.
-It also runs `make chart-deps` first, which needs `helm` and fetches the
-chart's NATS dependency on the first run; the Helm-rendering tests use it.
+It also runs `make chart-deps` first, which needs `helm` (3 or 4; CI runs
+the chart checks under both) and fetches the chart's NATS dependency on the
+first run; the Helm-rendering tests use it. A change to the chart or to
+those tests should pass with both on `PATH`.
 
 `make standalone-check` needs nothing running. It fails on a published file
 that cites a path outside the public repo, a commit SHA, or internal process

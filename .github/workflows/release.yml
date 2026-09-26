@@ -160,7 +160,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.22.0
+          version: v4.3.0
       - name: no image or chart exists at this version
         env:
           GH_ACTOR: ${{ github.actor }}
@@ -359,7 +359,7 @@ jobs:
           persist-credentials: false
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.22.0
+          version: v4.3.0
       # The subchart download and the packaging run before the registry
       # login, so the registry credential exists only for the push.
       - name: package the chart

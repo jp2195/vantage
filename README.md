@@ -211,8 +211,9 @@ Health checks, querying ClickHouse directly, and tearing it all down:
 
 ## Deploying it for real
 
-`deploy/helm/vantage` is the Kubernetes path, and it is deliberately
-bring-your-own for everything that stores data:
+`deploy/helm/vantage` is the Kubernetes path, for Helm 3 or Helm 4 (CI
+tests the chart with both), and it is deliberately bring-your-own for
+everything that stores data:
 
 - **ClickHouse is yours.** The chart ships none and has no bundled mode —
   `clickhouse.externalHost` and explicit credentials are required, and a
