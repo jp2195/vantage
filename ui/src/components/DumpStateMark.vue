@@ -40,8 +40,14 @@ defineProps<{ state: string }>()
 </template>
 
 <style scoped>
+/* inline-block, so a line may break before the mark. The prefix beside it
+   is a separate element with no space between the two (Vue drops the
+   newline between them), so as a plain inline span the mark gave the line
+   nowhere to break: "10.255.0.2/32provisional" overflowed the Prefix column
+   on Routes at every width below 1440, and on the Looking glass at 1440 too.
+   As an atomic inline it drops under the prefix instead. */
 .mark {
-  margin-left: 7px; padding: 1px 6px; border-radius: 4px;
+  display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: 4px;
   font: 500 10px var(--font-ui);
 }
 .dumping { background: var(--neutral-chip); color: var(--muted); }

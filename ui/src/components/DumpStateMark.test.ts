@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import DumpStateMark from './DumpStateMark.vue'
 import routes from '@/api/fixtures/routes.json'
+import { declarationsOf } from '@/test-support/styleText'
 import rib from '@/api/fixtures/rib-unicast.json'
 
 // All three values come off captured responses rather than the enum in
@@ -47,4 +48,14 @@ describe('DumpStateMark', () => {
     const w = mount(DumpStateMark, { props: { state: 'reconciling' } })
     expect(w.text()).not.toBe('')
   })
+})
+
+// The mark follows the prefix with no space between them -- Vue drops the
+// newline in the template -- so as a plain inline span it gave the line no
+// place to break, and "10.255.0.2/32provisional" overflowed the Prefix
+// column on Routes below 1440, and on the Looking glass at 1440 too. As an
+// inline-block it is an atomic inline, which a line may break before.
+// jsdom applies no component stylesheet, so this reads the rule itself.
+it('is an atomic inline, so the line may break before it', () => {
+  expect(declarationsOf('components/DumpStateMark.vue', '.mark')).toContain('display: inline-block')
 })
