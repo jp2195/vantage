@@ -27,13 +27,16 @@ var internalMessageRe = regexp.MustCompile(
 // probe below confirms is present in the raw error this file drives. None
 // of them belongs in any message this API means to send.
 var leakMarkers = []string{"SELECT", " FROM ", "GROUP BY", "code: 60", "Unknown table",
-	"system.peer_current", "query routers"}
+	"system.route_unicast_current", "query routes"}
 
 // requireFailingAPI builds a Server whose every query fails inside
 // ClickHouse. "system" exists on every server and holds none of vantage's
 // tables, so each statement query/ issues against it fails in the analyzer
-// with UNKNOWN_TABLE, and that error's message quotes the statement's own
-// SQL. Nothing is written anywhere: query/ only reads.
+// with UNKNOWN_TABLE. That error's message quotes the scope the table was
+// named in: the statement's own SQL when that is the outer query, but only
+// the name of a WITH entry when the table is named inside one (ClickHouse
+// 26.8; 24.8 quoted the whole statement either way). Nothing is written
+// anywhere: query/ only reads.
 func requireFailingAPI(t *testing.T) (*Server, *bytes.Buffer) {
 	t.Helper()
 	conn := chtest.Require(t, t.Context(), apiTestDB)
@@ -81,10 +84,12 @@ func TestInternalErrorBodyCarriesNoSQL(t *testing.T) {
 
 	// Probe the probe: the failure driven below must itself carry SQL and
 	// every leak marker, or the absence checks pass against a body that
-	// never had anything to leak.
-	_, raw := s.q.Routers(t.Context())
+	// never had anything to leak. query.Routes names its first table in the
+	// outer query, so its error quotes the SQL; query.Routers names its
+	// table inside a WITH, whose error quotes only the WITH entry's name.
+	_, raw := s.q.Routes(t.Context(), query.RouteFilter{Prefix: "10.0.0.0/8"})
 	if raw == nil {
-		t.Fatal("query.Routers against the system database succeeded; this test needs a failing query")
+		t.Fatal("query.Routes against the system database succeeded; this test needs a failing query")
 	}
 	for _, m := range leakMarkers {
 		if !strings.Contains(raw.Error(), m) {
@@ -135,7 +140,7 @@ func TestInternalErrorBodyCarriesNoSQL(t *testing.T) {
 			t.Errorf("GET %s: no log line carries ref=%s, so the caller's reference leads nowhere", target, ref)
 			continue
 		}
-		if !strings.Contains(line, "SELECT") || !strings.Contains(line, "path="+strings.SplitN(target, "?", 2)[0]) {
+		if !strings.Contains(line, "Unknown table") || !strings.Contains(line, "path="+strings.SplitN(target, "?", 2)[0]) {
 			t.Errorf("GET %s: the log line for ref=%s lacks the driver's error or the path: %s", target, ref, line)
 		}
 	}

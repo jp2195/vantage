@@ -610,27 +610,36 @@ TTL toDateTime(ts_collector) + INTERVAL 90 DAY;
 -- materialized view on its history table, keyed on collector_id and
 -- session_id: session ids are minted per collector, and a key without the
 -- session lets a superseded session that keeps publishing overwrite live
--- state (measured 2026-09-05: 200,460 of 1,000,000 routes lost). No
--- PARTITION BY: ClickHouse deduplicates only within a partition, and one
--- object's rows can span months. Superseded sessions are pruned by the
--- writer's cleanup, not by TTL, since a TTL cannot see another table.
+-- state (measured 2026-09-05: 200,460 of 1,000,000 routes lost). One
+-- partition (PARTITION BY tuple()): ClickHouse deduplicates only within a
+-- partition, and one object's rows can span months. Superseded sessions
+-- are pruned by the writer's cleanup, not by TTL, since a TTL cannot see
+-- another table.
 --
 -- `CREATE TABLE ... AS vantage.<history>` copies the history table's
--- columns, codecs, MATERIALIZED columns and skip indexes, but not its
--- engine, PARTITION BY, sort key or TTL, which is why each is restated (or
--- deliberately left out). A `SELECT *` view does not carry MATERIALIZED
+-- columns, codecs, MATERIALIZED columns and skip indexes. With an explicit
+-- ENGINE it does not copy the TTL, but since ClickHouse 24.9 it does copy
+-- any PARTITION BY, PRIMARY KEY, ORDER BY or SAMPLE BY the statement leaves
+-- out. So each current table states all three keys itself: `PARTITION BY
+-- tuple()` is one partition, the same as none, and PRIMARY KEY repeats the
+-- ORDER BY (the history table's shorter PRIMARY KEY is not a prefix of it,
+-- which the server rejects). sink's
+-- TestCurrentTablesAsCreatedHaveNoPartitionOrTTL checks the tables the
+-- server actually creates. A `SELECT *` view does not carry MATERIALIZED
 -- columns (node_key and the two link endpoint keys); the current table
 -- recomputes them from the same expression. A `SELECT *` view reads its
 -- history table's columns at each insert and writes them by name, so a
 -- column added to a history table later reaches its current table once the
 -- current table has the column too, and is dropped until then (measured on
--- 24.8; see deploy/clickhouse/migrations/README.md).
+-- 24.8 and 26.8; see deploy/clickhouse/migrations/README.md).
 
 -- Every peer event of the retained sessions, so the peer state queries run
 -- unchanged. A session's peer events are few (ups, downs, flaps).
 CREATE TABLE IF NOT EXISTS vantage.peer_current AS vantage.peer_events
 ENGINE = ReplacingMergeTree
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, ts_router, stream_seq);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, ts_router, stream_seq)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, ts_router, stream_seq);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.peer_current_mv TO vantage.peer_current
 AS SELECT * FROM vantage.peer_events;
@@ -665,21 +674,27 @@ FROM vantage.ls_events WHERE end_of_rib = 1;
 -- their session is superseded and cleaned up.
 CREATE TABLE IF NOT EXISTS vantage.route_unicast_current AS vantage.route_unicast
 ENGINE = ReplacingMergeTree(seq)
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, family, prefix, path_id);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, family, prefix, path_id)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, family, prefix, path_id);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.route_unicast_current_mv TO vantage.route_unicast_current
 AS SELECT * FROM vantage.route_unicast;
 
 CREATE TABLE IF NOT EXISTS vantage.route_vpn_current AS vantage.route_vpn
 ENGINE = ReplacingMergeTree(seq)
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, family, rd, prefix, path_id);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, family, rd, prefix, path_id)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, family, rd, prefix, path_id);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.route_vpn_current_mv TO vantage.route_vpn_current
 AS SELECT * FROM vantage.route_vpn;
 
 CREATE TABLE IF NOT EXISTS vantage.route_evpn_current AS vantage.route_evpn
 ENGINE = ReplacingMergeTree(seq)
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, route_type, rd, prefix, mac, ip, ethernet_tag, esi, path_id);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, route_type, rd, prefix, mac, ip, ethernet_tag, esi, path_id)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, route_type, rd, prefix, mac, ip, ethernet_tag, esi, path_id);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.route_evpn_current_mv TO vantage.route_evpn_current
 AS SELECT * FROM vantage.route_evpn;
@@ -689,21 +704,27 @@ AS SELECT * FROM vantage.route_evpn;
 -- descriptor plus prefix.
 CREATE TABLE IF NOT EXISTS vantage.ls_nodes_current AS vantage.ls_nodes
 ENGINE = ReplacingMergeTree(seq)
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, asn, bgpls_id, area, router_id);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, asn, bgpls_id, area, router_id)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, asn, bgpls_id, area, router_id);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.ls_nodes_current_mv TO vantage.ls_nodes_current
 AS SELECT * FROM vantage.ls_nodes;
 
 CREATE TABLE IF NOT EXISTS vantage.ls_links_current AS vantage.ls_links
 ENGINE = ReplacingMergeTree(seq)
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, local_asn, local_bgpls_id, local_area, local_router_id, remote_asn, remote_bgpls_id, remote_area, remote_router_id, local_ifaddr, remote_ifaddr, link_local_id, link_remote_id);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, local_asn, local_bgpls_id, local_area, local_router_id, remote_asn, remote_bgpls_id, remote_area, remote_router_id, local_ifaddr, remote_ifaddr, link_local_id, link_remote_id)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, local_asn, local_bgpls_id, local_area, local_router_id, remote_asn, remote_bgpls_id, remote_area, remote_router_id, local_ifaddr, remote_ifaddr, link_local_id, link_remote_id);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.ls_links_current_mv TO vantage.ls_links_current
 AS SELECT * FROM vantage.ls_links;
 
 CREATE TABLE IF NOT EXISTS vantage.ls_prefixes_current AS vantage.ls_prefixes
 ENGINE = ReplacingMergeTree(seq)
-ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, asn, bgpls_id, area, router_id, prefix, prefix_len);
+PARTITION BY tuple()
+ORDER BY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, asn, bgpls_id, area, router_id, prefix, prefix_len)
+PRIMARY KEY (collector_id, router_ip, session_id, peer_ip, rib, protocol, identifier, asn, bgpls_id, area, router_id, prefix, prefix_len);
 
 CREATE MATERIALIZED VIEW IF NOT EXISTS vantage.ls_prefixes_current_mv TO vantage.ls_prefixes_current
 AS SELECT * FROM vantage.ls_prefixes;

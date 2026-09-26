@@ -83,7 +83,8 @@ spec:
               # hostile value containing '"', '\', '/', '@', '$' and a space,
               # by running the rendered script unmodified in the
               # clickhouse-server:24.8-alpine image (2026-09-05), whose
-              # busybox supplies od, tr and sed.
+              # busybox supplies od, tr and sed; 26.8-alpine's busybox
+              # gives the same encoding (2026-09-25).
               urlencode() {
                 printf '%s' "$1" | od -An -tx1 -v | tr -d ' \n' | sed 's/../%&/g'
               }

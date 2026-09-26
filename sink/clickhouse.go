@@ -113,6 +113,24 @@ func NewClickHouse(ctx context.Context, dsn secret.ClickHouseDSN) (*ClickHouse, 
 			"identifier -- name the database in the DSN path (e.g. "+
 			"clickhouse://host:9000/vantage)", db)
 	}
+	// Inserts are synchronous unless the DSN asks otherwise. ClickHouse
+	// turned async_insert on by default in 26.2, which buffers every INSERT
+	// on the server and, with the default wait_for_async_insert = 1, holds
+	// it until the buffer flushes, after its 50 to 200 ms busy timeout.
+	// Measured on 26.8.7 over twenty one-row inserts: 55 ms on average
+	// asynchronous, 1 ms synchronous. Insert issues one statement per table
+	// in turn, and the writer already batches, so the server's buffer adds
+	// only that wait. It would also make the ack depend on
+	// wait_for_async_insert, which a user profile can turn off: an INSERT
+	// that returns before its rows are written breaks Insert's contract that
+	// nil means stored. A DSN that sets async_insert itself
+	// (?async_insert=1) keeps its own choice.
+	if _, set := opts.Settings["async_insert"]; !set {
+		if opts.Settings == nil {
+			opts.Settings = clickhouse.Settings{}
+		}
+		opts.Settings["async_insert"] = 0
+	}
 	conn, err := clickhouse.Open(opts)
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: open: %w", redact.Err(err))

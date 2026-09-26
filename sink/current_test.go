@@ -241,7 +241,11 @@ func createTableFromSchema(t *testing.T, table string) string {
 // within a partition and one object's rows can span months. No current table
 // may have a TTL either: state that stays stable for longer than retention is
 // still live, and a TTL can delete a withdrawal before it merges over the
-// announcement it replaced.
+// announcement it replaced. The statement text may say `PARTITION BY
+// tuple()`, one partition, and nothing else; the server fills in an omitted
+// one from the source of a CREATE TABLE ... AS (see
+// TestCurrentTablesAsCreatedHaveNoPartitionOrTTL, which checks the tables
+// the server creates).
 func TestCurrentTableEnginesVersionBySeqWithNoPartitionOrTTL(t *testing.T) {
 	engine := regexp.MustCompile(`\bENGINE\s*=\s*([A-Za-z]+(?:\([^)]*\))?)`)
 	for table, want := range map[string]string{
@@ -261,10 +265,51 @@ func TestCurrentTableEnginesVersionBySeqWithNoPartitionOrTTL(t *testing.T) {
 		} else if got := strings.Join(strings.Fields(m[1]), ""); got != want {
 			t.Errorf("%s: ENGINE = %s, want %s", table, got, want)
 		}
-		for name, re := range map[string]string{"PARTITION BY": `\bPARTITION\s+BY\b`, "TTL": `\bTTL\b`} {
-			if regexp.MustCompile(re).MatchString(stmt) {
-				t.Errorf("%s: has a %s clause; current tables must have none", table, name)
-			}
+		if m := regexp.MustCompile(`\bPARTITION\s+BY\s+(\S+)`).FindStringSubmatch(stmt); m != nil && m[1] != "tuple()" {
+			t.Errorf("%s: PARTITION BY %s; current tables must have one partition", table, m[1])
+		}
+		if regexp.MustCompile(`\bTTL\b`).MatchString(stmt) {
+			t.Errorf("%s: has a TTL clause; current tables must have none", table)
+		}
+	}
+}
+
+// currentTables is every current-state table in the shipped schema.
+var currentTables = []string{
+	"route_unicast_current", "route_vpn_current", "route_evpn_current",
+	"ls_nodes_current", "ls_links_current", "ls_prefixes_current",
+	"peer_current", "eor_current",
+}
+
+// TestCurrentTablesAsCreatedHaveNoPartitionOrTTL reads the current tables
+// back from a database built from the shipped schema. Since ClickHouse 24.9,
+// CREATE TABLE ... AS copies the source's PARTITION BY and PRIMARY KEY when
+// the statement omits them, so a statement whose text has no PARTITION BY
+// still produces a table partitioned by month, as the history table is. Only
+// the server's own record of the table settles what it is: one partition,
+// no TTL, and a primary key equal to the sort key (the sort key of each is
+// asserted from the schema text by the tests above).
+func TestCurrentTablesAsCreatedHaveNoPartitionOrTTL(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := requireClickHouse(t, ctx)
+	defer c.Close()
+
+	for _, table := range currentTables {
+		var partition, primary, sorting, engine string
+		if err := c.conn.QueryRow(ctx, `SELECT partition_key, primary_key, sorting_key, engine_full
+			FROM system.tables WHERE database = ? AND name = ?`, testDB, table).
+			Scan(&partition, &primary, &sorting, &engine); err != nil {
+			t.Fatalf("%s: %v", table, err)
+		}
+		if partition != "" && partition != "tuple()" {
+			t.Errorf("%s: partition key %q, want none\n%s", table, partition, engine)
+		}
+		if primary != sorting {
+			t.Errorf("%s: primary key %q differs from sort key %q\n%s", table, primary, sorting, engine)
+		}
+		if strings.Contains(engine, " TTL ") {
+			t.Errorf("%s: has a TTL\n%s", table, engine)
 		}
 	}
 }

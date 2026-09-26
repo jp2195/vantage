@@ -184,7 +184,7 @@ does not read like a missing credential. Docker Hub, for example, reports:
 Two other images are pulled as well, and mirroring into a private registry
 means covering both:
 
-- `schemaJob.image` (default `clickhouse/clickhouse-server:24.8-alpine`) runs
+- `schemaJob.image` (default `clickhouse/clickhouse-server:26.8-alpine`) runs
   the schema Job and also the config-rendering init containers of the
   collector, writer and API, since the daemons' distroless images have no
   shell.
@@ -341,10 +341,11 @@ publication date.
 **Restarts need no action.** A dictionary's data unloads on every ClickHouse
 restart and reloads on first use. vantage-api's lookup is that first use: the
 first `GET /v1/asnames` after a restart loads the dictionary and answers with
-the real name. This was measured on the dev stack (`docker restart` of the
-ClickHouse container with the data mounted, then one ordinary API request,
-with no manual reload), not by restarting a Kubernetes-managed ClickHouse pod.
-It is the same vantage-api code and the same ClickHouse version, so no
+the real name. This was measured on the dev stack on ClickHouse 24.8 (`docker restart`
+of the ClickHouse container with the data mounted, then one ordinary API
+request, with no manual reload), not by restarting a Kubernetes-managed
+ClickHouse pod, and rechecked on 26.8 with a `dictGet` across a restart. It
+is the same vantage-api code and the same ClickHouse version, so no
 different behavior is expected.
 
 **A re-fetch does need a reload.** The dictionaries use `LIFETIME(0)`, so an

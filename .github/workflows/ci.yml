@@ -49,8 +49,8 @@ jobs:
     # step below could run before the server accepts connections.
     services:
       clickhouse:
-        # clickhouse/clickhouse-server:24.8-alpine (multi-platform index)
-        image: clickhouse/clickhouse-server@sha256:b002e56ed5c16e224c312527f6fcba7e77216fec5d7a88a7828f59efc614feb5
+        # clickhouse/clickhouse-server:26.8.7.19-alpine (multi-platform index)
+        image: clickhouse/clickhouse-server@sha256:2bece7c646f08865eadc2000a60427e2964adf2b46908a6d476dfa7cc5408720
         ports:
           - 9000:9000
         env:
