@@ -456,9 +456,9 @@ migration under `deploy/clickhouse/migrations/`.
 - Always pass `--wait --wait-for-jobs`, not `--wait` alone. `schemaJob.apply`
   (default `true`) applies `deploy/clickhouse/schema.sql`, its migrations,
   and the AS-holder-name dictionary DDL from a Job that re-runs on every
-  upgrade, and `--wait` does not cover Jobs — a failing schema Job can leave
-  `helm upgrade` reporting success against a database that never received
-  the schema. If your database's owner will not grant this chart DDL
+  upgrade, and `--wait` does not wait for a Job to finish, on Helm 3 or
+  Helm 4 — a failing schema Job can leave `helm upgrade` reporting success
+  against a database that never received the schema. If your database's owner will not grant this chart DDL
   rights, set `schemaJob.apply=false` and apply the files yourself before
   upgrading, in order: `schema.sql`, then each migration the database
   needs, then the two dictionary files (see "Applying the schema" in

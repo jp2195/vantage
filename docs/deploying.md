@@ -417,8 +417,10 @@ reference for the chart — values, BMP ingress, NATS TLS, AS holder names,
 uninstalling — and this section only summarizes the points that most often
 decide whether an install works.
 
-Fetch the chart's dependency first, because the NATS subchart is not
-vendored: `helm repo add nats https://nats-io.github.io/k8s/helm/charts/`
+The chart supports Helm 3 and Helm 4, and CI tests it with both; the
+differences that affect an install are listed under "Helm versions" in the
+chart reference. Fetch the chart's dependency first, because the NATS
+subchart is not vendored: `helm repo add nats https://nats-io.github.io/k8s/helm/charts/`
 then `helm dependency build deploy/helm/vantage`, or `make chart-deps` from
 the repository root, which runs both.
 
@@ -582,5 +584,6 @@ rights, and apply the same files yourself, in that order, before upgrading
 start against a schema version other than the one they expect, which is the
 intended loud failure rather than a silent one. Always pass
 `--wait-for-jobs` alongside `--wait` on install or upgrade: `--wait` does not
-cover Jobs, so a failing schema Job can otherwise leave `helm upgrade`
+wait for a Job to finish (Helm 3 skips Jobs, Helm 4 counts a started Job as
+ready), so a failing schema Job can otherwise leave `helm upgrade`
 reporting success against a database that never received the schema.
