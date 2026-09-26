@@ -1,9 +1,10 @@
 # Deploying
 
 Two ways to run vantage: `docker-compose.dev.yml` for a laptop, which
-bundles its own ClickHouse and Grafana, and the `deploy/helm/vantage` chart
-for Kubernetes, which does not — see "Kubernetes (Helm)" below for what the
-chart does and does not stand up on its own.
+bundles its own ClickHouse and Grafana, and the Helm chart, published as
+`oci://ghcr.io/jp2195/charts/vantage`, for Kubernetes, which does not — see
+"Kubernetes (Helm)" below for what the chart does and does not stand up on
+its own.
 
 ## Quickstart (laptop)
 
@@ -409,9 +410,54 @@ pattern (`GET /v1/routes`), `ui` for the web app and its assets, or
 `unmatched` for any other `/v1` path, so a scanner cannot grow the series
 count.
 
+## Install the CLI
+
+The `vantage` CLI queries the API (`vantage query`), generates synthetic BMP
+(`bmpgen`, `loadgen`), and inspects the pipeline (`debug`, `capture`,
+`reparse`, `streams`, `purge`); run `vantage` with no arguments for the
+list. Each release attaches it to the
+[Releases page](https://github.com/jp2195/vantage/releases) for Linux and
+macOS (`.tar.gz`) and Windows (`.zip`), each for `amd64` and `arm64`, with a
+`checksums.txt`, an SBOM per archive and a signed build provenance
+attestation. Download an archive and the checksums, then check both before
+you run it:
+
+```
+VERSION=0.1.0 OS=linux ARCH=amd64   # OS: linux or darwin; ARCH: amd64 or arm64
+curl -fsSLO https://github.com/jp2195/vantage/releases/download/v${VERSION}/vantage_${VERSION}_${OS}_${ARCH}.tar.gz
+curl -fsSLO https://github.com/jp2195/vantage/releases/download/v${VERSION}/checksums.txt
+sha256sum --check --ignore-missing checksums.txt   # macOS: shasum -a 256 --check --ignore-missing checksums.txt
+gh attestation verify vantage_${VERSION}_${OS}_${ARCH}.tar.gz --owner jp2195
+tar xzf vantage_${VERSION}_${OS}_${ARCH}.tar.gz vantage
+./vantage -version
+```
+
+On Windows, download the `.zip` for your architecture and compare
+`Get-FileHash` with its line in `checksums.txt`. `gh attestation verify`
+needs the GitHub CLI signed in (`gh auth login`, any account); it exits
+non-zero unless the archive's digest matches an attestation signed for the
+`jp2195` account. The checksum alone proves only that the download matches
+`checksums.txt`, which came from the same place.
+
+Against a Helm install, `vantage query` reads the API through the
+port-forward the release notes print:
+
+```
+./vantage query routers -api http://127.0.0.1:9473 -token "$TOKEN"
+```
+
+If the laptop stack above is running, its API already holds
+`127.0.0.1:9473`, and `kubectl port-forward` does not fail: it binds only
+`[::1]:9473`, so every request to `127.0.0.1:9473` reaches the laptop stack
+and is refused with `401`, whatever token the cluster gave you. Forward to a
+free local port instead (`port-forward svc/vantage-api 19473:9473`, then
+`-api http://127.0.0.1:19473`). The same goes for the BMP port: pointing
+`bmpgen` at `127.0.0.1:11019` with the laptop stack running feeds its
+collector, not the cluster's.
+
 ## Kubernetes (Helm)
 
-`deploy/helm/vantage` deploys the collector, writer and read API to
+The Helm chart deploys the collector, writer and read API to
 Kubernetes. [`deploy/helm/README.md`](../deploy/helm/README.md) is the full
 reference for the chart — values, BMP ingress, NATS TLS, AS holder names,
 uninstalling — and this section only summarizes the points that most often
@@ -419,10 +465,30 @@ decide whether an install works.
 
 The chart supports Helm 3 and Helm 4, and CI tests it with both; the
 differences that affect an install are listed under "Helm versions" in the
-chart reference. Fetch the chart's dependency first, because the NATS
-subchart is not vendored: `helm repo add nats https://nats-io.github.io/k8s/helm/charts/`
-then `helm dependency build deploy/helm/vantage`, or `make chart-deps` from
-the repository root, which runs both.
+chart reference.
+
+Each release publishes the chart to GitHub Container Registry, with the
+NATS subchart bundled, so an install needs no clone, no `helm repo add` and
+no dependency fetch. With ClickHouse, its credentials Secret and the NATS
+certificates in place (the chart reference's
+[quick start](../deploy/helm/README.md#quick-start) walks through all three):
+
+```
+helm install vantage oci://ghcr.io/jp2195/charts/vantage --version 0.1.0 \
+  --namespace vantage -f my-values.yaml --wait --wait-for-jobs --timeout 10m
+```
+
+These docs pin `0.1.0`; use the newest version on the
+[Releases page](https://github.com/jp2195/vantage/releases). Every value the
+chart takes, with its default, is one command away:
+
+```
+helm show values oci://ghcr.io/jp2195/charts/vantage --version 0.1.0
+```
+
+To run code that is not in a release, install `deploy/helm/vantage` from a
+clone instead; its NATS subchart is not vendored, so run `make chart-deps`
+first. "Installing from source" in the chart reference has the steps.
 
 ### Images
 
@@ -433,16 +499,20 @@ published when a `vX.Y.Z` tag is pushed and are tagged `X.Y.Z` (and with
 the commit's short SHA), so a chart at `appVersion` X.Y.Z pulls matching
 images with no overrides.
 
-Releases are attested once the repository is public: each release image,
-the chart and each CLI archive carries a signed build provenance
-attestation. Verify one before you deploy it:
+Each release image, the chart and each CLI archive carries a signed build
+provenance attestation. Verify them before you deploy (with the GitHub CLI
+signed in, as under "Install the CLI" above); each command exits non-zero
+unless the artifact's digest matches an attestation signed for the `jp2195`
+account:
 
 ```
-gh attestation verify oci://ghcr.io/jp2195/vantage-api:X.Y.Z --owner jp2195
+gh attestation verify oci://ghcr.io/jp2195/vantage-collector:0.1.0 --owner jp2195
+gh attestation verify oci://ghcr.io/jp2195/vantage-writer:0.1.0 --owner jp2195
+gh attestation verify oci://ghcr.io/jp2195/vantage-api:0.1.0 --owner jp2195
+gh attestation verify oci://ghcr.io/jp2195/charts/vantage:0.1.0 --owner jp2195
 ```
 
-Until a release exists for the version you are installing, build and push
-your own:
+To run code that has no published images, build and push your own:
 
 ```
 make push-images REGISTRY=<your-registry>
@@ -533,7 +603,9 @@ default install fails the render with a message saying how to supply them.
 Two ways:
 
 - **Bring your own**, via `deploy/nats-tls/gen-certs.sh --release <release>
-  --namespace <ns>` followed by `kubectl apply -n <ns> -f nats-tls/secrets.yaml`,
+  --namespace <ns>` followed by `kubectl apply -n <ns> -f nats-tls/secrets.yaml`
+  (installing from the registry, download the script from the release's tag,
+  e.g. `https://raw.githubusercontent.com/jp2195/vantage/v0.1.0/deploy/nats-tls/gen-certs.sh`),
   then set `nats.tls.collectorSecret` / `nats.tls.writerSecret` to the
   script's output. For a release not named `vantage`, also set the
   `nats.tlsCA.secretName` and `nats.config.nats.tls.secretName` it prints;
