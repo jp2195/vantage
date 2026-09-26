@@ -6,6 +6,7 @@ import { inventedColumns } from '@/test-support/columnGuard'
 import linkState from '@/api/fixtures/link-state.json'
 import type { LsCommon, LsLink, LsNode, LsPrefix, Meta, Router } from '@/api/generated'
 import type { LinkStateScope } from '@/api/queries'
+import { declarationsOf } from '@/test-support/styleText'
 
 // "Rule N" below means the link-state rule of that number, as written out
 // in LinkStateGraph.vue's doc comment.
@@ -1014,4 +1015,13 @@ describe('LinkStateView', () => {
       RAIL_PREFIX_COLUMNS.map((c) => c.header),
     )
   })
+})
+
+// The canvas has a measured 500px floor (see the .canvas rule's comment), so
+// on a 390px phone the pane is narrower than its content. Without its own
+// scroller the graph pushed the whole page 174px sideways; with one it
+// scrolls inside the pane, as a wide table does inside its card. jsdom
+// applies no component stylesheet, so this reads the rule itself.
+it('scrolls a graph wider than the screen inside its own pane', () => {
+  expect(declarationsOf('views/LinkStateView.vue', '.pane')).toContain('overflow-x: auto')
 })

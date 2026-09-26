@@ -17,6 +17,8 @@ import type { Router } from '@/api/generated'
 import { type GuardedColumn, inventedColumns } from '@/test-support/columnGuard'
 import { unresolvable } from '@/test-support/routeResolution'
 import { tableMinWidthPx } from '@/test-support/columnsOf'
+import { crampedAt } from '@/test-support/tableFloor'
+import { rulesOf } from '@/test-support/styleText'
 import { formatCount } from '@/lib/formatCount'
 
 // One fixture, one pending flag and one error per section -- the mock's own
@@ -1129,5 +1131,75 @@ describe('MonitorView peers-by-volume column widths', () => {
       expect(floor, section).toBeDefined()
       if (section !== 'churn-peers') expect(floor!, section).toBeLessThanOrEqual(590)
     }
+  })
+})
+
+// Each table's floor is the narrowest it ever gets, so every column's width
+// there is known, and each must hold its own header and the value it was cut
+// off at. The px below are each header or value plus the cell's 36px of
+// padding, measured in Chromium; jsdom computes no layout.
+describe('MonitorView column floors', () => {
+  const floorOf = (w: VueWrapper, section: string) =>
+    tableMinWidthPx(w.get(`[data-section="${section}"]`) as never)
+
+  // At the old 760px floor ASN's 12% was 91px, and a 4-byte ASN such as
+  // 4200000002 (109px) read "42000..." on a phone. The floor must still not
+  // bind on a desktop, where this full-width table is 925px at a 1024px
+  // viewport.
+  it('floors the peers-by-volume table where a ten-digit ASN fits', () => {
+    const w = mountMonitor()
+    const floor = floorOf(w, 'churn-peers')
+    expect(floor).toBeDefined()
+    expect(crampedAt(columnsOfNamed(w, 'churn-peers'), floor!, { peer_asn: 109 })).toEqual([])
+    expect(floor!).toBeLessThanOrEqual(925)
+  })
+
+  // Five columns left to split evenly gave Router 20%, 112px at the floor,
+  // and 4a8063e2ed30 (123px) was cut off on a phone and at 1366px. Declared
+  // percentages summing to 100, each wide enough for its header at the floor.
+  it('sizes the sessions table for a full sysName and every header', () => {
+    const w = mountMonitor()
+    const columns = columnsOfNamed(w, 'sessions')
+    const widths = columns.map((c) => (c as { width?: string }).width ?? '')
+    expect(widths.every((x) => x.endsWith('%'))).toBe(true)
+    expect(widths.reduce((n, x) => n + parseFloat(x), 0)).toBe(100)
+    const need = { router_sysname: 123, sessions: 91, up: 51, down: 69, view_lost: 94 }
+    expect(crampedAt(columns, floorOf(w, 'sessions')!, need)).toEqual([])
+  })
+
+  // The Loc-RIB Peer cell is an address and a "history" link, 161px for
+  // 172.31.0.90; an even 25% gave it 140px at the floor and cut the link off.
+  it('sizes the Loc-RIB table for an address with its history link', () => {
+    const w = mountMonitor()
+    const columns = columnsOfNamed(w, 'locrib')
+    const widths = columns.map((c) => (c as { width?: string }).width ?? '')
+    expect(widths.every((x) => x.endsWith('%'))).toBe(true)
+    expect(widths.reduce((n, x) => n + parseFloat(x), 0)).toBe(100)
+    const need = { router_ip: 98, peer_ip: 161, reported: 93, archived: 91 }
+    expect(crampedAt(columns, floorOf(w, 'locrib')!, need)).toEqual([])
+  })
+})
+
+// Below 1040px the chart and the event feed stack in one grid column. A bare
+// `1fr` track cannot shrink below its content's min-content width, and the
+// feed's one-line rows held it at 422px on a 390px phone, so the whole page
+// scrolled sideways. jsdom applies no component stylesheet, so these read
+// the rules themselves.
+describe('MonitorView phone layout', () => {
+  it('lets the stacked chart and feed column shrink to the screen', () => {
+    // The @media rule's whole body; the desktop rule also declares display.
+    expect(rulesOf('views/MonitorView.vue', '.churn-row')).toContain(
+      'grid-template-columns: minmax(0, 1fr);',
+    )
+  })
+
+  // Only in the stacked layout: the desktop rule must stay unwrapped, or
+  // the rows with an IPv6 peer change shape at 1440.
+  it("wraps an event's line on a phone rather than holding the feed one line wide", () => {
+    // The @media rule's whole body, then the desktop rule, in file order.
+    expect(rulesOf('views/MonitorView.vue', '.line')).toEqual([
+      'flex-wrap: wrap;',
+      'display: flex; align-items: center; gap: 10px;',
+    ])
   })
 })

@@ -2,6 +2,10 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import StatesView from './StatesView.vue'
 import routers from '@/api/fixtures/routers.json'
+import DataTable from '@/components/DataTable.vue'
+import type { GuardedColumn } from '@/test-support/columnGuard'
+import { tableMinWidthPx } from '@/test-support/columnsOf'
+import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
 
 describe('StatesView', () => {
   // The page's whole purpose: the states are distinguishable. If the empty
@@ -63,5 +67,26 @@ describe('StatesView', () => {
     const w = mount(StatesView)
     expect(w.findAll('[data-state]')).toHaveLength(4)
     expect(w.text()).toMatch(/filters excluded/i)
+  })
+})
+
+// Three of the four columns are fixed px, and table-layout:fixed pays those
+// first: with no floor, a 390px phone left Router 0px wide and cut its
+// header off. The floor has to hold the fixed columns plus Router's share
+// of the floor itself, and that share has to hold a 12-character sysName.
+// 123px is 4a8063e2ed30 with the cell's 36px of padding, measured in
+// Chromium; jsdom computes no layout.
+describe('StatesView table floor', () => {
+  it('floors the table wide enough for its fixed columns and a full sysName', () => {
+    const w = mount(StatesView)
+    const tables = w.findAllComponents(DataTable as never)
+    expect(tables.length).toBe(4)
+    for (const t of tables) {
+      const floor = tableMinWidthPx(t as never)
+      expect(floor).toBeDefined()
+      const columns = (t as unknown as { props(n: string): GuardedColumn[] }).props('columns')
+      expect(declaredTotalAt(columns, floor!)).toBeLessThanOrEqual(floor!)
+      expect(crampedAt(columns, floor!, { sysname: 123 })).toEqual([])
+    }
   })
 })

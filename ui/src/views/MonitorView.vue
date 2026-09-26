@@ -203,10 +203,12 @@ const churnPeerRows = computed<RankedPeer[]>(() =>
 // card instead of shrinking until its addresses read "172.2...". Each sits
 // below the narrowest width its panel has on a desktop, so neither binds
 // there: a grid panel is at least 620px, which leaves its table about
-// 590px, and the full-width panel is wider still. 760px for the seven
-// columns below, since 641px already clipped them.
+// 590px, and the full-width panel is wider still, 925px at a 1024px
+// viewport. 920px for the seven columns below: ASN's 12% has to hold a
+// ten-digit 4-byte ASN such as 4200000002, 109px with its padding (measured
+// in Chromium), and at the old 760px floor it got 91px and read "42000...".
 const PANEL_TABLE_MIN_WIDTH = '560px'
-const WIDE_TABLE_MIN_WIDTH = '760px'
+const WIDE_TABLE_MIN_WIDTH = '920px'
 
 const churnPeerColumns: Column<RankedPeer>[] = [
   // 12% for the ASN: 8% of a 641px panel is 51px, which clips even 65010,
@@ -429,23 +431,33 @@ const dumpColumns: Column<RouterDumpCount>[] = [
 // Rendered as DataTable's own plain numeric cells rather than through a
 // custom slot, because these ARE the real, unmodified fields -- nothing is
 // derived here the way the dumps section's composition percentage is.
+// Declared rather than left to split evenly. Five equal columns gave Router
+// 20%, 112px at the panel floor and 122px in a 1366px viewport's panel, and
+// a 12-character sysName such as 4a8063e2ed30 needs 123px with its padding
+// (measured in Chromium). 28% is 157px at the floor; the widest header
+// beside it, VIEW LOST, needs 94px, and 18% is 101px.
 const sessionColumns: Column<RouterSessionCount>[] = [
-  { id: 'router_sysname', header: 'Router' },
-  { id: 'sessions', header: 'Sessions', numeric: true },
-  { id: 'up', header: 'Up', numeric: true },
-  { id: 'down', header: 'Down', numeric: true },
-  { id: 'view_lost', header: 'View lost', numeric: true },
+  { id: 'router_sysname', header: 'Router', width: '28%' },
+  { id: 'sessions', header: 'Sessions', numeric: true, width: '18%' },
+  { id: 'up', header: 'Up', numeric: true, width: '18%' },
+  { id: 'down', header: 'Down', numeric: true, width: '18%' },
+  { id: 'view_lost', header: 'View lost', numeric: true, width: '18%' },
 ]
 
 // No router_sysname on PeerLocRib (api/openapi.yaml's own schema carries
 // only router_ip, peer_ip, reported, archived, has_stat) -- router_ip is
 // the identifying column here, not a stand-in for the sysname convention
 // above.
+// Declared rather than left to split evenly. The Peer cell is an address
+// AND a "history" link, 161px with its padding for 172.31.0.90 (measured in
+// Chromium), and an even 25% gave it 140px at the panel floor and 153px in
+// a 1366px viewport's panel, so the link was cut off. 38% is 213px at the
+// floor. Router is one address, 98px; the numeric headers need 93px.
 const locribColumns: Column<PeerLocRib>[] = [
-  { id: 'router_ip', header: 'Router' },
-  { id: 'peer_ip', header: 'Peer' },
-  { id: 'reported', header: 'Reported', numeric: true },
-  { id: 'archived', header: 'Archived', numeric: true },
+  { id: 'router_ip', header: 'Router', width: '26%' },
+  { id: 'peer_ip', header: 'Peer', width: '38%' },
+  { id: 'reported', header: 'Reported', numeric: true, width: '18%' },
+  { id: 'archived', header: 'Archived', numeric: true, width: '18%' },
 ]
 
 const flagColumns: Column<FlagCount>[] = [
@@ -755,7 +767,16 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
    kind, a router/peer pair and a reason, and the grid's own note records
    620px as the narrowest a table on this screen reads at. */
 .churn-row { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px; }
-@media (max-width: 1040px) { .churn-row { grid-template-columns: 1fr; } }
+/* minmax(0, 1fr), not 1fr: a bare 1fr track cannot shrink below its
+   content's min-content width, and on a 390px phone the event feed's
+   one-line rows held it at 422px, so the whole page scrolled sideways. */
+@media (max-width: 1040px) { .churn-row { grid-template-columns: minmax(0, 1fr); } }
+/* And an event's line may wrap there, so that the clock, kind, pair and
+   collector need not share one line on a phone. Only below the same
+   breakpoint: on a desktop the pair already wraps inside its own span, and
+   letting the whole line wrap too would move the collector id under the
+   clock on the rows with an IPv6 peer. */
+@media (max-width: 1040px) { .line { flex-wrap: wrap; } }
 /* Two columns where there is room, so the four signals and the event feed
    read as one dashboard rather than a stack four screens tall. */
 /* 620px is the narrowest a five-column table on this screen reads at
