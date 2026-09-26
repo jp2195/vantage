@@ -211,9 +211,19 @@ Health checks, querying ClickHouse directly, and tearing it all down:
 
 ## Deploying it for real
 
-`deploy/helm/vantage` is the Kubernetes path, for Helm 3 or Helm 4 (CI
-tests the chart with both), and it is deliberately bring-your-own for
-everything that stores data:
+The Helm chart is the Kubernetes path, for Helm 3 or Helm 4 (CI tests the
+chart with both). Each release publishes it to GitHub Container Registry
+with its NATS subchart bundled, so an install needs no clone of this
+repository:
+
+```
+helm install vantage oci://ghcr.io/jp2195/charts/vantage --version 0.1.0 \
+  --namespace vantage -f my-values.yaml --wait --wait-for-jobs --timeout 10m
+```
+
+That line is the last step, not the first: the chart is deliberately
+bring-your-own for everything that stores data, so `my-values.yaml` has to
+name a database and NATS certificates that already exist.
 
 - **ClickHouse is yours.** The chart ships none and has no bundled mode —
   `clickhouse.externalHost` and explicit credentials are required, and a
@@ -221,19 +231,28 @@ everything that stores data:
   apply vantage's own schema.
 - **NATS** comes as a subchart: by default three servers, keeping three
   copies of every stream the archive depends on. Or point `nats.externalURL`
-  at your own.
+  at your own. Its mutual TLS is on by default, with certificates you
+  create once with `gen-certs.sh` or cert-manager.
 - **Grafana is not deployed at all.** The thirteen dashboards in
   `deploy/grafana/` import into whatever instance you already run.
 
-The chart's images default to `ghcr.io/jp2195/vantage-collector`,
-`-writer` and `-api`, tagged with the chart's `appVersion`, so a released
-chart pulls matching images with no overrides. To run code that is not in
-a release, build your own with `make push-images REGISTRY=<your-registry>`
-and point `images.*.repository` and `images.*.tag` at them.
+The chart reference's [quick start](deploy/helm/README.md#quick-start) has
+every step before that line. The docs pin `0.1.0`; use the newest version on
+the [Releases page](https://github.com/jp2195/vantage/releases). `helm show
+values oci://ghcr.io/jp2195/charts/vantage --version 0.1.0` prints every
+setting with its default.
 
-Each release also publishes the `vantage` CLI for Linux, macOS and Windows
-on the GitHub Releases page, with checksums, SBOMs and signed build
-provenance.
+The chart's images are `ghcr.io/jp2195/vantage-collector`, `-writer` and
+`-api`, tagged with the chart's `appVersion`, so a released chart pulls
+matching images with no overrides. To run code that is not in a release,
+install `deploy/helm/vantage` from a clone ("Installing from source" in the
+chart reference) and build your own images with
+`make push-images REGISTRY=<your-registry>`.
+
+Each release also publishes the `vantage` CLI for Linux, macOS and Windows,
+with checksums, SBOMs and signed build provenance for it, the images and the
+chart: [Install the CLI](docs/deploying.md#install-the-cli) has the download
+and the checks.
 
 An overview, applying the schema by hand, and the AS-holder-name data:
 [`docs/deploying.md`](docs/deploying.md). The full chart reference:

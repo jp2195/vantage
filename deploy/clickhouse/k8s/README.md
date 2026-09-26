@@ -83,7 +83,10 @@ below use a throwaway probe pod for exactly that reason.
 ## Prerequisites
 
 - cert-manager, running in the cluster. The operator's webhook needs it for
-  its TLS certificate and will not start without it:
+  its TLS certificate and will not start without it. If you do not run it
+  yet, cert-manager's
+  [Helm install](https://cert-manager.io/docs/installation/helm/) is one
+  command. Check it:
 
   ```bash
   kubectl get pods -A | grep cert-manager
@@ -102,6 +105,16 @@ below use a throwaway probe pod for exactly that reason.
   (`<service>.<clickhouse-namespace>.svc`) in step 6, and create the Secret
   in step 2 in the vantage release's namespace.
 
+- A copy of `clickhouse-values.yaml`. Without a clone of this repository,
+  download it from the tag of the vantage release you install:
+
+  ```bash
+  curl -fsSLO https://raw.githubusercontent.com/jp2195/vantage/v0.1.0/deploy/clickhouse/k8s/clickhouse-values.yaml
+  ```
+
+  The commands below read it from the current directory; from a clone, use
+  `deploy/clickhouse/k8s/clickhouse-values.yaml`.
+
 - Edit `clickhouse-values.yaml` for your cluster before step 3:
   - `storageClassName` (both the ClickHouse and Keeper volumes). Left
     unset, the PVCs use the cluster's default StorageClass. This volume
@@ -109,8 +122,13 @@ below use a throwaway probe pod for exactly that reason.
     is worth considering.
   - The `vantage` user's `networks`: your cluster's pod CIDR and Service
     CIDR. The committed values (`10.244.0.0/16`, `10.96.0.0/12`) are common
-    defaults and may not match your cluster. If they are wrong, the writer and API are refused with the
-    same `AUTHENTICATION_FAILED` a wrong password gives (see step 5).
+    defaults and may not match your cluster: k3s, for one, uses
+    `10.42.0.0/16` and `10.43.0.0/16`. `kubectl get nodes -o
+    jsonpath='{.items[*].spec.podCIDR}'` prints each node's slice of the pod
+    CIDR, and the `kubernetes` Service's `ClusterIP` (`kubectl get svc
+    kubernetes -n default`) is the first address of the Service CIDR. If they
+    are wrong, the writer and API are refused with the same
+    `AUTHENTICATION_FAILED` a wrong password gives (see step 5).
   - `containerTemplate.resources` and the volume sizes, for your nodes.
 
 ## 1. Install the operator
@@ -159,7 +177,7 @@ DEFAULT_SHA256=$(printf '%s' "$DEFAULT_PASS" | sha256sum | cut -d' ' -f1)
 
 helm install vantage-ch \
   oci://ghcr.io/clickhouse/clickhouse-cluster-helm --version 0.0.7 \
-  -n "$NS" -f deploy/clickhouse/k8s/clickhouse-values.yaml \
+  -n "$NS" -f clickhouse-values.yaml \
   --set clickhouse.spec.settings.extraUsersConfig.users.vantage.password_sha256_hex="$CHPASS_SHA256" \
   --set clickhouse.spec.settings.extraUsersConfig.users.default.password_sha256_hex="$DEFAULT_SHA256" \
   --wait --wait-for-jobs --timeout 15m
@@ -256,22 +274,24 @@ in `clickhouse-values.yaml` do not match your cluster.
 
 ## 6. Point the vantage release at it
 
-First fetch the chart's NATS dependency and create the NATS client
-certificates, as in the quick start of `deploy/helm/README.md`. NATS mutual
-TLS is on by default and the chart generates no keys, so the render fails
-without them:
+First create the NATS client certificates, as in the quick start of
+`deploy/helm/README.md`. NATS mutual TLS is on by default and the chart
+generates no keys, so the render fails without them. The script comes from
+the release's tag (from a clone, run `deploy/nats-tls/gen-certs.sh`):
 
 ```bash
-helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-helm dependency build deploy/helm/vantage
-deploy/nats-tls/gen-certs.sh --release vantage --namespace "$NS"
+curl -fsSLO https://raw.githubusercontent.com/jp2195/vantage/v0.1.0/deploy/nats-tls/gen-certs.sh
+bash gen-certs.sh --release vantage --namespace "$NS"
 kubectl apply -n "$NS" -f nats-tls/secrets.yaml
 ```
 
-Then install:
+Then install the published chart, which bundles its NATS subchart (use the
+newest version on the
+[Releases page](https://github.com/jp2195/vantage/releases); from a clone,
+see "Installing from source" in `deploy/helm/README.md`):
 
 ```bash
-helm upgrade --install vantage deploy/helm/vantage \
+helm install vantage oci://ghcr.io/jp2195/charts/vantage --version 0.1.0 \
   --namespace "$NS" \
   --set clickhouse.externalHost="$CH_SVC" \
   --set clickhouse.existingSecret=vantage-clickhouse-external \
@@ -315,9 +335,10 @@ to refuse to start. Read the version, not just the names:
 kubectl -n "$NS" exec ch-probe -- clickhouse-client --host "$CH_SVC" \
   --user vantage --password "$CHPASS" \
   --query "SELECT max(version) FROM vantage.schema_version"
-# Must equal the version deploy/clickhouse/schema.sql establishes, which is
-# the same number sink.ExpectedSchemaVersion carries. The binaries refuse to
-# start against anything else.
+# Must equal the number in the schema Job's "schema version verified: <N>"
+# line above: the version deploy/clickhouse/schema.sql establishes, and the
+# number sink.ExpectedSchemaVersion carries. The binaries refuse to start
+# against anything else.
 
 kubectl -n "$NS" exec ch-probe -- clickhouse-client --host "$CH_SVC" \
   --user vantage --password "$CHPASS" \

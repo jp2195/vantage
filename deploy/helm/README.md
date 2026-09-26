@@ -6,6 +6,16 @@ JetStream (the official NATS chart, as a subchart), the writer, the read API,
 and a Job that applies vantage's schema. It does **not** deploy ClickHouse;
 you point it at one you run.
 
+Each release publishes the chart to GitHub Container Registry as
+`oci://ghcr.io/jp2195/charts/vantage`, with the NATS subchart bundled in the
+package, so installing it needs no `helm repo add`, no dependency fetch and
+no clone of this repository. The commands below pin `--version 0.1.0`; use
+the newest version on the
+[Releases page](https://github.com/jp2195/vantage/releases). To see every
+value the chart takes, with its default and the comments explaining it:
+
+    helm show values oci://ghcr.io/jp2195/charts/vantage --version 0.1.0
+
 The examples below install a release named `vantage` into a namespace named
 `vantage`, and keep your settings in a values file called `my-values.yaml`.
 Substitute your own names; where a resource name depends on the release name,
@@ -32,15 +42,14 @@ document are the same for both; the differences that reach an install are:
 
 ## Quick start
 
-    helm repo add nats https://nats-io.github.io/k8s/helm/charts/
-    helm dependency build deploy/helm/vantage
-
     kubectl create namespace vantage
     kubectl -n vantage create secret generic vantage-clickhouse-credentials \
       --from-literal=username=vantage --from-literal=password='<password>'
 
     # NATS mutual TLS is on by default and the chart generates no keys.
-    deploy/nats-tls/gen-certs.sh --release vantage --namespace vantage
+    # gen-certs.sh comes from the release's tag; see "NATS TLS" below.
+    curl -fsSLO https://raw.githubusercontent.com/jp2195/vantage/v0.1.0/deploy/nats-tls/gen-certs.sh
+    bash gen-certs.sh --release vantage --namespace vantage
     kubectl apply -n vantage -f nats-tls/secrets.yaml
 
     cat > my-values.yaml <<'EOF'
@@ -55,7 +64,7 @@ document are the same for both; the differences that reach an install are:
         writerSecret: vantage-vantage-nats-writer-tls
     EOF
 
-    helm upgrade --install vantage deploy/helm/vantage \
+    helm install vantage oci://ghcr.io/jp2195/charts/vantage --version 0.1.0 \
       --namespace vantage \
       -f my-values.yaml \
       --wait --wait-for-jobs --timeout 10m
@@ -98,7 +107,11 @@ Two steps above are security defaults, not ceremony:
 Keep every setting in `my-values.yaml` and pass it on every `helm upgrade`.
 `helm upgrade` with a `--set` and no `-f` starts from the chart's defaults,
 not from what is installed, so a one-off `--set` would drop the required
-ClickHouse values and the render would fail.
+ClickHouse values and the render would fail. To move to a newer release,
+name its version:
+
+    helm upgrade vantage oci://ghcr.io/jp2195/charts/vantage --version <new version> \
+      --namespace vantage -f my-values.yaml --wait --wait-for-jobs --timeout 10m
 
 ### GitOps (Argo CD, Flux)
 
@@ -110,27 +123,45 @@ and every client's token stops working. Create the token Secret yourself and
 set `api.existingSecret` (one key per token name, e.g. `lab`), or pin
 `api.tokens[].token`, which puts the token in your values.
 
-## Fetch the chart dependencies first
+## Installing from source
 
-The NATS subchart is a dependency, not a vendored copy: `Chart.lock` pins its
-version (the NATS chart's major and minor version follow the nats-server
-release it ships, so chart 2.14.x runs nats-server 2.14) and `.gitignore`
-excludes the fetched `.tgz` from `charts/`, so a fresh clone has
-`Chart.yaml` and `Chart.lock` but no `charts/nats-*.tgz`. Every
-`helm install`/`upgrade`/`template`/`lint` command fails until you run:
+Install from a clone of this repository to run code that is not in a
+release, or to work on the chart itself. The chart in the repository does
+not vendor its NATS subchart: `Chart.lock` pins the version (the NATS chart's
+major and minor version follow the nats-server release it ships, so chart
+2.14.x runs nats-server 2.14) and `.gitignore` excludes the fetched `.tgz`
+from `charts/`, so a fresh clone has `Chart.yaml` and `Chart.lock` but no
+`charts/nats-*.tgz`, and every `helm install`/`upgrade`/`template`/`lint`
+command fails until you fetch it:
+
+    git clone https://github.com/jp2195/vantage.git
+    cd vantage
+    make chart-deps
+
+`make chart-deps` runs the two commands below, and skips them when the
+fetched chart is already current:
 
     helm repo add nats https://nats-io.github.io/k8s/helm/charts/
     helm dependency build deploy/helm/vantage
 
-or, from the repository root, `make chart-deps`, which runs the same commands
-and skips them when the fetched chart is already current. The `helm repo add`
-is required: `helm dependency build` finds `Chart.lock`'s repository only
-among repositories already added to your helm client.
+The `helm repo add` is required: `helm dependency build` finds
+`Chart.lock`'s repository only among repositories already added to your helm
+client. Run `build`, not `update`. `build` fetches exactly what `Chart.lock`
+pins; `update` re-resolves against the NATS repository's current index, can
+pick up a newer version than the one this chart was tested against, and
+rewrites the lock file when it does.
 
-Run `build`, not `update`. `build` fetches exactly what `Chart.lock` pins;
-`update` re-resolves against the NATS repository's current index, can pick up
-a newer version than the one this chart was tested against, and rewrites the
-lock file when it does.
+Then follow the quick start with two changes: run
+`deploy/nats-tls/gen-certs.sh` from the clone instead of downloading it, and
+install the chart directory instead of the published chart:
+
+    helm install vantage deploy/helm/vantage \
+      --namespace vantage \
+      -f my-values.yaml \
+      --wait --wait-for-jobs --timeout 10m
+
+The images still default to the chart's `appVersion`. For code that has no
+published images, build your own, as "Building your own" below describes.
 
 ## Images
 
@@ -718,7 +749,8 @@ streams yet or still holds the old single-server ones:
 
 In order (release `vantage` in namespace `vantage`; substitute
 `<fullname>-collector`, `<fullname>-writer` and `<release>-nats-0` for other
-names):
+names; `<version>` is the chart version you are moving to, and an install
+from source uses `deploy/helm/vantage` with no `--version` in its place):
 
 1. **Stop the collector.** Routers disconnect here.
 
@@ -737,8 +769,8 @@ names):
    cert-manager re-issues it.
 4. **Upgrade with the collector held at zero:**
 
-       helm upgrade vantage deploy/helm/vantage -n vantage -f my-values.yaml \
-         --set collector.replicas=0 --wait --wait-for-jobs
+       helm upgrade vantage oci://ghcr.io/jp2195/charts/vantage --version <version> \
+         -n vantage -f my-values.yaml --set collector.replicas=0 --wait --wait-for-jobs
 
    Without `--set collector.replicas=0` this upgrade would start the
    collector by itself: the collector's config changes (its streams become
@@ -757,8 +789,8 @@ names):
    ready.
 6. **Start the collector** by upgrading again without the override:
 
-       helm upgrade vantage deploy/helm/vantage -n vantage -f my-values.yaml \
-         --wait --wait-for-jobs
+       helm upgrade vantage oci://ghcr.io/jp2195/charts/vantage --version <version> \
+         -n vantage -f my-values.yaml --wait --wait-for-jobs
 
    It creates the streams, three-copy, as it starts. Routers reconnect.
 7. **Restart the writer**, which creates its consumers only at startup and
@@ -856,13 +888,23 @@ So the certificates come from one of two places outside the chart.
 
 ### Bring your own (`deploy/nats-tls/gen-certs.sh`)
 
-    deploy/nats-tls/gen-certs.sh --release vantage --namespace vantage
+The script lives in this repository, not in the chart package. Installing
+from the registry, download it from the tag of the release you install; it
+is a self-contained bash script that needs only `openssl` (1.1.1 or newer;
+see `deploy/nats-tls/README.md` for macOS), `base64`, `tr` and `mktemp`:
+
+    curl -fsSLO https://raw.githubusercontent.com/jp2195/vantage/v0.1.0/deploy/nats-tls/gen-certs.sh
+    bash gen-certs.sh --release vantage --namespace vantage
     kubectl apply -n vantage -f nats-tls/secrets.yaml
+
+From a clone, run `deploy/nats-tls/gen-certs.sh` with the same flags.
 
 `--release` and `--namespace` must match the Helm release you install: the
 certificate names and SANs are built from them. The script writes to
-`./nats-tls` by default (`--out` to change it) and prints the values block
-that wires its output in. For release `vantage` that is the block below.
+`./nats-tls` by default (`--out` to change it), with three private keys in
+`secrets.yaml` and the CA's key in `ca.key`: keep that directory out of any
+git repository (inside a clone, `.gitignore` already excludes it). It prints
+the values block that wires its output in. For release `vantage` that is the block below.
 Only the two client Secret names differ from the chart's defaults, which is
 why the quick start sets just those; for another release name, the server
 `secretName`s differ too, so paste the whole block the script prints.
