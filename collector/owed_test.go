@@ -281,23 +281,61 @@ func TestAnOwedEventThatFailsAgainIsOwedAgain(t *testing.T) {
 	}
 }
 
+// refusingPub is synchronousFailPub that reports itself disconnected from the
+// moment it refuses call lastCall. From then on a retry tick finds the
+// publisher down and takes nothing from the ledger, so what the ledger holds
+// stops changing. down is closed on the first Connected call made while
+// disconnected.
+type refusingPub struct {
+	synchronousFailPub
+	lastCall  int32
+	gone      atomic.Bool
+	down      chan struct{}
+	closeDown sync.Once
+}
+
+func (r *refusingPub) Publish(ev Event) error {
+	err := r.synchronousFailPub.Publish(ev)
+	if r.calls.Load() >= r.lastCall {
+		r.gone.Store(true)
+	}
+	return err
+}
+
+func (r *refusingPub) Connected() bool {
+	if !r.gone.Load() {
+		return true
+	}
+	r.closeDown.Do(func() { close(r.down) })
+	return false
+}
+
 // TestAnOwedEventRefusedAtTheCallIsOwedAgain: the same, for a republish the
 // publisher refuses synchronously. It is tried every interval and stays owed.
+//
+// A republish takes the event out of the ledger and puts it back only once the
+// refusal has returned, so the ledger is read at a point where no republish is
+// in flight: after the third republish is refused, the publisher reports
+// itself disconnected. The retry loop asks whether it is connected only when
+// the ledger is not empty, so that question, asked while disconnected, means
+// the refused event is back in the ledger, and no later tick takes it out.
 func TestAnOwedEventRefusedAtTheCallIsOwedAgain(t *testing.T) {
-	pub := &synchronousFailPub{ok: 2}
+	// The close-out is call 3; calls 4 to 6 are republishes, each refused.
+	pub := &refusingPub{synchronousFailPub: synchronousFailPub{ok: 2}, lastCall: 6, down: make(chan struct{})}
 	srv, ln := serveOwing(t, pub, 5*time.Millisecond)
 	conn := dial(t, ln)
 	writeSession(t, conn, nil)
 	waitEvents(t, &pub.capturePub, 2)
 	conn.Close() // the close-out is the third publish, refused
 
-	// The close-out is call 3; every call past it is a republish.
-	deadline := time.Now().Add(5 * time.Second)
-	for pub.calls.Load() < 6 {
-		if time.Now().After(deadline) {
-			t.Fatalf("%d publish calls, want at least 6: the owed event is retried every interval", pub.calls.Load())
-		}
-		time.Sleep(5 * time.Millisecond)
+	select {
+	case <-pub.down:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("%d publish calls, and the ledger never held the event after the last of them: "+
+			"a refused republish must be owed again and retried every interval", pub.calls.Load())
+	}
+	if n := pub.calls.Load(); n != 6 {
+		t.Errorf("%d publish calls, want 6: three republishes, then none while disconnected", n)
 	}
 	if n := srv.owed.len(); n != 1 {
 		t.Errorf("%d events owed after repeated refusals, want 1", n)
