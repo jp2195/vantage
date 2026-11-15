@@ -142,7 +142,7 @@ jobs:
       # dependencies as well.
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v4.3.0
+          version: v4.3.1
       # helm dependency build resolves Chart.lock's repository by URL, and
       # only among repositories added to this helm client.
       - run: helm repo add nats https://nats-io.github.io/k8s/helm/charts/ && helm dependency build deploy/helm/vantage
