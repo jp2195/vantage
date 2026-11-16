@@ -172,7 +172,7 @@ const EVENTS_MIN_WIDTH = '1098px'
       :row-attrs="rowAttrs"
       :min-width="EVENTS_MIN_WIDTH"
     >
-      <template #cell-router_sysname="{ row }">{{ routerLabel(row.router_sysname) }}</template>
+      <template #cell-router_sysname="{ row }"><span :class="{ unnamed: !row.router_sysname }">{{ routerLabel(row.router_sysname) }}</span></template>
       <template #cell-collector="{ row }">
         <span class="mono">{{ (row as PeerEvent).collector }}</span>
       </template>
@@ -207,4 +207,7 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
   text-transform: none; letter-spacing: normal;
 }
 .window-note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; color: var(--muted); }
 </style>

@@ -12,6 +12,7 @@ import fleetEvents from '@/api/fixtures/fleet-events.json'
 import twoCollectors from '@/api/fixtures/events-two-collectors.json'
 import { twoCollectorRouters } from '@/test-support/twoCollectorRouters'
 import routersStale from '@/api/fixtures/routers-stale.json'
+import peersStale from '@/api/fixtures/peers-stale.json'
 import { bestVantageRouters } from '@/lib/bestVantage'
 import type { Router } from '@/api/generated'
 import { type GuardedColumn, inventedColumns } from '@/test-support/columnGuard'
@@ -1201,5 +1202,31 @@ describe('MonitorView phone layout', () => {
       'flex-wrap: wrap;',
       'display: flex; align-items: center; gap: 10px;',
     ])
+  })
+})
+
+describe('MonitorView needs attention', () => {
+  // The tiles say how many sessions are not up; this panel says which, with
+  // a way into each. peers-stale.json is a real capture holding both a
+  // view_lost and a stale session.
+  it('lists the sessions that are not up, worst first, each opening its peer', () => {
+    joinPeersFixture = peersStale
+    const w = mountMonitor()
+    const panel = w.get('[data-section="attention"]')
+    const states = panel.findAll('li').map((li) => li.get('.pill').text())
+    const notUp = peersStale.data.filter((p) => p.state !== 'up')
+    expect(states).toHaveLength(notUp.length)
+    // view lost (blind) before stale (unvouched for).
+    expect(states.indexOf('view lost')).toBeLessThan(states.lastIndexOf('stale'))
+    expect(states.lastIndexOf('view lost')).toBeLessThan(states.indexOf('stale'))
+    const first = notUp.find((p) => p.state === 'view_lost')!
+    const links = panel.findAllComponents(RouterLinkStub).map((l: { props: (name: string) => unknown }) => l.props('to'))
+    expect(links).toContain(`/peers/${first.router_ip}/${first.peer_ip}`)
+  })
+
+  it('is absent when every session is up, rather than an empty box', () => {
+    joinPeersFixture = { data: joinPeers.data.filter((p) => p.state === 'up'), meta: joinPeers.meta }
+    const w = mountMonitor()
+    expect(w.find('[data-section="attention"]').exists()).toBe(false)
   })
 })

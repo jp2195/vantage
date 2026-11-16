@@ -90,7 +90,7 @@ const ROUTERS_MIN_WIDTH = '880px'
       <!-- A router's name opens its peers: the inventory row was a dead end,
            and "which sessions does this router have" is the next question. -->
       <template #cell-sysname="{ row }">
-        <RouterLink :to="{ path: '/peers', query: { router: row.ip } }">{{ routerLabel(row.sysname) }}</RouterLink>
+        <RouterLink :to="{ path: '/peers', query: { router: row.ip } }" :class="{ unnamed: !row.sysname }">{{ routerLabel(row.sysname) }}</RouterLink>
       </template>
       <template #cell-last_seen="{ row }">{{ formatClock(row.last_seen) }}</template>
     </DataTable>
@@ -101,4 +101,7 @@ const ROUTERS_MIN_WIDTH = '880px'
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .lede { margin: 0 0 4px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; }
 </style>

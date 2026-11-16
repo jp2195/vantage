@@ -110,6 +110,24 @@ const churnPeers = useCollectionChurnPeers(since)
 const joinPeers = usePeers(ref(undefined), ref(undefined))
 
 /**
+ * The sessions the tiles count as not up, as rows you can open. "3 view
+ * lost" says how many; this says which. Worst first, the same order Peers
+ * sorts its State column by, and capped so a bad day cannot push the rest
+ * of the screen away: the remainder is one link to Peers.
+ *
+ * From /v1/peers, which is NOW, not the window: a session that went down
+ * and came back inside the hour is not listed, and the Sessions breakdown
+ * below is where the window's history lives.
+ */
+const ATTENTION_ORDER: Record<string, number> = { view_lost: 0, down: 1, stale: 2, unspecified: 3 }
+const ATTENTION_CAP = 8
+const attention = computed(() =>
+  (joinPeers.data.value?.data ?? [])
+    .filter((p) => p.state !== 'up')
+    .sort((a, b) => (ATTENTION_ORDER[a.state] ?? 9) - (ATTENTION_ORDER[b.state] ?? 9)),
+)
+
+/**
  * /v1/peers rows grouped by (router, peer) -- BOTH, never peer_ip alone.
  * The same peer address appears under different routers across a fleet
  * (0.0.0.0 is a self-peer every router has), so a join keyed on the peer
@@ -518,6 +536,24 @@ function stepBreakdown(by: 1 | -1) {
          is the SHAPE of the window and the event feed is what made that
          shape, so the two are read together rather than a scroll apart,
          or the chart reads as a silhouette. -->
+    <section v-if="attention.length" class="panel attention" data-section="attention">
+      <div class="panel-head">
+        <h2>Needs attention <span class="mono count">{{ attention.length }}</span></h2>
+        <RouterLink class="more" to="/peers">All peers</RouterLink>
+      </div>
+      <p class="note">Sessions that are not up right now, worst first.</p>
+      <ul class="attention-list">
+        <li v-for="p in attention.slice(0, ATTENTION_CAP)" :key="`${p.collector}|${p.router_ip}|${p.peer_ip}|${p.rib}`">
+          <StatePill :state="p.state" />
+          <RouterLink class="mono" :to="`/peers/${p.router_ip}/${p.peer_ip}`">{{ p.peer_ip }}</RouterLink>
+          <span class="where">on <span class="mono">{{ p.router_ip }}</span> · {{ p.rib }} · AS{{ p.asn }} · {{ p.collector }}</span>
+        </li>
+      </ul>
+      <p v-if="attention.length > ATTENTION_CAP" class="note">
+        and {{ attention.length - ATTENTION_CAP }} more on <RouterLink to="/peers">Peers</RouterLink>
+      </p>
+    </section>
+
     <div class="churn-row" data-row="churn">
     <section class="panel" data-section="churn">
       <h2>Update churn</h2>
@@ -885,4 +921,16 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
    secondary destination beside the peer address, so it reads as the
    quieter of the two rather than competing with it. */
 .history { margin-left: 7px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.attention .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.attention .count { margin-left: 6px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
+.attention .more { font: 500 var(--text-sm) var(--font-ui); }
+.attention-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 0 var(--space-6);
+}
+.attention-list li {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  padding: var(--space-2) 0; border-top: 1px solid var(--line-faint); font: 400 var(--text-data) var(--font-ui);
+}
+.attention-list .where { color: var(--muted); font-size: var(--text-sm); }
 </style>

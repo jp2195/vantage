@@ -456,16 +456,22 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
           :min-width="ROUTER_TABLE_MIN_WIDTH"
         >
           <template #cell-sysname="{ row }">
-            {{ routerLabel((row as CollectorRouter).sysname) }}
+            <span :class="{ unnamed: !(row as CollectorRouter).sysname }">{{ routerLabel((row as CollectorRouter).sysname) }}</span>
             <div v-if="(row as CollectorRouter).sys_descr" class="os-line" data-os-line>
               {{ (row as CollectorRouter).sys_descr }}
             </div>
           </template>
+          <!-- Up always, the rest only when nonzero: the cell is read for
+               what is wrong, and four counts with three zeros wrapped to two
+               lines in a third of a card. The tile above still says every
+               count for the collector as a whole. -->
           <template #cell-peers_up="{ row }">
-            {{ (row as CollectorRouter).peers_up }} up ·
-            {{ (row as CollectorRouter).peers_down }} down ·
-            {{ (row as CollectorRouter).peers_view_lost }} view lost ·
-            {{ (row as CollectorRouter).peers_stale }} stale
+            <span class="peer-counts">
+              <span class="mono">{{ (row as CollectorRouter).peers_up }} up</span>
+              <span v-if="(row as CollectorRouter).peers_down" class="pc down">{{ (row as CollectorRouter).peers_down }} down</span>
+              <span v-if="(row as CollectorRouter).peers_view_lost" class="pc lost">{{ (row as CollectorRouter).peers_view_lost }} view lost</span>
+              <span v-if="(row as CollectorRouter).peers_stale" class="pc stale">{{ (row as CollectorRouter).peers_stale }} stale</span>
+            </span>
           </template>
         </DataTable>
         <p v-else class="quiet" data-not-archived>{{ notArchivedNote(c) }}</p>
@@ -510,4 +516,12 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 .plot rect.current { fill: var(--muted); }
 .routers { font-size: 11px; }
 .os-line { color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.peer-counts { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.pc { padding: 1px 7px; border-radius: var(--radius-full); font: 500 var(--text-sm) var(--font-ui); white-space: nowrap; }
+.pc.down { background: var(--warn-tint); color: var(--warn-ink); }
+.pc.lost { background: var(--bad-tint); color: var(--bad-2); }
+.pc.stale { background: var(--neutral-chip); color: var(--ink-2); outline: 1px dashed var(--muted-2); outline-offset: -1px; }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; color: var(--muted); }
 </style>

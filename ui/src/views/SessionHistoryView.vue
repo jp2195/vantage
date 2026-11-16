@@ -305,7 +305,7 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
         :row-attrs="rowAttrs"
         :min-width="SESSION_HISTORY_MIN_WIDTH"
       >
-        <template #cell-router_sysname="{ row }">{{ routerLabel(row.router_sysname) }}</template>
+        <template #cell-router_sysname="{ row }"><span :class="{ unnamed: !row.router_sysname }">{{ routerLabel(row.router_sysname) }}</span></template>
         <template #cell-ts_collector="{ row }">
           <span class="mono">{{ formatClock((row as PeerEvent).ts_collector) }}</span>
         </template>
@@ -345,4 +345,7 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
   text-transform: none; letter-spacing: normal;
 }
 .more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; color: var(--muted); }
 </style>
