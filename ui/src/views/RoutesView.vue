@@ -5,6 +5,7 @@ import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import DumpStateMark from '@/components/DumpStateMark.vue'
 import ScopePicker from '@/components/ScopePicker.vue'
+import Notice from '@/components/Notice.vue'
 import { useAsNames, useRibPage, type RibScope } from '@/api/queries'
 import {
   asNamesNotice,
@@ -203,11 +204,11 @@ const counts = computed(() => {
     <p v-if="!scope" class="quiet">Choose a router and peer to walk its RIB.</p>
 
     <template v-else>
-      <p v-if="walk.restarted.value" class="restart" role="alert">
+      <Notice v-if="walk.restarted.value" tone="warn" class="restart" role="alert">
         The BMP session changed while this list was being walked, so the cursor
         no longer refers to the view it started in. The list restarted rather
         than joining rows from two different views.
-      </p>
+      </Notice>
 
       <!-- The AS holder-name dataset's own state, said ONCE for the whole
            screen -- never once per row. The two branches are mutually
@@ -315,6 +316,5 @@ const counts = computed(() => {
   font: 500 10.5px var(--font-ui);
 }
 .detail:hover { border-color: var(--ink); color: var(--ink); }
-.restart { margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
-.more { align-self: flex-start; background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
 </style>

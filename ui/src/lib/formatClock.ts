@@ -1,3 +1,14 @@
+/** Seconds-precision wall clock, 24-hour whatever the locale's default. */
+const TIME: Intl.DateTimeFormatOptions = {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+}
+
+/** The date half of a row's timestamp: "Sep 22, 2026" in en-US. */
+const DATE: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' }
+
 /**
  * Renders an ISO instant ("2026-09-06T19:14:28.788894Z") the way an
  * operator reads a clock, not a string with a T, a Z and six digits of
@@ -12,15 +23,23 @@
  * timezone or precision option the others never got -- so it lives in
  * `lib/` once, alongside `lib/eventReason.ts`, rather than in any one
  * screen.
+ *
+ * On a 24-hour clock, in every locale. The screens used to mix three
+ * renderings of the same kind of instant: the chrome said "12:05:58 PM",
+ * the table footer said "12:05:58" and a row said "Sep 22, 2026, 11:46:35
+ * AM". Operators read these beside router logs and syslog, which are
+ * 24-hour, and so is ChurnChart's axis. The year stays: retention is 90
+ * days and an archive can go quiet across New Year.
  */
 export function formatClock(iso: string): string {
-  return new Date(iso).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })
+  return new Date(iso).toLocaleString([], { ...DATE, ...TIME })
 }
 
 /**
  * The same instant as a bare wall clock -- "19:55:15" -- for the chrome's
- * updated stamp, where the date is noise: it is always today, and the
- * cluster has one line of room beside a nine-item nav.
+ * updated stamp and the table footer's "complete as of", where the date is
+ * noise: it is always today, and the cluster has one line of room beside
+ * the nav.
  *
  * Its own function rather than an option on formatClock, because the two
  * have different jobs. formatClock renders a row's timestamp, where the
@@ -28,7 +47,7 @@ export function formatClock(iso: string): string {
  * at", where it is not.
  */
 export function formatTimeOfDay(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { timeStyle: 'medium' })
+  return new Date(iso).toLocaleTimeString([], TIME)
 }
 
 /**

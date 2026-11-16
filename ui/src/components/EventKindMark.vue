@@ -35,13 +35,30 @@ const KIND_TITLE: Record<PeerEvent['kind'], string> = {
 </template>
 
 <style scoped>
-.kind-mark { display: inline-block; padding: 2px 8px; border-radius: 20px; font: 500 10.5px var(--font-ui); }
+.kind-mark { display: inline-block; padding: 2px 9px 2px 7px; border-radius: var(--radius-full); font: 500 var(--text-sm) var(--font-ui); white-space: nowrap; }
 .kind-mark.up { background: var(--good-tint); color: var(--good); }
 /* down is amber: the network told us something. view_lost is red: we are
    blind. unspecified is neutral: the pipeline made no claim at all. The
    color difference is the finding, not decoration -- same convention as
    StatePill.vue. */
-.kind-mark.down { background: var(--accent-tint); color: var(--accent-ink-2); }
+.kind-mark.down { background: var(--warn-tint); color: var(--warn-ink); }
 .kind-mark.view_lost { background: var(--bad-tint); color: var(--bad-2); }
 .kind-mark.unspecified { background: var(--neutral-chip); color: var(--muted); }
+/* A shape beside the color, so the state still reads in a grayscale
+   screenshot or to a color-blind operator: a dot is up, a bar is down, a
+   cross is blind, a ring is unknown. Drawn in currentColor, as a pseudo
+   element, so the text a screen reader or a test reads is unchanged. */
+.kind-mark::before {
+  content: ''; display: inline-block; vertical-align: 1px; margin-right: 5px;
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+}
+.kind-mark.down::before { width: 7px; height: 2px; border-radius: 1px; vertical-align: 2px; }
+.kind-mark.view_lost::before {
+  width: 7px; height: 7px; border-radius: 0; vertical-align: 0;
+  background:
+    linear-gradient(45deg, transparent 43%, currentColor 43% 57%, transparent 57%),
+    linear-gradient(-45deg, transparent 43%, currentColor 43% 57%, transparent 57%);
+}
+.kind-mark.unspecified::before { display: none; }
+
 </style>

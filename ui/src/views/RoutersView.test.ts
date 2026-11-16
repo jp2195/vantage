@@ -6,6 +6,7 @@ import routers from '@/api/fixtures/routers.json'
 import routersStale from '@/api/fixtures/routers-stale.json'
 import { inventedColumns } from '@/test-support/columnGuard'
 import { twoCollectorRouters } from '@/test-support/twoCollectorRouters'
+import { formatClock } from '@/lib/formatClock'
 
 // Set inside each test below via vi.mocked(...).mockReturnValue, never at
 // module scope: the isolation rule requires every test to pass alone via
@@ -142,10 +143,7 @@ describe('RoutersView', () => {
       error: ref(undefined),
     } as never)
     const w = mount(RoutersView)
-    const expected = new Date(routers.data[0].last_seen).toLocaleString([], {
-      dateStyle: 'medium',
-      timeStyle: 'medium',
-    })
+    const expected = formatClock(routers.data[0].last_seen)
     expect(w.text()).toContain(expected)
     expect(w.text()).not.toContain(routers.data[0].last_seen)
   })

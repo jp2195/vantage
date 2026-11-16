@@ -46,5 +46,5 @@ code { font-size: 11px; background: var(--surface-2); padding: 2px 5px; border-r
   border-radius: 6px;
   padding: 9px 11px;
 }
-button { background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 9px; font: 500 12px var(--font-ui); cursor: pointer; align-self: flex-start; padding-inline: 16px; }
+button { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 9px; font: 500 12px var(--font-ui); cursor: pointer; align-self: flex-start; padding-inline: 16px; }
 </style>

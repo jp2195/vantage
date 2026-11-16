@@ -27,6 +27,7 @@ import { routerLabel } from '@/lib/routerLabel'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import StatTile from '@/components/StatTile.vue'
+import Notice from '@/components/Notice.vue'
 import { formatClock } from '@/lib/formatClock'
 import { formatCount } from '@/lib/formatCount'
 import { formatGoDuration } from '@/lib/goDuration'
@@ -351,11 +352,11 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
         </header>
         <p class="threshold" data-threshold>{{ badgeOf(c).threshold }}</p>
 
-        <p v-if="c.id_mismatch" class="mismatch" data-id-mismatch>
+        <Notice v-if="c.id_mismatch" tone="warn" class="mismatch" data-id-mismatch>
           Configured as <strong>{{ c.id_mismatch }}</strong>, but this endpoint answered as
           <strong>{{ c.collector }}</strong> -- someone pointed
           <strong>{{ c.id_mismatch }}</strong>'s endpoint at a different collector's process.
-        </p>
+        </Notice>
 
         <p v-if="c.reachable === false" class="error" data-error role="alert">{{ c.error }}</p>
         <p v-else-if="c.reachable === null" class="quiet" data-no-status>
@@ -490,10 +491,6 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 .badge.degraded { background: var(--bad-tint); color: var(--bad-2); }
 .badge.unconfigured { background: var(--surface-2); color: var(--muted); }
 .threshold { margin: 0; color: var(--muted); font: 400 10.5px var(--font-ui); }
-.mismatch {
-  margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--accent-tint);
-  color: var(--accent-ink-2); font: 400 11px var(--font-ui);
-}
 .error {
   margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--bad-tint);
   color: var(--bad-2); font: 400 11px var(--font-ui);

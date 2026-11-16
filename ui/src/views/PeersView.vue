@@ -439,7 +439,6 @@ function dumping(p: Peer): boolean {
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
 h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
 .note { margin: 0; max-width: 72ch; color: var(--muted); font: 400 12px var(--font-ui); }
-.link { color: var(--ink-2); }
 .holder { margin-left: 6px; color: var(--muted); font: 400 11px var(--font-ui); }
 .provisional {
   margin-left: 7px; padding: 1px 6px; border-radius: 4px;

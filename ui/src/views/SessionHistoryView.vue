@@ -7,6 +7,7 @@ import WindowPicker from '@/components/WindowPicker.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import { formatCount } from '@/lib/formatCount'
 import ScopePicker from '@/components/ScopePicker.vue'
+import Notice from '@/components/Notice.vue'
 import EventKindMark from '@/components/EventKindMark.vue'
 import EventArchiveNote from '@/components/EventArchiveNote.vue'
 import { reasonDisplay } from '@/lib/eventReason'
@@ -281,11 +282,11 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
          this the table would answer for a peer the dropdowns cannot even
          show as selected, which reads as a bug rather than as the archive
          doing its job. -->
-    <p v-if="seedIsArchived" class="note" data-archived-scope>
+    <Notice v-if="seedIsArchived" class="note" data-archived-scope>
       {{ seededPeer }} has no current session on {{ seededRouter }}, so the pickers above
       cannot offer it. Its history is read from the archive all the same:
       <code>/v1/events</code> is scoped by router and peer, not pinned to a session.
-    </p>
+    </Notice>
 
     <!-- /v1/events requires router and peer; an unscoped request is a 400.
          Rendering an empty table before a scope exists would say "this
@@ -333,10 +334,6 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
 h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
 .quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
-.note {
-  margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint);
-  color: var(--accent-ink-2); font: 400 11.5px var(--font-ui);
-}
 .note code { font: 400 11px var(--font-data); }
 .window {
   display: flex; flex-direction: column; gap: 4px; align-self: flex-start;
@@ -347,5 +344,5 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
   border-radius: 6px; background: var(--surface); color: var(--ink);
   text-transform: none; letter-spacing: normal;
 }
-.more { align-self: flex-start; background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
 </style>

@@ -144,13 +144,9 @@ const TICK_STEPS_MS = [
 ]
 
 /**
- * A gridline's label: hours and minutes on a 24-hour clock, which is
- * DELIBERATELY not the 12-hour rendering `formatTimeOfDay` gives a bar's
- * title in an en-US locale. A title is one instant read on purpose and has
- * room for "2:55:00 PM"; an axis is four labels read at a glance under bars
- * a few pixels wide, where "02:00 PM" is nearly twice the width of the
- * number it carries. This project draws the same 24-hour scale elsewhere
- * too, and so does every log this archive is read beside.
+ * A gridline's label: hours and minutes on a 24-hour clock, the same
+ * clock `formatTimeOfDay` gives a bar's title, without the seconds: an axis
+ * is four labels read at a glance under bars a few pixels wide.
  */
 function tickLabel(t: number): string {
   return new Date(t).toLocaleTimeString([], {

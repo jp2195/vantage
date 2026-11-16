@@ -8,6 +8,7 @@ import { columnWidths, columnsOf, tableMinWidthPx } from '@/test-support/columns
 import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
 import { inventedColumns } from '@/test-support/columnGuard'
 import { capturedMeta } from '@/test-support/capturedMeta'
+import { formatClock } from '@/lib/formatClock'
 
 let fixture: { data: unknown[]; meta: unknown } = fleetEvents
 // Drives useFleetEvents' own isPending, independent of isLoading, so a test
@@ -209,10 +210,7 @@ describe('EventsView', () => {
   // own version of this test gives for not hardcoding one locale's output.
   it('renders ts_collector as a readable clock string, not the raw ISO instant', () => {
     const w = mount(EventsView)
-    const expected = new Date(fleetEvents.data[0].ts_collector).toLocaleString([], {
-      dateStyle: 'medium',
-      timeStyle: 'medium',
-    })
+    const expected = formatClock(fleetEvents.data[0].ts_collector)
     expect(w.text()).toContain(expected)
     expect(w.text()).not.toContain(fleetEvents.data[0].ts_collector)
   })

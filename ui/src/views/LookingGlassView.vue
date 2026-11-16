@@ -7,6 +7,7 @@ import { formatCount } from '@/lib/formatCount'
 import DumpStateMark from '@/components/DumpStateMark.vue'
 import PathGraph from '@/components/PathGraph.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
+import Notice from '@/components/Notice.vue'
 import { useFindRoutes, useRouteHistory, useTopology, type RouteFilters } from '@/api/queries'
 import type { Graph, HistoryEvent, UnicastRoute } from '@/api/generated'
 
@@ -621,14 +622,14 @@ function compareSeq(a: string, b: string): number {
          routes whichever tab is open, and a note that only showed up on
          the Paths tab would vanish the moment an operator switched to
          Grouped and stayed gone if they forgot to switch back. -->
-    <p v-if="scopeNote" class="scope-note" role="status">{{ scopeNote }}</p>
+    <Notice v-if="scopeNote" class="scope-note" role="status">{{ scopeNote }}</Notice>
 
     <!-- Beside the counts it reconciles, and for the same reason the counts
          dedupe at all: "paths" is a question about the network, a row is
          one collector's observation of it. Without this the rail reads
          "Paths 1" over two identical-looking rows and the operator is left
          to guess which number is wrong. -->
-    <p
+    <Notice
       v-if="observingCollectors"
       class="scope-note"
       data-observers-note
@@ -638,7 +639,7 @@ function compareSeq(a: string, b: string): number {
       collector below. The counts beside the results are per
       route, not per observation — two collectors watching does not make a
       second path.
-    </p>
+    </Notice>
 
     <!-- Nothing is answered until something is asked. Rendering the paths
          or grouped tab before a search would print "no rows matched" -- and,
@@ -752,7 +753,7 @@ function compareSeq(a: string, b: string): number {
           <strong>{{ graphSize(unicastGraph) }}</strong> in unicast — one node per AS, one edge per
           adjacency their paths cross. Click a node to search the routes crossing that AS.
         </p>
-        <p v-if="otherGraphs" class="scope-note" data-topology-families>{{ otherGraphs }}</p>
+        <Notice v-if="otherGraphs" class="scope-note" data-topology-families>{{ otherGraphs }}</Notice>
         <PathGraph v-if="hasGraph(unicastGraph)" :graph="unicastGraph" @select="onGraphSelect" />
         <!-- Not an alert, and worded so it cannot read as one: `nodes` and
              `edges` are arrays with no null form, so an empty one is this
@@ -864,10 +865,10 @@ function compareSeq(a: string, b: string): number {
 .query { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .modes { display: flex; gap: 2px; }
 .modes button, .tabs button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
-.modes button.on, .tabs button.on { background: var(--ink); color: var(--on-dark); border-color: var(--ink); }
+.modes button.on, .tabs button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
 .query input[type="text"], .query input:not([type]) { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 220px; }
 .query label { font: 400 11.5px var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.query button[type="submit"] { background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.query button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
 .tabs { display: flex; gap: 2px; }
 .groups, .diff, .topology { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
 .topology { display: flex; flex-direction: column; gap: 10px; }
@@ -887,5 +888,4 @@ function compareSeq(a: string, b: string): number {
 .when { margin-left: auto; color: var(--muted); }
 .quiet { margin: 0 0 8px; color: var(--muted); font: 400 11.5px var(--font-ui); }
 .error { margin: 0; color: var(--bad-2); font: 400 11.5px var(--font-ui); }
-.scope-note { margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
 </style>

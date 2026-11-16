@@ -616,7 +616,6 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 .when { color: var(--faint); }
 .why { color: var(--muted); margin-left: auto; }
 .note { margin: 0; color: var(--muted); font: 400 11px var(--font-ui); }
-.link { color: var(--ink-2); }
 .rib-view { display: flex; flex-direction: column; gap: 8px; }
 /* A visible seam between two rib views of the same peer, not just
    whitespace -- when peerRows has one row (the common case today) this
@@ -637,7 +636,7 @@ h3 { margin: 2px 0 0; font: 600 12px var(--font-ui); color: var(--ink-2); }
 .dumps li { display: flex; gap: 10px; align-items: center; }
 .dump { padding: 1px 7px; border-radius: 4px; font: 500 10px var(--font-ui); }
 .complete { background: var(--good-tint); color: var(--good); }
-.dumping { background: var(--accent-tint); color: var(--accent-ink-2); }
+.dumping { background: var(--warn-tint); color: var(--warn-ink); }
 .error { margin: 0; color: var(--bad-2); font: 400 12px var(--font-ui); }
 .quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
 .descr { white-space: normal; line-height: 1.45; }

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { usePeers, useRouters } from '@/api/queries'
 import type { Peer, Router } from '@/api/generated'
+import Notice from './Notice.vue'
 
 const emit = defineEmits<{
   (e: 'scope', v: { router: string; peer: string; session: string; collector?: string } | undefined): void
@@ -333,9 +334,10 @@ const unlistedPeer = computed<string | undefined>(() => {
        uses <collector>'s session; the other collector's view is not
        shown": /v1/rib/* performs no such fallback, and a request without
        collector= that needs one answers 400. -->
-  <p
+  <Notice
     v-if="chosenPeer && multiCollectorPeers.has(chosenPeer.peer_ip)"
     class="ambiguous"
+    :tone="disagreeingPeers.has(chosenPeer.peer_ip) ? 'warn' : 'info'"
     role="alert"
   >
     <template v-if="disagreeingPeers.has(chosenPeer.peer_ip)">
@@ -357,7 +359,7 @@ const unlistedPeer = computed<string | undefined>(() => {
          fallback repeating the pinning copy would leave one that is false,
          which is the failure this prop exists to end. -->
     <slot v-else name="ambiguous" />
-  </p>
+  </Notice>
 </template>
 
 <style scoped>
@@ -368,7 +370,7 @@ const unlistedPeer = computed<string | undefined>(() => {
    page scrolled sideways, on Routes and on Session history. Nothing changes
    where the three fit on one line. */
 .picker { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-select { max-width: 100%; font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); }
-.ambiguous { margin: 8px 0 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
+label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+select { max-width: 100%; font: 400 var(--text-body) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); }
+.ambiguous { margin-top: var(--space-2); }
 </style>

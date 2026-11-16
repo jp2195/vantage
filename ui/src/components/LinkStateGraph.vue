@@ -648,7 +648,7 @@ svg { width: 100%; height: auto; display: block; }
 /* Distinct, and deliberately not alarming: a dash and the design system's
    accent ink, not --bad. Red would be a verdict, and rule 5 says the screen
    offers none -- in this archive one-sidedness tracks view completeness. */
-.edge.one-sided { stroke: var(--accent-ink); }
+.edge.one-sided { stroke: var(--warn); }
 /* The metric sits ON its own line, so it is painted with a halo of the pane
    color first and the glyphs over it -- `paint-order: stroke` is what makes
    the stroke go under rather than over the fill. Testing in a browser is
@@ -677,6 +677,6 @@ svg { width: 100%; height: auto; display: block; }
 .legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font: 400 10.5px var(--font-ui); color: var(--muted); }
 .key { display: flex; align-items: center; gap: 6px; }
 .swatch { width: 14px; height: 3px; display: block; background: var(--faint); }
-.swatch.one-sided { background: repeating-linear-gradient(to right, var(--accent-ink) 0 5px, transparent 5px 9px); }
+.swatch.one-sided { background: repeating-linear-gradient(to right, var(--warn) 0 5px, transparent 5px 9px); }
 .says { flex-basis: 100%; color: var(--muted); }
 </style>

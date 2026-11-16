@@ -47,12 +47,12 @@ defineProps<{ state: string }>()
    on Routes at every width below 1440, and on the Looking glass at 1440 too.
    As an atomic inline it drops under the prefix instead. */
 .mark {
-  display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: 4px;
-  font: 500 10px var(--font-ui);
+  display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: var(--radius-sm);
+  font: 500 11px var(--font-ui);
 }
 .dumping { background: var(--neutral-chip); color: var(--muted); }
 /* Amber, not neutral: "we cannot say" is a caveat about the answer, the
    same class of thing ResultMeta paints amber, while "still arriving" is
    an ordinary transient. */
-.unknown { background: var(--accent-tint); color: var(--accent-ink-2); }
+.unknown { background: var(--warn-tint); color: var(--warn-ink); }
 </style>

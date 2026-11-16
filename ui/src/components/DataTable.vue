@@ -217,19 +217,19 @@ function titleIfTruncated(e: MouseEvent) {
 /* overflow-x, not hidden: a table wider than its container scrolls HERE,
    inside its own card, so the page body never scrolls sideways. */
 .wrap {
-  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
   overflow-x: auto; overflow-y: hidden;
 }
 /* fixed, so <colgroup>'s widths bind and a long value wraps or ellipses
    inside its column instead of widening it. */
-table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 12px var(--font-ui); }
-/* This project's column label: 9.5px 600 uppercase with .07em tracking
-   on --surface-2, the scale used for column and field headers alike.
+table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 var(--text-data) var(--font-ui); }
+/* This project's column label: --text-label, 600 uppercase with .06em
+   tracking on --surface-2, the scale used for column and field headers alike.
    Not simply "smaller" than the previous sentence-case 11px -- these
    labels are meant to recede so the data reads first. */
 th {
   text-align: left; padding: 7px 18px; color: var(--muted);
-  font: 600 9.5px var(--font-ui); text-transform: uppercase; letter-spacing: .07em;
+  font: 600 var(--text-label) var(--font-ui); text-transform: uppercase; letter-spacing: .06em;
   border-bottom: 1px solid var(--line); background: var(--surface-2);
   white-space: nowrap;
 }
@@ -243,6 +243,6 @@ tbody tr:hover td { background: var(--surface-2); }
 .actions { text-align: right; overflow: visible; }
 tbody tr:last-child td { border-bottom: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
-.error { margin: 0; padding: 14px 16px; color: var(--bad-2); background: var(--bad-tint); font: 400 12px var(--font-ui); }
-.quiet { margin: 0; padding: 14px 16px; color: var(--muted); font: 400 12px var(--font-ui); }
+.error { margin: 0; padding: 14px 16px; color: var(--bad-2); background: var(--bad-tint); font: 400 var(--text-body) var(--font-ui); }
+.quiet { margin: 0; padding: 14px 16px; color: var(--muted); font: 400 var(--text-body) var(--font-ui); }
 </style>

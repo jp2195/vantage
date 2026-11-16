@@ -30,7 +30,7 @@ function submit() {
 h1 { font: 600 19px var(--font-ui); color: var(--ink); margin: 0; }
 p { font-size: 12px; color: var(--muted); line-height: 1.5; }
 code { font-size: 11px; background: var(--surface-2); padding: 2px 5px; border-radius: 4px; }
-input { border: 1.5px solid var(--accent); border-radius: 7px; padding: 9px 11px; font-size: 14px; }
-input:focus { outline: none; box-shadow: 0 0 0 3px rgba(232, 181, 62, .15); }
-button { background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 9px; font: 500 12px var(--font-ui); cursor: pointer; }
+input { border: 1.5px solid var(--focus); border-radius: 7px; padding: 9px 11px; font-size: 14px; }
+input:focus { outline: none; box-shadow: 0 0 0 3px var(--focus-ring); }
+button { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 9px; font: 500 12px var(--font-ui); cursor: pointer; }
 </style>

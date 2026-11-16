@@ -816,6 +816,5 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 /* PeersView.vue's own link convention, not a second one. `history` is a
    secondary destination beside the peer address, so it reads as the
    quieter of the two rather than competing with it. */
-.link { color: var(--ink-2); }
 .history { margin-left: 7px; color: var(--muted); font: 400 11px var(--font-ui); }
 </style>

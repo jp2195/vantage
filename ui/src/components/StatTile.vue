@@ -35,14 +35,14 @@ defineProps<{
 
 <style scoped>
 .tile {
-  flex: 1 1 0; min-width: 150px; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface);
+  flex: 1 1 0; min-width: 150px; padding: 14px var(--space-4);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .label {
   margin: 0; color: var(--muted); text-transform: uppercase;
-  font: 600 9.5px var(--font-ui); letter-spacing: .07em;
+  font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em;
 }
-/* 24px 500 with -.02em tracking: this project's KPI value scale. */
-.value { margin: 6px 0 0; font: 500 24px var(--font-data); letter-spacing: -.02em; color: var(--ink); }
-.sub { margin: 4px 0 0; color: var(--muted); font: 400 11px var(--font-ui); }
+/* The KPI value scale, with -.02em tracking. */
+.value { margin: 6px 0 0; font: 500 var(--text-kpi) var(--font-data); letter-spacing: -.02em; color: var(--ink); }
+.sub { margin: var(--space-1) 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 </style>

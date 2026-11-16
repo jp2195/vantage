@@ -6,6 +6,7 @@ import DataTable from '@/components/DataTable.vue'
 import type { GuardedColumn } from '@/test-support/columnGuard'
 import { tableMinWidthPx } from '@/test-support/columnsOf'
 import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
+import { formatClock } from '@/lib/formatClock'
 
 describe('StatesView', () => {
   // The page's whole purpose: the states are distinguishable. If the empty
@@ -55,7 +56,7 @@ describe('StatesView', () => {
     const raw = routers.data[0].last_seen
     expect(warned).not.toContain(raw)
     expect(warned).toContain(
-      new Date(raw).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' }),
+      formatClock(raw),
     )
   })
 

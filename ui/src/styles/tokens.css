@@ -24,13 +24,33 @@
 @import '@fontsource/jetbrains-mono/500.css';
 @import '@fontsource/jetbrains-mono/700.css';
 
+/* Color roles.
+ *
+ * Each hue has one job, and the job is the reason for the name:
+ *
+ *   --accent   the brand amber: the logo mark, and the "unauthenticated"
+ *              badge on the dark chrome. Nothing interactive uses it.
+ *   --warn-*   amber as a STATUS: a session the router reported down, a
+ *              caveat about the answer ("still loading"), a one-sided link.
+ *              "Needs attention" and nothing else, so it still reads as that.
+ *   --bad-*    we are blind: view lost, a failed query.
+ *   --good-*   up, healthy.
+ *   --info-*   context that is explanation, not alarm: "two collectors
+ *              watch this route, so it is listed twice".
+ *   --link, --focus  what can be clicked or has focus. Blue, so a control
+ *              never borrows a status color and reads as a warning.
+ *
+ * Amber used to do the first three jobs at once, and the result was that a
+ * plain explanation and a real warning looked the same. */
 :root {
+  color-scheme: light;
+
   --ink: #16181d;
   --ink-2: #3a4050;
   /* Darker than the earlier #6f7686, which measured 4.36:1 on --surface-2
      and 4.07:1 on --neutral-chip, under the 4.5:1 WCAG AA asks of small
      text, and every use of this token is small text. This clears 4.5:1 on
-     all three backgrounds it sits on; tokens.test.ts holds that. */
+     every background it sits on; tokens.test.ts holds that. */
   --muted: #666d7d;
   --muted-2: #8a91a0;
   --faint: #9aa1b1;
@@ -40,6 +60,9 @@
   --divider: #eef0f2;
   --surface: #ffffff;
   --surface-2: #fafafa;
+  /* The page behind the cards. Off-white rather than --surface, so a card
+     is a raised thing rather than a border drawn on the same white. */
+  --canvas: #f5f6f8;
   --chrome: #14161b;
   --chrome-2: #262a33;
   --chrome-text: #e6e8ee;
@@ -48,27 +71,127 @@
      cluster's metadata. Named here because a component with a raw
      #9aa1b1 in it is a defect the design-token test catches. */
   --chrome-text-2: #9aa1b1;
-  /* Foreground for anything sitting ON a dark surface -- --ink chips and
-     buttons, and the active nav item on --chrome-2. Pure white rather than
-     --chrome-text (#e6e8ee) because these are the elements meant to read as
-     selected: the nav's resting text is --chrome-text, and the active item
-     has to be brighter than its neighbors, not the same. Named for the role
-     rather than the value so a later theme can move it. */
+  /* Foreground for anything on the dark chrome that has to read as
+     selected: the active nav item on --chrome-2. Pure white, so it is
+     brighter than the resting --chrome-text beside it. The chrome is dark
+     in both themes, so this never flips. */
   --on-dark: #ffffff;
+  /* Foreground for a control filled with --ink (a primary button, a
+     selected segment). Its own token, not --on-dark: --ink turns light in
+     the dark theme, and this has to turn dark with it. */
+  --on-ink: #ffffff;
+
   --accent: #e8b53e;
-  --accent-ink: #8a6a12;
-  --accent-ink-2: #7a5a0e;
-  --accent-tint: #fffbf0;
+
+  --warn: #8a6a12;
+  --warn-ink: #7a5a0e;
+  --warn-tint: #fffbf0;
+  --warn-line: #f0dca0;
+
   --good: #0b7c5e;
   --good-tint: #e6f4ee;
+
   --bad: #b1451f;
   --bad-2: #8a2f14;
   --bad-tint: #fdf0ec;
+  --bad-line: #f2c9b9;
+
+  --info: #2b5bb5;
+  --info-ink: #1f3d73;
+  --info-tint: #eef3fb;
+  --info-line: #c9d7ef;
+
+  --link: #2b5bb5;
+  --link-hover: #1d4287;
+  /* The resting underline: lighter than the text, so a column of linked
+     addresses reads as data first, while a link still differs from plain
+     text by more than its hue. */
+  --link-underline: #b9c9ea;
+  --focus: #2b5bb5;
+  --focus-ring: rgba(43, 91, 181, 0.18);
+
   --neutral-chip: #f1f2f5;
   --live: #4ade80;
 
   --font-ui: 'Public Sans', system-ui, -apple-system, sans-serif;
   --font-data: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Type scale. Six sizes. The components had grown twelve between 9.5px
+     and 24px, and body text sat at 11px, small enough that a 1080p laptop
+     screen made it a squint. */
+  --text-label: 10.5px;  /* uppercase column and field labels */
+  --text-sm: 12px;       /* notes, footers, chips */
+  --text-data: 12.5px;   /* table cells */
+  --text-body: 13px;     /* ledes and prose */
+  --text-title: 15px;    /* panel headings */
+  --text-page: 22px;     /* the screen's h1 */
+  --text-kpi: 26px;      /* stat tile values */
+
+  /* Spacing, on a 4px base. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Corner radii. Four, where there had been seven (2, 4, 5, 6, 7, 8, 20). */
+  --radius-sm: 4px;     /* chips, marks */
+  --radius-md: 6px;     /* controls, notices */
+  --radius-lg: 10px;    /* cards and tables */
+  --radius-full: 999px; /* pills */
+}
+
+/* The dark theme follows the operating system. Every color in a component
+   comes from a token here (tokens.test.ts enforces it), so redefining the
+   roles is the whole theme. The chrome is already dark and stays as it is. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --ink: #e6e8ee;
+    --ink-2: #c3c8d2;
+    --muted: #9aa1b1;
+    --muted-2: #7c8393;
+    --faint: #6b7282;
+    --line-faint: #22262e;
+    --line: #2a2f38;
+    --line-2: #363c47;
+    --divider: #22262e;
+    --surface: #16191f;
+    --surface-2: #1b1f26;
+    --canvas: #0f1115;
+    --chrome: #0b0c0f;
+    --chrome-2: #20242c;
+    --on-ink: #0f1115;
+
+    --warn: #d9a93a;
+    --warn-ink: #f0c869;
+    --warn-tint: #2a2314;
+    --warn-line: #4a3b17;
+
+    --good: #3fbf8f;
+    --good-tint: #12291f;
+
+    --bad: #ef7a55;
+    --bad-2: #f19a7c;
+    --bad-tint: #2e1813;
+    --bad-line: #5a2b1d;
+
+    --info: #8fb0f5;
+    --info-ink: #c7d6f7;
+    --info-tint: #152036;
+    --info-line: #2a3d63;
+
+    --link: #8fb0f5;
+    --link-hover: #b5cbfa;
+    --link-underline: #3b4f7a;
+    --focus: #6f9bff;
+    --focus-ring: rgba(111, 155, 255, 0.25);
+
+    --neutral-chip: #252a33;
+  }
 }
 
 /* The one place the UI typeface applies to everything by default. Without
@@ -78,7 +201,31 @@
    carried at the time, since replaced with real ones.
    Set once here rather than repeated in every component. */
 body {
+  margin: 0;
   font-family: var(--font-ui);
+  color: var(--ink);
+  background: var(--canvas);
+}
+
+/* Links, once. Blue with a soft underline at rest and a full one on hover:
+   the underline keeps a link distinguishable from plain text without relying
+   on its hue alone, which WCAG 1.4.1 asks for. */
+a {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: var(--link-underline);
+  text-underline-offset: 2px;
+}
+a:hover {
+  color: var(--link-hover);
+  text-decoration-color: currentColor;
+}
+
+/* One focus treatment for anything keyboard-reachable that does not draw
+   its own. */
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
 }
 
 /* Tabular figures everywhere data is shown: a column of numbers that
@@ -95,10 +242,8 @@ body {
  * gray gradients, system fonts, 2px inset borders -- inside a UI whose
  * tables and cards follow this project's own design to the pixel. That
  * mismatch reads as unfinished more loudly than any missing column:
- * this project specifies bordered fields (1px --line-2, 6px radius,
- * 12px Public Sans) and exactly one elevation anywhere in the product,
- * the accent focus ring (`0 0 0 3px rgba(232,181,62,.15)` with a 1.5px
- * --accent border) on the Looking glass query field.
+ * this project specifies bordered fields (1px --line-2, 6px radius) and
+ * exactly one elevation anywhere in the product, the focus ring.
  *
  * Here rather than in each component for the same reason DataTable owns its
  * grid: ScopePicker plus six screens declare their own controls, and a
@@ -110,11 +255,11 @@ input[type='text'],
 input[type='search'] {
   appearance: none;
   -webkit-appearance: none;
-  font: 400 12px var(--font-ui);
+  font: 400 var(--text-body) var(--font-ui);
   color: var(--ink);
   background: var(--surface);
   border: 1px solid var(--line-2);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 6px 9px;
 }
 
@@ -139,6 +284,6 @@ select:focus-visible,
 input[type='text']:focus-visible,
 input[type='search']:focus-visible {
   outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(232, 181, 62, 0.15);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--focus-ring);
 }

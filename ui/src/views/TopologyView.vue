@@ -559,10 +559,10 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
   border-radius: 6px;
   cursor: pointer;
 }
-.modes button.on, .families button.on { background: var(--ink); color: var(--on-dark); border-color: var(--ink); }
+.modes button.on, .families button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
 .scope input.term { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 220px; }
 .scope label { font: 400 11.5px var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.scope button[type="submit"] { background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.scope button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .controls label { display: flex; gap: 6px; align-items: center; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
