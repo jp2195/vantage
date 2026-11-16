@@ -504,7 +504,9 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
   color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui);
 }
 .quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
-.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+/* A grid, not a wrapping row: seven tiles in a row of six left the seventh
+   stretched across the card on a line of its own. */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
 .tiles :deep(.tile) { min-width: 110px; padding: 8px 10px; }
 .tiles :deep(.value) { font-size: 17px; }
 .activity { margin: 0; display: flex; flex-direction: column; gap: 4px; }

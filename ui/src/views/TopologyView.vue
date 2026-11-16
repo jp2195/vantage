@@ -270,6 +270,9 @@ function select(asn: number) {
          over history, and the graph's own note says the same at length. -->
     <ScreenHeader title="AS paths" :eyebrow="['all collectors', 'live rib']" />
 
+    <!-- One card around the question, whichever mode asks it: the form for
+         a prefix or an AS, the pickers for a peer. -->
+    <div class="ask">
     <form class="scope" @submit.prevent="submit()">
       <div class="modes seg" role="group" aria-label="Draw">
         <button
@@ -319,6 +322,7 @@ function select(asn: number) {
         by the second collector.
       </template>
     </ScopePicker>
+    </div>
 
     <!-- Nothing is answered until something is asked. /v1/topology refuses an
          unscoped request outright -- its 400 says the alternative "would draw
@@ -549,10 +553,11 @@ function select(asn: number) {
 .screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 /* The question as a card, the shape Looking glass and Routes give theirs. */
-.scope {
-  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+.ask {
+  display: flex; flex-direction: column; gap: 14px;
   padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
+.scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .scope input.term { padding: 7px 10px; font-size: var(--text-body); min-width: 260px; }
 .scope label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
 

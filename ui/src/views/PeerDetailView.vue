@@ -588,6 +588,7 @@ const endpoints = computed(() => {
       <!-- One section per rib row. The dump-state list is a per-rib fact (a
            peer can be dumping pre-policy and complete post-policy), so it
            belongs once per row. -->
+        <div class="rib-views">
         <section v-for="row in peerRows" :key="sectionKey(row)" class="rib-view">
           <h2 class="rib-label mono">{{ row.collector }} · {{ row.rib }}</h2>
 
@@ -605,6 +606,7 @@ const endpoints = computed(() => {
             </li>
           </ul>
         </section>
+        </div>
       </template>
 
       <!-- Every table's footer states completeness; this screen had been
@@ -651,12 +653,13 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 .when { color: var(--muted); }
 .why { color: var(--muted); margin-left: auto; }
 .note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
-.rib-view { display: flex; flex-direction: column; gap: 8px; }
-/* A visible seam between two rib views of the same peer, not just
-   whitespace -- when peerRows has one row (the common case today) this
-   never renders, since there is only one .rib-view and no sibling above it
-   to draw the rule against. */
-.rib-view + .rib-view { padding-top: 12px; border-top: 1px solid var(--divider); }
+/* One card per rib view, side by side where they fit. They had floated
+   unstyled under the panels, which read as content that failed to load. */
+.rib-views { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 14px; }
+.rib-view {
+  display: flex; flex-direction: column; gap: 8px; padding: 14px 16px;
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
+}
 .rib-label {
   margin: 0; padding: 1px 7px; align-self: flex-start; border-radius: var(--radius-sm);
   background: var(--neutral-chip); color: var(--muted); font: 500 var(--text-label) var(--font-ui);
