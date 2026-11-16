@@ -51,7 +51,7 @@ const counts = computed(() => [
 // operational situations, and only the first is fine.
 const columns: Column<Router>[] = [
   { id: 'sysname', header: 'Router', width: '15%', sortable: true, sortValue: (r) => r.sysname || r.ip },
-  { id: 'ip', header: 'Address', width: '140px', sortable: true },
+  { id: 'ip', header: 'Address', width: '140px', sortable: true, mono: true },
   { id: 'collector', header: 'Collector', width: '14%', sortable: true },
   { id: 'peers_up', header: 'Up', numeric: true, width: '70px', sortable: true },
   { id: 'peers_down', header: 'Down', numeric: true, width: '76px', sortable: true },

@@ -18,9 +18,9 @@ describe('StatesView', () => {
     const text = (state: string) => w.find(`[data-state="${state}"]`).text()
 
     expect(text('loading')).toMatch(/loading…/)
-    expect(text('loading')).not.toMatch(/no rows matched/)
+    expect(text('loading')).not.toMatch(/no rows matched/i)
 
-    expect(text('empty')).toMatch(/no rows matched/)
+    expect(text('empty')).toMatch(/no rows matched/i)
     expect(text('empty')).not.toMatch(/loading…/)
     // The footer's claim: an empty answer with no warnings says so.
     expect(w.find('[data-state="empty"] footer.meta').text()).toMatch(/complete as of/i)

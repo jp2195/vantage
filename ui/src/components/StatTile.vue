@@ -28,7 +28,10 @@ defineProps<{
 <template>
   <div class="tile" :title="note">
     <p class="label">{{ label }}</p>
-    <p class="value mono" :class="{ long: value.length > 12 }">{{ value }}</p>
+    <!-- The size container is this wrapper, not the tile: containment on
+         the tile made it an independent layout, which switches off the
+         subgrid a .tile-grid lines tiles up with. -->
+    <div class="fit"><p class="value mono" :class="{ long: value.length > 12 }">{{ value }}</p></div>
     <p v-if="sub" class="sub">{{ sub }}</p>
   </div>
 </template>
@@ -36,9 +39,9 @@ defineProps<{
 <style scoped>
 .tile {
   flex: 1 1 0; min-width: 150px; padding: 14px var(--space-4); box-sizing: border-box;
-  container-type: inline-size;
   border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
+.fit { container-type: inline-size; min-width: 0; }
 .label {
   margin: 0; color: var(--muted); text-transform: uppercase;
   font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em;

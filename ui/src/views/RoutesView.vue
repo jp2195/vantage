@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import CodeText from '@/components/CodeText.vue'
 import DumpStateMark from '@/components/DumpStateMark.vue'
 import ScopePicker from '@/components/ScopePicker.vue'
 import Notice from '@/components/Notice.vue'
@@ -92,16 +93,16 @@ function syncUrl(s: RibScope | undefined) {
 // layout spreads these eight short values across a 2000px viewport, so
 // reading one row means tracking the eye over 500px of white.
 const columns: Column<UnicastRoute>[] = [
-  { id: 'prefix', header: 'Prefix', width: '15%' },
+  { id: 'prefix', header: 'Prefix', width: '14%' },
   { id: 'rib', header: 'RIB', width: '82px' },
   { id: 'path_id', header: 'Path ID', numeric: true, width: '72px' },
-  { id: 'next_hop', header: 'Next hop', width: '12%' },
-  { id: 'as_path', header: 'AS path', width: '17%' },
+  { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
+  { id: 'as_path', header: 'AS path', width: '15%' },
   // Not `numeric`: once a holder name is beside it, the cell holds more
   // than a number, and right-aligned tabular figures are the wrong shape
   // for a name. Widened accordingly -- 78px fit a bare ASN, not "LEVEL3 -
   // Level 3 Parent, LLC" beside one.
-  { id: 'origin_asn', header: 'Origin', width: '13%' },
+  { id: 'origin_asn', header: 'Origin', width: '10%' },
   { id: 'local_pref', header: 'LocalPref', numeric: true, width: '84px' },
   { id: 'med', header: 'MED', numeric: true, width: '62px' },
   // Standard communities only, and the header says so. large_communities,
@@ -109,7 +110,7 @@ const columns: Column<UnicastRoute>[] = [
   // this same row, not longer spellings of this one, and folding them into
   // one column here would report a large community as a standard one. The
   // other three have no column on this screen today.
-  { id: 'communities', header: 'Communities', width: '18%' },
+  { id: 'communities', header: 'Communities', width: '15%' },
 ]
 
 /**
@@ -157,7 +158,7 @@ function holderName(asn: number | null): string | undefined {
  *  yet. Never both, and never a name for a router the rows do not describe. */
 const eyebrow = computed<string[]>(() => {
   const s = scope.value
-  if (!s) return []
+  if (!s) return ['choose a router and peer']
   const first = walk.rows.value[0]
   return [first?.router_sysname || s.router, s.peer]
 })
@@ -180,13 +181,13 @@ const counts = computed(() => {
 
 <template>
   <section class="screen">
-    <ScreenHeader title="Route table" :eyebrow="eyebrow" :counts="scope ? counts : undefined" />
+    <ScreenHeader title="Routes" :eyebrow="eyebrow" :counts="scope ? counts : undefined" />
 
     <!-- The filter row is a band, not a bare row of controls: its own
          --surface-2 with a hairline under it, so the question is visibly
          separate from the answer below it, full-bleed through the
          screen's own padding. -->
-    <div class="filters">
+    <div class="filters query-card">
       <!-- pins-collector: /v1/rib/* takes collector= (since 2026-09-20), so this
            screen can and MUST address one collector's view -- two
            collectors' RIBs are two answers a walk cannot interleave. -->
@@ -201,7 +202,7 @@ const counts = computed(() => {
     <!-- /v1/rib/* require router and peer. Fetching without them would 400,
          and rendering an empty table before a scope exists would say "this
          peer has no routes" about a question nobody asked. -->
-    <p v-if="!scope" class="quiet">Choose a router and peer to walk its RIB.</p>
+    <p v-if="!scope" class="empty-state">Choose a router and peer to walk the routes it holds for that session.</p>
 
     <template v-else>
       <Notice v-if="walk.restarted.value" tone="warn" class="restart" role="alert">
@@ -215,7 +216,7 @@ const counts = computed(() => {
            exclusive facts, and neither prints before the batch has
            answered: no answer yet is not "not loaded" -- see
            @/lib/asname.ts. -->
-      <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice>{{ asNamesLoadNotice }}</p>
+      <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice><CodeText :text="asNamesLoadNotice" /></p>
       <p v-else-if="asNamesDate" class="quiet" data-asnames-date>
         AS holder names as of {{ asNamesDate }}.
       </p>
@@ -236,7 +237,7 @@ const counts = computed(() => {
         :loading="walk.loading.value"
         :error="walk.error.value"
         min-width="1150px"
-        actions-width="84px"
+        actions-width="100px"
       >
         <template #cell-as_path="{ row }">
           <span class="mono">{{ (row as UnicastRoute).as_path.join(' ') }}</span>
@@ -303,10 +304,6 @@ const counts = computed(() => {
 .screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 /* The scope controls as a card, the same shape the Looking glass gives its
    query: the question above, the answer under it. */
-.filters {
-  padding: 14px 16px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--radius-lg);
-}
 .quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .holder { margin-left: 6px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .communities { color: var(--ink-2); font-size: 11px; }

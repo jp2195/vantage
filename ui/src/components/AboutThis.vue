@@ -37,10 +37,13 @@ withDefaults(defineProps<{ summary?: string }>(), { summary: 'How to read this' 
 .about { font: 400 var(--text-sm) / 1.5 var(--font-ui); color: var(--muted); }
 summary {
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer; list-style: none;
-  color: var(--link); font-weight: 500; border-radius: var(--radius-sm);
+  color: var(--muted); font-weight: 500; border-radius: var(--radius-sm);
 }
+/* Muted, not link blue: this opens notes in place, it goes nowhere, and a
+   blue line on every screen read as one more link competing with the
+   ones that do. */
 summary::-webkit-details-marker { display: none; }
-summary:hover { color: var(--link-hover); }
+summary:hover, .about[open] summary { color: var(--ink-2); }
 .icon, .chev { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .chev { transition: transform .15s; }
 .about[open] .chev { transform: rotate(90deg); }

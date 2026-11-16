@@ -68,18 +68,24 @@
 
 /* A tab bar: views of one answer, underlined. Blue for the current tab,
    since it is a control state and not a status. */
+/* The rule under the tabs is an inset shadow, not a border with each tab
+   pulled 1px over it by a negative margin: inside a box that scrolls
+   sideways (overflow-x makes overflow-y auto too), that 1px overhang was
+   content past the bottom edge, and Chrome drew a vertical scrollbar
+   beside Looking glass's Paths / Grouped / Changes / Topology. */
 .tabbar {
   display: flex;
   gap: var(--space-6);
   overflow-x: auto;
-  border-bottom: 1px solid var(--line);
-  scrollbar-width: thin;
+  overflow-y: hidden;
+  box-shadow: inset 0 -1px 0 var(--line);
+  scrollbar-width: none;
 }
+.tabbar::-webkit-scrollbar { display: none; }
 .tabbar > button {
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 0;
-  margin-bottom: -1px;
   background: none;
   padding: 0 2px;
   min-height: 38px;
@@ -132,4 +138,64 @@ label:has(> input[type='checkbox']) { cursor: pointer; }
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+/* The question a screen asks, as a card: Routes, Session history, AS paths
+   and Link state ask theirs in the same frame Looking glass does. */
+.query-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+/* A link that is itself the value -- an address, a router name -- in a
+   table or a list of records. Ink and a step heavier, no underline: the
+   column reads as data. It turns blue under the pointer, and when its row
+   is hovered, so the row shows what in it can be followed. */
+.value-link,
+td a:not(.btn) {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+tr:hover td a:not(.btn), .value-link:hover {
+  color: var(--link);
+}
+td a:not(.btn):hover, .value-link:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
+/* A record with no name of its own (no sysName TLV) still links, quieter. */
+td a.unnamed:not(:hover), .value-link.unnamed:not(:hover) { color: var(--muted); font-weight: 400; }
+
+/* An inline command or file name in running text. */
+code {
+  font: 400 .92em var(--font-data);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  /* A command is copied whole; broken across two lines it reads as two. */
+  white-space: nowrap;
+}
+
+/* A row of StatTiles whose labels, values and sub-lines line up across the
+   row. Each tile spans three rows of the grid and takes them as a subgrid,
+   so one tile whose label wraps ("Sessions · last 24 hours") moves every
+   tile's value down with it, rather than leaving its own value a line
+   lower than its neighbors'. Columns are the screen's to set. */
+.tile-grid { display: grid; gap: 12px; }
+.tile-grid > .tile {
+  grid-row: span 3;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-content: start;
+  min-width: 0;
 }

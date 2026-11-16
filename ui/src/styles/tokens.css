@@ -221,19 +221,28 @@ body {
   background: var(--canvas);
 }
 
-/* Links, once. Blue with a soft underline at rest and a full one on hover:
-   the underline keeps a link distinguishable from plain text without relying
-   on its hue alone, which WCAG 1.4.1 asks for. */
+/* Links, two kinds.
+ *
+ * A link in a sentence is blue with a hairline underline set well below the
+ * text, so it differs from the words around it by more than hue alone
+ * (WCAG 1.4.1) without striking through descenders. A link that IS the
+ * value -- a peer address in a table, a router name -- is the value first:
+ * ink, a little heavier than its neighbors, and blue only under the pointer
+ * or when its row is hovered (controls.css). A column of blue underlined
+ * addresses read as a page of links, not a table of peers. */
 a {
   color: var(--link);
   text-decoration: underline;
   text-decoration-color: var(--link-underline);
-  text-underline-offset: 2px;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color .12s, text-decoration-color .12s;
 }
 a:hover {
   color: var(--link-hover);
   text-decoration-color: currentColor;
 }
+@media (prefers-reduced-motion: reduce) { a { transition: none; } }
 
 /* One focus treatment for anything keyboard-reachable that does not draw
    its own. */
@@ -277,7 +286,13 @@ input:not([type]) {
   background: var(--surface);
   border: 1px solid var(--line-2);
   border-radius: var(--radius-md);
-  padding: 6px 9px;
+  padding: 0 10px;
+  /* One height for every field and every button beside it (.btn is 32,
+     .btn.primary in a form row 34): fields were 28 to 36px depending on
+     which screen set its own padding and font. */
+  box-sizing: border-box;
+  height: 34px;
+  line-height: 32px;
 }
 
 /* Room for the caret glyph, drawn as a background image because

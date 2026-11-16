@@ -45,7 +45,7 @@
 import { computed, ref } from 'vue'
 import { formatCount } from '@/lib/formatCount'
 import { formatTimeOfDay } from '@/lib/formatClock'
-import { parseGoDuration } from '@/lib/goDuration'
+import { formatGoDuration, parseGoDuration } from '@/lib/goDuration'
 import type { ChurnBucket } from '@/api/generated'
 
 const props = defineProps<{
@@ -241,17 +241,16 @@ function describe(b: ChurnBucket): string {
         </span>
       </span>
       <span class="controls">
-        <span class="bucket">{{ bucketLabel }} buckets</span>
-        <button type="button" class="toggle btn small" @click="showTable = !showTable">
+        <span class="bucket">{{ formatGoDuration(bucketLabel) }} buckets</span>
+        <button v-if="buckets.length" type="button" class="toggle btn small" @click="showTable = !showTable">
           {{ showTable ? 'Chart' : 'Table' }}
         </button>
       </span>
     </figcaption>
 
-    <p v-if="!buckets.length" class="quiet" data-empty>
-      Nothing was archived in this window, so there is nothing to draw. An
-      empty chart is an answer — no bar is a bucket with no rows, not a
-      missing feed.
+    <p v-if="!buckets.length" class="empty" data-empty>
+      <strong>Nothing was archived in this window.</strong>
+      <span>An empty chart is an answer: no rows arrived, not a missing feed.</span>
     </p>
 
     <!-- The height is set HERE, in pixels, not left to the viewBox. With
@@ -266,7 +265,7 @@ function describe(b: ChurnBucket): string {
       :style="{ height: `${H}px` }"
       preserveAspectRatio="none"
       role="img"
-      :aria-label="`Rows archived per ${bucketLabel} bucket, split into session dumps, re-advertisements and withdrawals. Peak ${formatCount(peak)} rows.`"
+      :aria-label="`Rows archived per ${formatGoDuration(bucketLabel)} bucket, split into session dumps, re-advertisements and withdrawals. Peak ${formatCount(peak)} rows.`"
       data-chart
     >
       <!-- Drawn FIRST, so the bars paint over it: the baseline is the floor
@@ -318,7 +317,10 @@ function describe(b: ChurnBucket): string {
 
     <!-- The relief the palette validator's contrast WARN obligates, and the
          accessible view of the same numbers: every bar, exactly. -->
-    <table v-else class="table" data-table>
+    <!-- v-else-if, not v-else: chained to the axis above, a bare v-else
+         rendered this table's empty header under the "nothing was
+         archived" message whenever the window held no buckets. -->
+    <table v-else-if="buckets.length" class="table" data-table>
       <thead>
         <tr>
           <th>Bucket</th>
@@ -346,7 +348,7 @@ function describe(b: ChurnBucket): string {
 .key { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .swatch { width: 9px; height: 9px; border-radius: 2px; }
 .controls { display: inline-flex; align-items: center; gap: 10px; }
-.bucket { color: var(--muted); font: 400 10.5px var(--font-data); }
+.bucket { color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .plot { width: 100%; display: block; }
 /* height comes from the element's own style binding -- see the template. */
 .plot [data-bar]:hover rect { opacity: .78; }
@@ -357,7 +359,13 @@ function describe(b: ChurnBucket): string {
    panel. */
 .tick.middle { transform: translateX(-50%); }
 .tick.end { transform: translateX(-100%); }
-.quiet { margin: 0; max-width: 72ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.empty {
+  margin: 0; min-height: 160px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; text-align: center;
+  padding: 16px; border: 1px dashed var(--line-2); border-radius: var(--radius-md);
+  color: var(--muted); font: 400 var(--text-sm) / 1.5 var(--font-ui);
+}
+.empty strong { color: var(--ink-2); font-weight: 500; font-size: var(--text-body); }
 .table { width: 100%; border-collapse: collapse; font: 400 var(--text-sm) var(--font-ui); }
 .table th {
   text-align: left; padding: 4px 8px; color: var(--muted); background: var(--surface-2);

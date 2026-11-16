@@ -636,7 +636,7 @@ function select(nodeKey: string) {
       them at a time rather than a merge no data supports.
     </p>
 
-    <div class="scope">
+    <div class="scope query-card">
       <label>
         <span>Router</span>
         <select
@@ -931,9 +931,9 @@ function select(nodeKey: string) {
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .lede { margin: 0; max-width: 62em; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 
-.scope { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.scope { display: flex; flex-direction: row; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
 .scope label { display: flex; flex-direction: column; gap: 4px; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.scope select { font: 400 var(--text-sm) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
+.scope select { min-width: 220px; text-transform: none; letter-spacing: normal; }
 
 .whose { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .whose b { font-weight: 600; color: var(--ink-2); }
@@ -942,7 +942,13 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .says { margin: 8px 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); max-width: 62em; }
 .quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
-.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); max-width: 46em; }
+/* The empty answer gets the empty-state frame the unasked screen has, so
+   "this router reports nothing" is not a stray paragraph over a footer. */
+.empty {
+  margin: 0; padding: 40px 24px; text-align: center; text-wrap: balance;
+  border: 1px dashed var(--line-2); border-radius: var(--radius-lg);
+  color: var(--muted); font: 400 var(--text-body) / 1.6 var(--font-ui);
+}
 
 /* The rail is a fixed 300px and the canvas takes what is left, with a
    measured floor rather than `min-width: 0` -- TopologyView.vue carries the

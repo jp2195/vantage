@@ -553,7 +553,7 @@ describe('MonitorView', () => {
     expect(
       w
         .findAll('section.panel')
-        .filter((sec) => sec.find('table, .error, .quiet').exists())
+        .filter((sec) => sec.find('table, .error, .quiet, .empty').exists())
         .map((sec) => sec.attributes('data-section'))
         .filter((name) => name !== 'churn' && name !== 'events'),
     ).toEqual(['churn-peers', 'dumps', 'sessions', 'locrib', 'flags'])
@@ -977,7 +977,7 @@ describe('MonitorView', () => {
     const w = mountMonitor()
     const panel = w.find('[data-section="churn"]')
     expect(panel.exists()).toBe(true)
-    expect(panel.text()).toContain('2m0s')
+    expect(panel.text()).toContain('2 min buckets')
     // And the request itself moved with the window control rather than
     // being fixed: a 1h window gets finer bars than a 24h one.
     expect(capturedChurnBucket?.value).toBe('2m')

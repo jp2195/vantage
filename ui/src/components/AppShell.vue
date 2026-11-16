@@ -267,7 +267,9 @@ watch(rail, (v) => {
   padding: var(--page-y) var(--page-x) 0; margin-bottom: calc(-1 * var(--page-y) + var(--space-2)); font: 400 var(--text-sm) var(--font-ui); color: var(--muted);
 }
 .crumbs [aria-current] { color: var(--ink); font-family: var(--font-data); }
-.crumbs a { font-family: var(--font-data); }
+/* Where this page sits, not somewhere to go next: quiet until pointed at. */
+.crumbs a { font-family: var(--font-data); color: var(--muted); text-decoration: none; }
+.crumbs a:hover { color: var(--ink); text-decoration: underline; text-decoration-color: var(--muted-2); }
 .sep { color: var(--muted-2); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 

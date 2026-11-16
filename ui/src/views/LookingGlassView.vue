@@ -279,12 +279,12 @@ const columns: Column<UnicastRoute>[] = [
   // phone read 10.91.0.0/16 as "10.91.0.0/..." -- the two points came from
   // AS path, which wraps.
   { id: 'prefix', header: 'Prefix', width: '16%' },
-  { id: 'rib', header: 'RIB', width: '88px' },
+  { id: 'rib', header: 'RIB', width: '72px' },
   // 78px, not 74: PATH ID needs 77px with its padding (measured in
   // Chromium), and at the Paths floor below this column gets exactly its px.
   { id: 'path_id', header: 'Path ID', numeric: true, width: '78px' },
-  { id: 'router_sysname', header: 'Router', width: '12%' },
-  { id: 'peer_ip', header: 'Peer', width: '12%' },
+  { id: 'router_sysname', header: 'Router', width: '10%' },
+  { id: 'peer_ip', header: 'Peer', width: '15%', mono: true },
   // /v1/routes is one row per (collector, router, peer, rib, prefix,
   // path_id), so a router two collectors monitor renders each route twice.
   // Without this the pair is two rows identical in every rendered column --
@@ -301,8 +301,8 @@ const columns: Column<UnicastRoute>[] = [
   // (measured in Chromium), and 10% of the 652px table a 1024px viewport
   // leaves cut it off. The two points came from AS path, which wraps.
   { id: 'collector', header: 'Collector', width: '12%' },
-  { id: 'next_hop', header: 'Next hop', width: '12%' },
-  { id: 'as_path', header: 'AS path', width: '16%' },
+  { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
+  { id: 'as_path', header: 'AS path', width: '14%' },
 ]
 
 // Two of the eight columns are fixed px, 166px between them, and the rest
@@ -630,10 +630,10 @@ function compareSeq(a: string, b: string): number {
              than empty, because no feed or endpoint supplies them: "-"
              beside RPKI reads as "no ROA". -->
         <dl v-if="facts.length" class="facts" data-facts>
-          <template v-for="f in facts" :key="f.label">
+          <div v-for="f in facts" :key="f.label" class="fact">
             <dt>{{ f.label }}</dt>
             <dd class="mono">{{ f.value }}</dd>
-          </template>
+          </div>
         </dl>
       </aside>
 
@@ -880,20 +880,18 @@ function compareSeq(a: string, b: string): number {
   padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .pane { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-/* A strip of label-over-value pairs: each dt and the dd after it fill one
-   column, two rows tall. Scrolls sideways on a phone rather than wrapping
-   a label away from its value. */
-.facts {
-  display: grid; grid-template-rows: auto auto; grid-auto-flow: column; justify-content: start;
-  gap: 2px 28px; margin: 0; overflow-x: auto; max-width: 100%;
-}
+/* A strip of label-over-value pairs, each pair one unit, so a phone wraps
+   whole pairs onto a second line. It used to scroll sideways instead, with
+   no scrollbar to say so: the fourth fact was simply cut at the card edge. */
+.facts { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 0; }
+.fact { display: flex; flex-direction: column; gap: 2px; }
 .facts dt {
   color: var(--muted); text-transform: uppercase; white-space: nowrap;
   font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em;
 }
 .facts dd { margin: 0; color: var(--ink); font-size: var(--text-data); white-space: nowrap; }
 .query { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.query input[type="text"], .query input:not([type]) { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 7px 10px; font-size: var(--text-body); min-width: 260px; }
+.query input[type="text"], .query input:not([type]) { min-width: 260px; }
 .query label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
 .groups, .diff, .topology { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; }
 .topology { display: flex; flex-direction: column; gap: 10px; }
@@ -905,7 +903,7 @@ function compareSeq(a: string, b: string): number {
 .events li { display: flex; gap: 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--divider); }
 .via { color: var(--muted); font-size: 10.5px; }
 .window { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
-.window select { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 4px 8px; font: 400 var(--text-sm) var(--font-ui); background: var(--surface); color: var(--ink); }
+
 .action { padding: 1px 7px; border-radius: var(--radius-sm); font: 500 var(--text-label) var(--font-ui); }
 .announce { background: var(--good-tint); color: var(--good); }
 .withdraw { background: var(--bad-tint); color: var(--bad-2); }

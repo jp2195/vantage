@@ -233,7 +233,7 @@ const churnPeerColumns: Column<RankedPeer>[] = [
   // 12% for the ASN: 8% of a 641px panel is 51px, which clips even 65010,
   // and a 4-byte AS is ten digits.
   { id: 'peer_asn', header: 'ASN', numeric: true, width: '12%' },
-  { id: 'peer_ip', header: 'Peer', width: '20%' },
+  { id: 'peer_ip', header: 'Peer', width: '20%', mono: true },
   { id: 'router_sysname', header: 'Router', width: '18%' },
   { id: 'routes', header: 'Prefixes', numeric: true, width: '12%' },
   { id: 'changes_per_second', header: 'Archived/s', numeric: true, width: '12%' },
@@ -473,8 +473,8 @@ const sessionColumns: Column<RouterSessionCount>[] = [
 // a 1366px viewport's panel, so the link was cut off. 38% is 213px at the
 // floor. Router is one address, 98px; the numeric headers need 93px.
 const locribColumns: Column<PeerLocRib>[] = [
-  { id: 'router_ip', header: 'Router', width: '26%' },
-  { id: 'peer_ip', header: 'Peer', width: '38%' },
+  { id: 'router_ip', header: 'Router', width: '26%', mono: true },
+  { id: 'peer_ip', header: 'Peer', width: '38%', mono: true },
   { id: 'reported', header: 'Reported', numeric: true, width: '18%' },
   { id: 'archived', header: 'Archived', numeric: true, width: '18%' },
 ]
@@ -520,7 +520,7 @@ function stepBreakdown(by: 1 | -1) {
     <!-- Four measured signals, no verdict: the tiles state totals their own
          answers carried, and the claim each number must be read with is on
          the tile itself (StatTile's `note`). -->
-    <div class="tiles">
+    <div class="tiles tile-grid">
       <StatTile
         v-for="t in tiles"
         :key="t.key"
@@ -545,7 +545,7 @@ function stepBreakdown(by: 1 | -1) {
       <ul class="attention-list">
         <li v-for="p in attention.slice(0, ATTENTION_CAP)" :key="`${p.collector}|${p.router_ip}|${p.peer_ip}|${p.rib}`">
           <StatePill :state="p.state" />
-          <RouterLink class="mono" :to="`/peers/${p.router_ip}/${p.peer_ip}`">{{ p.peer_ip }}</RouterLink>
+          <RouterLink class="mono value-link" :to="`/peers/${p.router_ip}/${p.peer_ip}`">{{ p.peer_ip }}</RouterLink>
           <span class="where">on <span class="mono">{{ p.router_ip }}</span> · {{ p.rib }} · AS{{ p.asn }} · {{ p.collector }}</span>
         </li>
       </ul>
@@ -580,15 +580,17 @@ function stepBreakdown(by: 1 | -1) {
     </section>
 
     <section class="panel" data-section="events">
-      <h2>Recent peer events</h2>
+      <div class="panel-head">
+        <h2>Recent peer events</h2>
+        <RouterLink class="more" to="/events">All events</RouterLink>
+      </div>
       <!-- The collector is named on the row rather than only here, but the
            note has to say WHAT that id at the end of a row is: a feed has
            no column header to carry the word the Peers and Events tables
            put above the same value. -->
       <p class="note">
-        The newest {{ recentEvents.length }} of this window, fleet-wide, each
-        with the collector that saw it.
-        <RouterLink class="link" to="/events">All events</RouterLink>
+        Newest first, fleet-wide. The last column is the collector that saw
+        each one.
       </p>
       <ul class="events">
         <!-- Two lines, not one, because this panel now sits in a rail
@@ -613,9 +615,9 @@ function stepBreakdown(by: 1 | -1) {
           </span>
           <span v-if="hasDownReason(e)" class="why mono" data-why>{{ reasonDisplay(e) }}</span>
         </li>
-        <li v-if="!recentEvents.length" class="quiet">
-          No peer event in the {{ windowLabel }}. An empty list here is an
-          answer — the window held no session change — not a missing feed.
+        <li v-if="!recentEvents.length" class="feed-empty">
+          <strong>No peer events in the {{ windowLabel }}.</strong>
+          <span>No session went up or down. This is an answer, not a missing feed.</span>
         </li>
       </ul>
     </section>
@@ -647,6 +649,7 @@ function stepBreakdown(by: 1 | -1) {
         :columns="churnPeerColumns"
         :rows="churnPeerRows"
         :meta="churnPeers.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="churnPeers.isPending.value"
         :error="churnPeers.error.value ?? undefined"
         :min-width="WIDE_TABLE_MIN_WIDTH"
@@ -659,7 +662,7 @@ function stepBreakdown(by: 1 | -1) {
           <RouterLink class="history" :to="historyOf(row as RankedPeer)" :title="`Session history for ${(row as RankedPeer).peer_ip}`"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg><span class="sr-only">Session history</span></RouterLink>
         </template>
         <template #cell-router_sysname="{ row }">
-          <RouterLink class="link" :to="peersOf(row as RankedPeer)">{{
+          <RouterLink class="link" :class="{ unnamed: !(row as RankedPeer).router_sysname }" :to="peersOf(row as RankedPeer)">{{
             (row as RankedPeer).router_sysname || '(no sysName TLV)'
           }}</RouterLink>
         </template>
@@ -725,13 +728,14 @@ function stepBreakdown(by: 1 | -1) {
         :columns="dumpColumns"
         :rows="dumpRows"
         :meta="dumps.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="dumps.isPending.value"
         :error="dumps.error.value ?? undefined"
         :min-width="PANEL_TABLE_MIN_WIDTH"
         :row-attrs="dumpRowAttrs"
       >
         <template #cell-router_sysname="{ row }">
-          <RouterLink class="link" :to="peersOf(row as RouterDumpCount)">{{
+          <RouterLink class="link" :class="{ unnamed: !(row as RouterDumpCount).router_sysname }" :to="peersOf(row as RouterDumpCount)">{{
             sysnameOf(row as RouterDumpCount)
           }}</RouterLink>
         </template>
@@ -760,13 +764,14 @@ function stepBreakdown(by: 1 | -1) {
         :columns="sessionColumns"
         :rows="sessionRows"
         :meta="sessions.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="sessions.isPending.value"
         :error="sessions.error.value ?? undefined"
         :min-width="PANEL_TABLE_MIN_WIDTH"
         :row-attrs="sessionRowAttrs"
       >
         <template #cell-router_sysname="{ row }">
-          <RouterLink class="link" :to="peersOf(row as RouterSessionCount)">{{
+          <RouterLink class="link" :class="{ unnamed: !(row as RouterSessionCount).router_sysname }" :to="peersOf(row as RouterSessionCount)">{{
             sysnameOf(row as RouterSessionCount)
           }}</RouterLink>
         </template>
@@ -822,6 +827,7 @@ function stepBreakdown(by: 1 | -1) {
         :columns="flagColumns"
         :rows="flagRows"
         :meta="flags.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="flags.isPending.value"
         :error="flags.error.value ?? undefined"
         :min-width="PANEL_TABLE_MIN_WIDTH"
@@ -839,7 +845,8 @@ function stepBreakdown(by: 1 | -1) {
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
 h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 .window-note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
-.tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container monitor (max-width: 880px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wide { margin-bottom: 0; }
 /* The chart gets the wider share because it is the only mark on this screen
    whose x axis is time: at 1.7:1 on a 1920px display the plot is ~1140px,
@@ -931,9 +938,17 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 }
 .history:hover { color: var(--link); background: var(--surface-2); }
 .history svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
-.attention .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.panel-head h2 { margin: 0; }
+.feed-empty {
+  display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; text-align: center;
+  padding: 28px 16px; border: 1px dashed var(--line-2); border-radius: var(--radius-md);
+  color: var(--muted); font: 400 var(--text-sm) / 1.5 var(--font-ui);
+}
+.feed-empty strong { color: var(--ink-2); font-weight: 500; font-size: var(--text-body); }
 .attention .count { margin-left: 6px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
-.attention .more { font: 500 var(--text-sm) var(--font-ui); }
+.panel-head .more { font: 500 var(--text-sm) var(--font-ui); text-decoration: none; white-space: nowrap; }
+.panel-head .more:hover { text-decoration: underline; }
 .attention-list {
   list-style: none; margin: 0; padding: 0;
   display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 0 var(--space-6);
@@ -943,4 +958,7 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
   padding: var(--space-2) 0; border-top: 1px solid var(--line-faint); font: 400 var(--text-data) var(--font-ui);
 }
 .attention-list .where { color: var(--muted); font-size: var(--text-sm); }
+/* A router with no sysName: the placeholder reads as one (controls.css
+   mutes it; italic as on Routers and Events). */
+.unnamed { font-style: italic; }
 </style>

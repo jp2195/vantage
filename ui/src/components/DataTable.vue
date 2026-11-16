@@ -54,6 +54,12 @@ export interface Column<Row extends Record<string, unknown> = Record<string, unk
    * Null and undefined sort last in both directions.
    */
   sortValue?: (row: Row) => string | number | null | undefined
+  /**
+   * Set the column in the data face: addresses, prefixes, AS paths. Numeric
+   * columns get it already. Without it a table showed a peer address in
+   * one face and the router address beside it in another.
+   */
+  mono?: boolean
 }
 
 const props = defineProps<{
@@ -96,6 +102,12 @@ const props = defineProps<{
    * matched", which would read as a claim about the network.
    */
   filteredOut?: number
+  /**
+   * A second line under the empty state, for what the screen knows about
+   * why nothing matched -- "No events in the last hour" says more than the
+   * bare fact, and points at the control that would widen it.
+   */
+  emptyHint?: string
 }>()
 
 /**
@@ -249,11 +261,14 @@ function titleIfTruncated(e: MouseEvent) {
 
     <p v-if="error" class="error" role="alert">{{ error.message }}</p>
     <p v-else-if="loading && rows.length === 0" class="quiet loading" role="status">loading…</p>
-    <p v-else-if="rows.length === 0 && filteredOut" class="quiet" data-filtered-empty>
-      Nothing here matches the filter. It is hiding {{ filteredOut }}
-      {{ filteredOut === 1 ? 'row' : 'rows' }} of a complete answer.
+    <p v-else-if="rows.length === 0 && filteredOut" class="empty" data-filtered-empty>
+      <strong>Nothing here matches the filter.</strong>
+      <span>It is hiding {{ filteredOut }} {{ filteredOut === 1 ? 'row' : 'rows' }} of a complete answer.</span>
     </p>
-    <p v-else-if="rows.length === 0" class="quiet">no rows matched</p>
+    <p v-else-if="rows.length === 0" class="empty" data-empty>
+      <strong>No rows matched.</strong>
+      <span v-if="emptyHint">{{ emptyHint }}</span>
+    </p>
 
     <div v-else class="scroll">
     <table :style="minWidth ? { minWidth } : undefined">
@@ -284,7 +299,7 @@ function titleIfTruncated(e: MouseEvent) {
       </thead>
       <tbody @mouseover="titleIfTruncated">
         <tr v-for="(row, i) in shownRows" :key="i" v-bind="rowAttrs ? rowAttrs(row) : {}">
-          <td v-for="c in columns" :key="c.id" :class="{ num: c.numeric, mono: c.numeric }">
+          <td v-for="c in columns" :key="c.id" :class="{ num: c.numeric, mono: c.numeric || c.mono }">
             <slot :name="`cell-${c.id}`" :row="row">{{ row[c.id] }}</slot>
           </td>
           <td v-if="$slots.actions" class="actions"><slot name="actions" :row="row" /></td>
@@ -343,8 +358,11 @@ function titleIfTruncated(e: MouseEvent) {
 .sort:hover { color: var(--ink); }
 .sort:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
 .arrow { flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
-.arrow.idle { opacity: .35; }
-.sort:hover .arrow.idle { opacity: .7; }
+/* An unsorted column's arrows wait for the pointer: on every header at
+   once they were a row of noise beside the labels. */
+.arrow.idle { opacity: 0; transition: opacity .12s; }
+.sort:hover .arrow.idle, .sort:focus-visible .arrow.idle { opacity: .6; }
+@media (hover: none) { .arrow.idle { opacity: .35; } }
 th[aria-sort='ascending'], th[aria-sort='descending'] { color: var(--ink); }
 /* fixed, so <colgroup>'s widths bind and a long value wraps or ellipses
    inside its column instead of widening it. */
@@ -371,6 +389,14 @@ tbody tr:last-child td { border-bottom: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .error { margin: 0; padding: 14px 16px; color: var(--bad-2); background: var(--bad-tint); font: 400 var(--text-body) var(--font-ui); }
 .quiet { margin: 0; padding: 14px 16px; color: var(--muted); font: 400 var(--text-body) var(--font-ui); }
+/* Empty: centered in the card with room around it, so "nothing" reads as
+   the answer rather than a table that failed to draw its rows. */
+.empty {
+  margin: 0; padding: 36px 24px; text-align: center;
+  display: flex; flex-direction: column; gap: 4px; align-items: center;
+  color: var(--muted); font: 400 var(--text-sm) / 1.5 var(--font-ui);
+}
+.empty strong { color: var(--ink-2); font-weight: 500; font-size: var(--text-body); }
 .loading { display: flex; align-items: center; gap: 10px; }
 .loading::before {
   content: ''; width: 14px; height: 14px; flex: none; border-radius: 50%;

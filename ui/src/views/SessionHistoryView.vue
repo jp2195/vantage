@@ -229,14 +229,14 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // to show. Same column, same argument, as EventsView.vue and PeersView.vue.
 const columns: Column<PeerEvent>[] = [
   { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
-  { id: 'kind', header: 'Kind', width: '112px', sortable: true },
+  { id: 'kind', header: 'Kind', width: '160px', sortable: true },
   { id: 'collector', header: 'Collector', width: '11%', sortable: true },
   { id: 'rib', header: 'RIB', width: '92px', sortable: true },
-  { id: 'down_reason', header: 'Reason', width: '20%' },
+  { id: 'down_reason', header: 'Reason', width: '15%' },
   // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
   // padding (measured in Chromium); 84px cut it to "42000...".
   { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
-  { id: 'router_sysname', header: 'Router', width: '16%', sortable: true },
+  { id: 'router_sysname', header: 'Router', width: '15%', sortable: true },
 ]
 
 // Four of the seven columns are fixed px, 494px between them, and
@@ -264,7 +264,7 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
          collector field, so a scoped walk here spans collectors however
          narrow the pair looks. Saying otherwise put "walking dev-c1's view"
          directly above dev-c2's own rows. -->
-    <div class="filters">
+    <div class="filters query-card">
       <ScopePicker
         :router="seededRouter"
         :peer="seededPeer"
@@ -293,7 +293,7 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
     <!-- /v1/events requires router and peer; an unscoped request is a 400.
          Rendering an empty table before a scope exists would say "this
          session has no history" about a question nobody asked. -->
-    <p v-if="!scope" class="quiet">Choose a router and peer to see its session history.</p>
+    <p v-if="!scope" class="empty-state">Choose a router and peer to see every time its session went up or down.</p>
 
     <template v-else>
       <WindowPicker v-model="since" :windows="WINDOWS" />
@@ -341,18 +341,10 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
   display: flex; flex-direction: column; gap: 4px; align-self: flex-start;
   font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
 }
-.window select {
-  font: 400 var(--text-sm) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2);
-  border-radius: var(--radius-md); background: var(--surface); color: var(--ink);
-  text-transform: none; letter-spacing: normal;
-}
+.window select { text-transform: none; letter-spacing: normal; }
 .more { align-self: flex-start; }
 /* A router that sent no sysName: the placeholder reads as one, not as a
    router called "(no sysName TLV)". The text itself matches Grafana's. */
 .unnamed { font-style: italic; color: var(--muted); }
 /* The scope controls as a card, the same shape Routes gives them. */
-.filters {
-  padding: 14px 16px; background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--radius-lg);
-}
 </style>

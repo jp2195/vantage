@@ -170,7 +170,7 @@ describe('EventsView', () => {
   it('states the window even when nothing matched, because empty is not the same as quiet', () => {
     fixture = { data: [], meta: { next_cursor: null, total_matched: 0, warnings: [] } }
     const w = mount(EventsView)
-    expect(w.text()).toContain('no rows matched')
+    expect(w.text()).toMatch(/no rows matched/i)
     expect(w.find('[data-window-note]').exists()).toBe(true)
     expect(w.find('[data-archive-note]').exists()).toBe(true)
   })

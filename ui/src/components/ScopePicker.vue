@@ -276,7 +276,7 @@ const unlistedPeer = computed<string | undefined>(() => {
     <label>
       <span>Router</span>
       <select v-model="routerIp">
-        <option :value="undefined">—</option>
+        <option :value="undefined">Choose a router…</option>
         <option v-for="r in routerRows" :key="r.ip" :value="r.ip">
           {{ r.sysname }} ({{ r.ip }})
         </option>
@@ -285,11 +285,11 @@ const unlistedPeer = computed<string | undefined>(() => {
     <label>
       <span>Peer</span>
       <select v-model="peerIp" :disabled="!routerIp">
-        <option :value="undefined">—</option>
+        <option :value="undefined">Choose a peer…</option>
         <!-- A selection the list cannot contain: a peer seeded from a URL
              whose session has ended, which /v1/peers does not carry. Without
              an option holding that value the control renders BLANK (not
-             "—"), because a <select> whose v-model matches no option has
+             the placeholder), because a <select> whose v-model matches no option has
              selectedIndex -1 -- found in a browser, where it reads as a
              broken control beside a populated Router dropdown.
 
@@ -371,6 +371,14 @@ const unlistedPeer = computed<string | undefined>(() => {
    where the three fit on one line. */
 .picker { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
 label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-select { max-width: 100%; font: 400 var(--text-body) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); }
+select:disabled { color: var(--muted-2); background-color: var(--surface-2); cursor: not-allowed; }
+/* Sized to the choice, from a floor, up to the row: a peer reads
+   "10.0.0.80 · AS4200000002 · 2 collectors" and a fixed 240px cut it. */
+select { min-width: 220px; max-width: 100%; text-transform: none; letter-spacing: normal; }
 .ambiguous { margin-top: var(--space-2); }
+/* On a phone each control takes the row: three selects of three different
+   widths stacked down a 360px column read as misaligned, not as a form. */
+@media (max-width: 600px) {
+  .picker label, .picker select { width: 100%; }
+}
 </style>

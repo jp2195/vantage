@@ -86,7 +86,7 @@ h1 { margin: 4px 0 0; font: 600 var(--text-page) var(--font-ui); letter-spacing:
 .field { display: flex; flex-direction: column; gap: 6px; }
 .label { font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .input-row { display: flex; gap: 8px; }
-.input-row input { flex: 1; min-width: 0; padding: 9px 11px; font-size: var(--text-body); }
+.input-row input { flex: 1; min-width: 0; height: 38px; line-height: 36px; padding: 0 11px; }
 .reveal {
   flex: none; padding: 0 12px; border: 1px solid var(--line-2); border-radius: var(--radius-md);
   background: var(--surface); color: var(--ink-2); font: 500 var(--text-sm) var(--font-ui); cursor: pointer;

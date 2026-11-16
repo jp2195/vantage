@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import PathGraph from '@/components/PathGraph.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import CodeText from '@/components/CodeText.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import ScopePicker from '@/components/ScopePicker.vue'
 import { useAsNames, useTopology, type TopologyScope } from '@/api/queries'
@@ -413,7 +414,7 @@ function select(asn: number) {
              branches are mutually exclusive facts, and neither prints
              before the batch has answered: no answer yet is not "not
              loaded" -- see @/lib/asname.ts. -->
-        <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice>{{ asNamesLoadNotice }}</p>
+        <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice><CodeText :text="asNamesLoadNotice" /></p>
         <p v-else-if="asNamesDate" class="quiet" data-asnames-date>
           AS holder names as of {{ asNamesDate }}.
         </p>
@@ -558,12 +559,12 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
   padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.scope input.term { padding: 7px 10px; font-size: var(--text-body); min-width: 260px; }
+.scope input.term { min-width: 260px; }
 .scope label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .controls label { display: flex; gap: 6px; align-items: center; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.controls input, .controls select { font: 400 var(--text-sm) var(--font-ui); padding: 5px 8px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
+.controls input, .controls select { text-transform: none; letter-spacing: normal; }
 .controls input { width: 72px; }
 
 .summary { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }

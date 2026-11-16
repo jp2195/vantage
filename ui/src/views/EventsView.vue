@@ -49,6 +49,15 @@ const windowLabel = computed(
   () => WINDOWS.find((w) => w.value === since.value)?.label ?? since.value,
 )
 
+/** What the empty table says beyond "no rows": the window, and the wider
+ *  one to try when there is one. */
+const emptyHint = computed(() => {
+  const widest = since.value === WINDOWS[WINDOWS.length - 1].value
+  return widest
+    ? `No session went up or down in the ${windowLabel.value}.`
+    : `No session went up or down in the ${windowLabel.value}. A wider window may show some.`
+})
+
 const walk = useFleetEvents(since)
 const rows = computed<PeerEvent[]>(() => walk.data.value?.data ?? [])
 
@@ -96,16 +105,16 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // genuinely different (different session_id on the wire).
 const columns: Column<PeerEvent>[] = [
   { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
-  { id: 'kind', header: 'Kind', width: '112px', sortable: true },
-  { id: 'router_sysname', header: 'Router', width: '13%', sortable: true },
-  { id: 'peer_ip', header: 'Peer', width: '13%', sortable: true },
-  { id: 'collector', header: 'Collector', width: '11%', sortable: true },
+  { id: 'kind', header: 'Kind', width: '160px', sortable: true },
+  { id: 'router_sysname', header: 'Router', width: '12%', sortable: true },
+  { id: 'peer_ip', header: 'Peer', width: '13%', sortable: true, mono: true },
+  { id: 'collector', header: 'Collector', width: '10%', sortable: true },
   // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
   // padding (measured in Chromium). At 84px it read "42000..." at every
   // width, 1440 included.
   { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
   { id: 'rib', header: 'RIB', width: '92px', sortable: true },
-  { id: 'down_reason', header: 'Reason', width: '18%' },
+  { id: 'down_reason', header: 'Reason', width: '15%' },
 ]
 
 // Four of the eight columns are fixed px, 494px between them, and
@@ -128,8 +137,6 @@ const EVENTS_MIN_WIDTH = '1098px'
       :eyebrow="['all routers', windowLabel]"
       :counts="counts"
     />
-    <p class="lede">Recent events across the whole fleet, newest first.</p>
-
     <WindowPicker v-model="since" :windows="WINDOWS" />
 
     <!-- The window, stated beside the control that sets it and BEFORE the
@@ -137,7 +144,7 @@ const EVENTS_MIN_WIDTH = '1098px'
          events looks authoritative in a way a scoped timeline does not:
          "nothing broke" and "nothing broke in the last hour" are different
          claims, and only the second is one this data supports. A reader who
-         stops at the lede above should not walk away with the unbounded
+         stops at the header should not walk away with the unbounded
          claim -- this is what pins the window to the results before the
          table, not after it. The cap is the other bound, and ResultMeta
          says that one with the real numbers, below the table.
@@ -171,6 +178,7 @@ const EVENTS_MIN_WIDTH = '1098px'
       :error="walk.error.value ?? undefined"
       :row-attrs="rowAttrs"
       :min-width="EVENTS_MIN_WIDTH"
+      :empty-hint="emptyHint"
     >
       <template #cell-router_sysname="{ row }"><span :class="{ unnamed: !row.router_sysname }">{{ routerLabel(row.router_sysname) }}</span></template>
       <template #cell-collector="{ row }">
@@ -196,16 +204,11 @@ const EVENTS_MIN_WIDTH = '1098px'
 <style scoped>
 .screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
-.lede { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .window {
   display: flex; flex-direction: column; gap: 4px; align-self: flex-start;
   font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
 }
-.window select {
-  font: 400 var(--text-sm) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2);
-  border-radius: var(--radius-md); background: var(--surface); color: var(--ink);
-  text-transform: none; letter-spacing: normal;
-}
+.window select { text-transform: none; letter-spacing: normal; }
 .window-note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* A router that sent no sysName: the placeholder reads as one, not as a
    router called "(no sysName TLV)". The text itself matches Grafana's. */

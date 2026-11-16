@@ -88,6 +88,9 @@ function sectionKey(row: Peer): string {
  */
 const WINDOW = '24h'
 const WINDOW_LABEL = 'last 24 hours'
+/** The same window in a tile label, which has a sixth of the row: written
+ *  out, it wrapped two of the six labels and pushed their values down. */
+const WINDOW_SHORT = 'last 24h'
 
 // `session` is part of EventScope's shape but not part of the question this
 // screen asks: it wants the peer's history across whatever sessions the
@@ -325,13 +328,13 @@ const tiles = computed(() => {
   }
   out.push({
     key: 'sessions',
-    label: `Sessions · ${WINDOW_LABEL}`,
+    label: `Sessions · ${WINDOW_SHORT}`,
     value: formatCount(sessionCount.value),
     note: 'Distinct BMP sessions in this window, never the events inside them.',
   })
   out.push({
     key: 'flaps',
-    label: `Flaps · ${WINDOW_LABEL}`,
+    label: `Flaps · ${WINDOW_SHORT}`,
     value: formatCount(flapCount.value),
     note:
       'Times this session went down and came back inside the window. A ' +
@@ -341,7 +344,7 @@ const tiles = computed(() => {
   })
   out.push({
     key: 'view-lost',
-    label: `View lost · ${WINDOW_LABEL}`,
+    label: `View lost · ${WINDOW_SHORT}`,
     value: formatCount(viewLostCount.value),
     note:
       'Times a collector lost its own BMP transport while the router said ' +
@@ -440,7 +443,7 @@ const endpoints = computed(() => {
 
         <!-- Only the tiles with an answer behind them are shown, and
              each says which window it covers. -->
-        <div class="tiles">
+        <div class="tiles tile-grid">
           <StatTile
             v-for="t in tiles"
             :key="t.key"
@@ -540,9 +543,6 @@ const endpoints = computed(() => {
           <section class="panel" data-section="churn">
             <h2>
               Update churn · {{ WINDOW_LABEL }}
-              <span class="bucket">{{
-                churn.data.value?.meta?.churn_bucket ?? CHURN_BUCKET
-              }}</span>
             </h2>
             <p v-if="churn.error.value" class="error" role="alert">
               {{ churn.error.value.message }}
@@ -631,7 +631,11 @@ const endpoints = computed(() => {
 .states { display: flex; gap: 12px; }
 .state-of { display: inline-flex; align-items: center; gap: 6px; }
 .rib-tag { color: var(--muted); font-size: 10.5px; }
-.tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.tiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+/* The ranked prefixes are a seven-column-wide table: in a third of the
+   row its numbers were clipped behind a scrollbar while two thirds of the
+   page beside it stood empty. */
+.panels > [data-section='churn-prefixes'] { grid-column: 1 / -1; }
 .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
 .panel {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
@@ -678,8 +682,4 @@ h3 { margin: 2px 0 0; font: 600 var(--text-sm) var(--font-ui); color: var(--ink-
 .error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
 .quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .descr { white-space: normal; line-height: 1.45; }
-.bucket {
-  margin-left: 7px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-2);
-  color: var(--muted); font: 400 10px var(--font-data); letter-spacing: .02em;
-}
 </style>

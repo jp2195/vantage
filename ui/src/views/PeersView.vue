@@ -4,6 +4,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import CodeText from '@/components/CodeText.vue'
 import AboutThis from '@/components/AboutThis.vue'
 import { formatCount } from '@/lib/formatCount'
 import { formatRate } from '@/lib/formatRate'
@@ -83,8 +84,8 @@ const columns: Column<PeerRow>[] = [
   // each still at least as wide as its header and its widest value at the
   // floor.
   { id: 'peer_ip', header: 'Peer', width: '19%', sortable: true },
-  { id: 'router_ip', header: 'Router', width: '11%', sortable: true },
-  { id: 'collector', header: 'Collector', width: '9%', sortable: true },
+  { id: 'router_ip', header: 'Router', width: '11%', sortable: true, mono: true },
+  { id: 'collector', header: 'Collector', width: '8%', sortable: true },
   { id: 'rib', header: 'RIB', width: '7%', sortable: true },
   // Not `numeric`: once a holder name is beside it, the cell holds more
   // than a number, and right-aligned tabular figures are the wrong shape
@@ -104,7 +105,7 @@ const columns: Column<PeerRow>[] = [
   // collection-artifact-as-network-fact class, in a column an operator would
   // trust. The instant is a fact the archive holds; the duration is an
   // inference about the present it cannot support.
-  { id: 'up_since', header: 'Up since', width: '11%', sortable: true, sortValue: (r) => (showsUpSince(r.state) ? r.up_since : null) },
+  { id: 'up_since', header: 'Up since', width: '13%', sortable: true, sortValue: (r) => (showsUpSince(r.state) ? r.up_since : null) },
   // Named for the field it carries -- changes_per_second, off
   // /v1/collection/churn/peers -- not for its header. The column guard
   // checks ids against the shapes real endpoints return, so an id invented
@@ -118,7 +119,7 @@ const columns: Column<PeerRow>[] = [
   // The shape the rate beside it averages away: two peers with one rate may
   // have churned steadily and all at once. Named for the field it carries,
   // like its neighbor.
-  { id: 'activity', header: 'Changes', width: '8%' },
+  { id: 'activity', header: 'Changes', width: '7%' },
 ]
 
 // Percentages alone shrink every column with the screen: on a 390px phone
@@ -350,7 +351,7 @@ function dumping(p: Peer): boolean {
          or one is and this is when its source published it. Neither prints
          when the batch has not answered yet, and no answer is not "not
          loaded" -- see @/lib/asname.ts. -->
-    <p v-if="asNamesLoadNotice" class="note" data-asnames-notice>{{ asNamesLoadNotice }}</p>
+    <p v-if="asNamesLoadNotice" class="note" data-asnames-notice><CodeText :text="asNamesLoadNotice" /></p>
     <p v-else-if="asNamesDate" class="note" data-asnames-date>
       AS holder names as of {{ asNamesDate }}.
     </p>
@@ -527,7 +528,7 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 }
 .search:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus-ring); }
 .search svg { flex: none; fill: none; stroke: var(--muted); stroke-width: 1.6; }
-.search input[type='search'] { flex: 1; min-width: 0; border: 0; padding: 7px 0; background: transparent; }
+.search input[type='search'] { flex: 1; min-width: 0; height: 32px; border: 0; padding: 0; background: transparent; box-shadow: none; }
 .search input[type='search']:focus-visible { box-shadow: none; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {

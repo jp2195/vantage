@@ -277,6 +277,11 @@ function formatLastHeard(lastBeatAt: string | null): string {
 function activityPeak(activity: Collector['activity']): number {
   return Math.max(1, ...activity.map((a) => a.rows))
 }
+/** The busiest minute's rows, for the caption: 0 when nothing arrived,
+ *  where activityPeak floors at 1 to keep the bar math finite. */
+function peakRows(activity: Collector['activity']): number {
+  return activity.reduce((m, a) => Math.max(m, a.rows), 0)
+}
 function barWidth(n: number): number {
   return n > 0 ? 100 / n : 100
 }
@@ -315,7 +320,7 @@ function barTop(rows: number, peak: number): number {
 // three points came from them.
 const routerColumns: Column<CollectorRouter>[] = [
   { id: 'sysname', header: 'Router', width: '38%', sortable: true, sortValue: (r) => r.sysname || r.ip },
-  { id: 'ip', header: 'Address', width: '28%', sortable: true },
+  { id: 'ip', header: 'Address', width: '28%', sortable: true, mono: true },
   { id: 'peers_up', header: 'Peers', width: '34%' },
 ]
 
@@ -364,7 +369,7 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
           rate or publish count to show -- not zero of each.
         </p>
 
-        <div class="tiles">
+        <div class="tiles tile-grid">
           <StatTile
             v-if="c.archive"
             data-tile="peers"
@@ -419,7 +424,10 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 
         <figure class="activity">
           <figcaption class="axis" data-activity-axis>
-            Rows archived per minute, over the last {{ activityWindow }}
+            <span>Rows archived per minute, over the last {{ activityWindow }}</span>
+            <span class="peak mono">{{
+              peakRows(c.activity) > 0 ? `peak ${formatCount(peakRows(c.activity))}` : 'none archived'
+            }}</span>
           </figcaption>
           <svg
             v-if="c.activity.length"
@@ -439,9 +447,9 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
               <rect
                 :x="i * barWidth(c.activity.length)"
                 :y="barTop(bucket.rows, activityPeak(c.activity))"
-                :width="Math.max(barWidth(c.activity.length) - 0.4, 0.6)"
+                :width="bucket.rows ? Math.max(barWidth(c.activity.length) - 0.4, 0.6) : barWidth(c.activity.length)"
                 :height="drawnBarHeight(bucket.rows, activityPeak(c.activity))"
-                :class="{ current: i === c.activity.length - 1 }"
+                :class="{ current: i === c.activity.length - 1, zero: !bucket.rows }"
               />
             </g>
           </svg>
@@ -506,16 +514,24 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 .quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* A grid, not a wrapping row: seven tiles in a row of six left the seventh
    stretched across the card on a line of its own. */
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
+.tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
 .tiles :deep(.tile) { min-width: 110px; padding: 8px 10px; }
+/* Peers up carries the longest sub-line (down, view lost, stale) and spans
+   two cells, so seven tiles fill whole rows of four instead of leaving a
+   hole at the end of the second. */
+.tiles :deep([data-tile='peers']) { grid-column: span 2; }
 .tiles :deep(.value) { font-size: 17px; }
 .activity { margin: 0; display: flex; flex-direction: column; gap: 4px; }
-.axis { margin: 0; color: var(--muted); font: 400 10.5px var(--font-data); }
+.axis { margin: 0; display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.axis .peak { flex: none; font-size: var(--text-label); }
 .plot { width: 100%; height: 44px; display: block; }
 .plot rect { fill: var(--ink-2); }
 /* The final bar is the current, still-accumulating minute -- never drawn
    as though it were a completed one. */
 .plot rect.current { fill: var(--muted); }
+/* A minute with no rows is the floor, drawn edge to edge: as separate
+   stubs, a quiet half hour looked like a dashed rule rather than zero. */
+.plot rect.zero { fill: var(--line-2); }
 .routers { font-size: 11px; }
 .os-line { color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .peer-counts { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }

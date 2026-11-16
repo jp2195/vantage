@@ -676,7 +676,7 @@ describe('PeerDetailView churn panels', () => {
     eventRows = events.data
     const w = mountDetail()
     await nextTick()
-    expect(w.find('[data-section="churn"]').text()).toContain('30m0s')
+    expect(w.find('[data-section="churn"]').text()).toContain('30 min buckets')
   })
 })
 
