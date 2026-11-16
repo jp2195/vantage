@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref } from 'vue'
 import { routerLabel } from '@/lib/routerLabel'
 import DataTable, { type Column } from '@/components/DataTable.vue'
@@ -8,7 +9,6 @@ import { formatCount } from '@/lib/formatCount'
 import EventKindMark from '@/components/EventKindMark.vue'
 import EventArchiveNote from '@/components/EventArchiveNote.vue'
 import { reasonDisplay } from '@/lib/eventReason'
-import { formatClock } from '@/lib/formatClock'
 import { useFleetEvents } from '@/api/queries'
 import type { PeerEvent } from '@/api/generated'
 
@@ -177,7 +177,7 @@ const EVENTS_MIN_WIDTH = '1098px'
         <span class="mono">{{ (row as PeerEvent).collector }}</span>
       </template>
       <template #cell-ts_collector="{ row }">
-        <span class="mono">{{ formatClock((row as PeerEvent).ts_collector) }}</span>
+        <Clock :iso="(row as PeerEvent).ts_collector" />
       </template>
       <template #cell-kind="{ row }">
         <EventKindMark :kind="(row as PeerEvent).kind" />
@@ -194,7 +194,7 @@ const EVENTS_MIN_WIDTH = '1098px'
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .lede { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .window {

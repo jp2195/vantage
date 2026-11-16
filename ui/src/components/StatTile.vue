@@ -36,6 +36,7 @@ defineProps<{
 <style scoped>
 .tile {
   flex: 1 1 0; min-width: 150px; padding: 14px var(--space-4); box-sizing: border-box;
+  container-type: inline-size;
   border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .label {
@@ -44,6 +45,9 @@ defineProps<{
 }
 /* The KPI value scale, with -.02em tracking. */
 .value { margin: 6px 0 0; font: 500 var(--text-kpi) var(--font-data); letter-spacing: -.02em; color: var(--ink); }
+/* Scales with the tile, down to the panel-heading size, so a ten-digit ASN
+   in a phone-width tile stays inside it rather than running off the edge. */
+.value { font-size: clamp(var(--text-title), 13cqi, var(--text-kpi)); overflow-wrap: anywhere; }
 /* A timestamp or a duration is not a count and does not need count-sized
    type: "Sep 7, 2026, 21:11:38" at the KPI size wrapped to three lines in a
    tile a sixth of the row wide. */

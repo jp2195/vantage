@@ -264,7 +264,7 @@ watch(rail, (v) => {
 
 .crumbs {
   display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  padding: var(--space-4) 24px 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted);
+  padding: var(--page-y) var(--page-x) 0; margin-bottom: calc(-1 * var(--page-y) + var(--space-2)); font: 400 var(--text-sm) var(--font-ui); color: var(--muted);
 }
 .crumbs [aria-current] { color: var(--ink); font-family: var(--font-data); }
 .crumbs a { font-family: var(--font-data); }

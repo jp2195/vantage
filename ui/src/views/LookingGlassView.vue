@@ -498,7 +498,7 @@ const scopeNote = computed(() => {
   if (n === 0) return undefined
   const noun = n === 1 ? 'route' : 'routes'
   const verb = n === 1 ? 'is' : 'are'
-  return `${n} matched ${noun} ${verb} in VPN/EVPN and not shown on this screen -- this view renders unicast only. Nothing is missing from the network, only from this view.`
+  return `${n} matched ${noun} ${verb} in VPN/EVPN and not shown on this screen — this view renders unicast only. Nothing is missing from the network, only from this view.`
 })
 
 /** One key per route, not just per prefix: the same (prefix, path_id) is
@@ -614,7 +614,7 @@ function compareSeq(a: string, b: string): number {
     <div class="split">
       <aside class="rail">
         <form class="query" @submit.prevent="search()">
-      <div class="modes">
+      <div class="modes seg" role="group" aria-label="Search by">
         <button type="button" :class="{ on: mode === 'prefix' }" @click="mode = 'prefix'">Prefix</button>
         <button type="button" :class="{ on: mode === 'asn' }" @click="mode = 'asn'">ASN</button>
         <button type="button" :class="{ on: mode === 'community' }" @click="mode = 'community'">Community</button>
@@ -622,7 +622,7 @@ function compareSeq(a: string, b: string): number {
       <input v-model="term" class="mono" :placeholder="mode === 'prefix' ? '10.0.0.0/24' : mode === 'asn' ? '65010' : '65010:100'" />
       <label v-if="mode === 'prefix'"><input v-model="covers" type="checkbox" /> covering</label>
       <label v-if="mode === 'asn'"><input v-model="inPath" type="checkbox" /> in path</label>
-          <button type="submit">Search</button>
+          <button type="submit" class="btn primary">Search</button>
         </form>
 
         <!-- Facts about the subject, counted over the rows in hand. RPKI,
@@ -638,11 +638,11 @@ function compareSeq(a: string, b: string): number {
       </aside>
 
       <div class="pane">
-        <div class="tabs">
-      <button data-tab="paths" :class="{ on: tab === 'paths' }" @click="tab = 'paths'">Paths</button>
-      <button data-tab="grouped" :class="{ on: tab === 'grouped' }" @click="tab = 'grouped'">Grouped</button>
-      <button data-tab="diff" :class="{ on: tab === 'diff' }" @click="tab = 'diff'">Changes</button>
-      <button data-tab="topology" :class="{ on: tab === 'topology' }" @click="tab = 'topology'">Topology</button>
+        <div class="tabs tabbar">
+      <button type="button" data-tab="paths" :class="{ on: tab === 'paths' }" @click="tab = 'paths'">Paths</button>
+      <button type="button" data-tab="grouped" :class="{ on: tab === 'grouped' }" @click="tab = 'grouped'">Grouped</button>
+      <button type="button" data-tab="diff" :class="{ on: tab === 'diff' }" @click="tab = 'diff'">Changes</button>
+      <button type="button" data-tab="topology" :class="{ on: tab === 'topology' }" @click="tab = 'topology'">Topology</button>
     </div>
 
     <!-- Visible regardless of the active tab: the fanout matched these
@@ -676,7 +676,7 @@ function compareSeq(a: string, b: string): number {
          Changes tab is excluded because it has a narrower thing to say:
          history is per exact prefix, so an ASN or community search leaves
          it with nothing to track even after a search HAS been made. -->
-    <p v-if="!filters && tab !== 'diff'" class="quiet">
+    <p v-if="!filters && tab !== 'diff'" class="empty-state">
       Search a prefix, ASN or community to see routes.
     </p>
 
@@ -870,7 +870,7 @@ function compareSeq(a: string, b: string): number {
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 /* One column: the rail is a band above the pane. minmax(0, 1fr), not 1fr:
    without the 0 minimum a wide table inside it pushes the grid wider than
    the viewport instead of scrolling in its own card. */
@@ -893,13 +893,8 @@ function compareSeq(a: string, b: string): number {
 }
 .facts dd { margin: 0; color: var(--ink); font-size: var(--text-data); white-space: nowrap; }
 .query { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.modes { display: flex; gap: 2px; }
-.modes button, .tabs button { font: 500 var(--text-sm) var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: var(--radius-md); cursor: pointer; }
-.modes button.on, .tabs button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
 .query input[type="text"], .query input:not([type]) { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 7px 10px; font-size: var(--text-body); min-width: 260px; }
 .query label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.query button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
-.tabs { display: flex; gap: 2px; }
 .groups, .diff, .topology { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; }
 .topology { display: flex; flex-direction: column; gap: 10px; }
 .group h3 { margin: 10px 0 4px; font: 600 12px var(--font-data); color: var(--ink-2); }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import EventKindMark from '@/components/EventKindMark.vue'
@@ -412,7 +413,7 @@ const endpoints = computed(() => {
              not on a picker. -->
         <nav class="actions" aria-label="This peer elsewhere">
           <RouterLink
-            class="action"
+            class="action btn"
             data-action="routes"
             :to="{ path: '/routes', query: { router: peerRows[0].router_ip, peer: peerRows[0].peer_ip } }"
           >
@@ -420,7 +421,7 @@ const endpoints = computed(() => {
             Route table
           </RouterLink>
           <RouterLink
-            class="action"
+            class="action btn"
             data-action="history"
             :to="{ path: '/session-history', query: { router: peerRows[0].router_ip, peer: peerRows[0].peer_ip } }"
           >
@@ -428,7 +429,7 @@ const endpoints = computed(() => {
             Session history
           </RouterLink>
           <RouterLink
-            class="action"
+            class="action btn"
             data-action="origin"
             :to="{ path: '/looking-glass', query: { mode: 'asn', q: String(peerRows[0].asn) } }"
           >
@@ -510,7 +511,7 @@ const endpoints = computed(() => {
             <h2>Session history · {{ WINDOW_LABEL }}</h2>
             <ul class="events">
               <li v-for="(e, i) in recentEvents" :key="i" class="event">
-                <span class="mono when">{{ formatClock(e.ts_collector) }}</span>
+                <Clock class="when" :iso="e.ts_collector" />
                 <EventKindMark :kind="e.kind" />
                 <span class="mono why">{{ reasonDisplay(e) }}</span>
               </li>
@@ -622,16 +623,9 @@ const endpoints = computed(() => {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
 .actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
-.action {
-  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px;
-  border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface);
-  color: var(--ink); font: 500 var(--text-sm) var(--font-ui); text-decoration: none;
-}
-.action:hover { border-color: var(--muted-2); color: var(--ink); }
-.action svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .states { display: flex; gap: 12px; }
 .state-of { display: inline-flex; align-items: center; gap: 6px; }
 .rib-tag { color: var(--muted); font-size: 10.5px; }
@@ -654,7 +648,7 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
   border-bottom: 1px solid var(--line-faint); font-size: 11px;
 }
 .event:last-child { border-bottom: 0; }
-.when { color: var(--faint); }
+.when { color: var(--muted); }
 .why { color: var(--muted); margin-left: auto; }
 .note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .rib-view { display: flex; flex-direction: column; gap: 8px; }

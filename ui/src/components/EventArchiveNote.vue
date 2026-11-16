@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AboutThis from './AboutThis.vue'
 /**
  * The two things this archive cannot say, beside the results rather than
  * buried in a tooltip.
@@ -22,16 +23,17 @@ defineProps<{ windowLabel: string }>()
 </script>
 
 <template>
-  <p class="notes" data-archive-note>
-    peer_events keeps history for the configured retention (90 days by
-    default) on the collector clock; events past that window are deleted, not merely hidden, so an empty or short list here
-    may mean nothing happened in the {{ windowLabel }} shown, or that it aged
-    out of retention. A "down" whose reason says notification follows only
-    records that a NOTIFICATION PDU was sent -- its contents are not retained
-    in this archive.
-  </p>
+  <AboutThis summary="About retention and down reasons">
+    <p class="notes" data-archive-note>
+      peer_events keeps history for the configured retention (90 days by
+      default) on the collector clock. Events past that window are deleted, not merely hidden,
+      so an empty or short list here may mean nothing happened in the {{ windowLabel }} shown,
+      or that it aged out of retention. A "down" whose reason says notification follows only
+      records that a NOTIFICATION PDU was sent; its contents are not retained in this archive.
+    </p>
+  </AboutThis>
 </template>
 
 <style scoped>
-.notes { margin: 0; padding: 9px 12px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.notes { margin: 0; }
 </style>

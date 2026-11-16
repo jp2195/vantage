@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import DataTable, { type Column } from '@/components/DataTable.vue'
@@ -6,7 +7,6 @@ import ScreenHeader from '@/components/ScreenHeader.vue'
 import AboutThis from '@/components/AboutThis.vue'
 import { formatCount } from '@/lib/formatCount'
 import { formatRate } from '@/lib/formatRate'
-import { formatClock } from '@/lib/formatClock'
 import StatePill from '@/components/StatePill.vue'
 import WindowPicker from '@/components/WindowPicker.vue'
 import PeerSparkline from '@/components/PeerSparkline.vue'
@@ -462,11 +462,8 @@ function dumping(p: Peer): boolean {
         <span
           v-if="(row as Peer).up_since && showsUpSince((row as Peer).state)"
           data-up-since
-          class="mono"
-          >{{
-          formatClock((row as Peer).up_since!)
-        }}</span
-        >
+          ><Clock :iso="(row as Peer).up_since!"
+        /></span>
         <span v-else data-up-since class="quiet">—</span>
       </template>
       <template #cell-state="{ row }">
@@ -515,7 +512,7 @@ function dumping(p: Peer): boolean {
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .note { margin: 0; max-width: 72ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .holder { margin-left: 6px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }

@@ -242,7 +242,7 @@ function describe(b: ChurnBucket): string {
       </span>
       <span class="controls">
         <span class="bucket">{{ bucketLabel }} buckets</span>
-        <button type="button" class="toggle" @click="showTable = !showTable">
+        <button type="button" class="toggle btn small" @click="showTable = !showTable">
           {{ showTable ? 'Chart' : 'Table' }}
         </button>
       </span>
@@ -347,11 +347,6 @@ function describe(b: ChurnBucket): string {
 .swatch { width: 9px; height: 9px; border-radius: 2px; }
 .controls { display: inline-flex; align-items: center; gap: 10px; }
 .bucket { color: var(--muted); font: 400 10.5px var(--font-data); }
-.toggle {
-  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
-  color: var(--ink-2); font: 500 var(--text-sm) var(--font-ui); padding: 2px 8px; cursor: pointer;
-}
-.toggle:hover { border-color: var(--ink); color: var(--ink); }
 .plot { width: 100%; display: block; }
 /* height comes from the element's own style binding -- see the template. */
 .plot [data-bar]:hover rect { opacity: .78; }

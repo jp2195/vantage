@@ -644,7 +644,7 @@ function select(nodeKey: string) {
           :value="chosenRouter ?? ''"
           @change="onRouterPicked(($event.target as HTMLSelectElement).value)"
         >
-          <option value="">—</option>
+          <option value="">Choose a router…</option>
           <option v-for="r in routerRows" :key="r.ip" :value="r.ip">{{ labelFor(r) }}</option>
         </select>
       </label>
@@ -684,7 +684,7 @@ function select(nodeKey: string) {
          topology, which is precisely the fleet-wide merge no router holds
          -- so the gate is here and in the composable, not in the HTTP
          layer. -->
-    <p v-if="!scope" class="quiet" data-nothing-asked>
+    <p v-if="!scope" class="empty-state" data-nothing-asked>
       Choose a router to draw its link-state view. Each router reports the topology as its own IGP
       database holds it; there is no fleet-wide view to ask for.
     </p>
@@ -763,7 +763,7 @@ function select(nodeKey: string) {
                      arrangement settles into the same one every time. This
                      re-seeds the starting positions, the only
                      nondeterminism the simulation has. -->
-                <button type="button" data-relayout @click="seed++">Re-layout</button>
+                <button type="button" class="btn small" data-relayout @click="seed++">Re-layout</button>
               </p>
             </div>
 
@@ -927,7 +927,7 @@ function select(nodeKey: string) {
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .lede { margin: 0; max-width: 62em; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 
@@ -958,7 +958,6 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
 .controls { margin: 8px 0 0; }
-.controls button { font: 500 var(--text-sm) var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: var(--radius-md); cursor: pointer; }
 
 .rail { width: 300px; flex: none; border-left: 1px solid var(--divider); padding-left: 16px; }
 .rail h2 { margin: 0 0 8px; font: 600 13px var(--font-data); color: var(--ink); }

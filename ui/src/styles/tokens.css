@@ -109,6 +109,9 @@
   --link-underline: #b9c9ea;
   --focus: #2b5bb5;
   --focus-ring: rgba(43, 91, 181, 0.18);
+  /* The shade at the edge of a table that scrolls sideways, where it cuts
+     off content. */
+  --scroll-shade: rgba(22, 24, 29, 0.14);
 
   --neutral-chip: #f1f2f5;
   --live: #4ade80;
@@ -136,11 +139,21 @@
   --space-6: 24px;
   --space-8: 32px;
 
+  /* A screen's own padding: the gutter between the sidebar and the content,
+     and above the title. Narrower on a phone, where 32px of a 390px screen
+     is a column of nothing. */
+  --page-x: 32px;
+  --page-y: 24px;
+
   /* Corner radii. Four, where there had been seven (2, 4, 5, 6, 7, 8, 20). */
   --radius-sm: 4px;     /* chips, marks */
   --radius-md: 6px;     /* controls, notices */
   --radius-lg: 10px;    /* cards and tables */
   --radius-full: 999px; /* pills */
+}
+
+@media (max-width: 600px) {
+  :root { --page-x: 16px; --page-y: 16px; }
 }
 
 /* The dark theme follows the operating system. Every color in a component
@@ -189,6 +202,7 @@
     --link-underline: #3b4f7a;
     --focus: #6f9bff;
     --focus-ring: rgba(111, 155, 255, 0.25);
+    --scroll-shade: rgba(0, 0, 0, 0.55);
 
     --neutral-chip: #252a33;
   }
@@ -252,7 +266,10 @@ a:hover {
  * arrow and ignores the border-radius. */
 select,
 input[type='text'],
-input[type='search'] {
+input[type='search'],
+input[type='number'],
+input[type='password'],
+input:not([type]) {
   appearance: none;
   -webkit-appearance: none;
   font: 400 var(--text-body) var(--font-ui);
@@ -275,15 +292,28 @@ select {
 
 select:hover,
 input[type='text']:hover,
-input[type='search']:hover {
+input[type='search']:hover,
+input[type='number']:hover,
+input[type='password']:hover,
+input:not([type]):hover {
   border-color: var(--muted-2);
 }
 
 /* The product's one elevation. */
 select:focus-visible,
 input[type='text']:focus-visible,
-input[type='search']:focus-visible {
+input[type='search']:focus-visible,
+input[type='number']:focus-visible,
+input[type='password']:focus-visible,
+input:not([type]):focus-visible {
   outline: none;
   border-color: var(--focus);
   box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* A field that takes an address, a prefix or an AS number is typed in the
+   data face, like the values it will be shown beside. After the field rules
+   above, which set the UI face and would otherwise win the tie. */
+input.mono {
+  font-family: var(--font-data);
 }

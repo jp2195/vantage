@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed } from 'vue'
 import { routerLabel } from '@/lib/routerLabel'
 import DataTable, { type Column } from '@/components/DataTable.vue'
@@ -7,7 +8,6 @@ import { formatCount } from '@/lib/formatCount'
 import { bestVantageRouters } from '@/lib/bestVantage'
 import type { Router } from '@/api/generated'
 import { useRouters } from '@/api/queries'
-import { formatClock } from '@/lib/formatClock'
 
 // isPending, not isLoading. Colada's isLoading aliases asyncStatus ===
 // 'loading', which is true for the first fetch AND for every later
@@ -92,13 +92,13 @@ const ROUTERS_MIN_WIDTH = '880px'
       <template #cell-sysname="{ row }">
         <RouterLink :to="{ path: '/peers', query: { router: row.ip } }" :class="{ unnamed: !row.sysname }">{{ routerLabel(row.sysname) }}</RouterLink>
       </template>
-      <template #cell-last_seen="{ row }">{{ formatClock(row.last_seen) }}</template>
+      <template #cell-last_seen="{ row }"><Clock :iso="row.last_seen" /></template>
     </DataTable>
   </section>
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .lede { margin: 0 0 4px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 /* A router that sent no sysName: the placeholder reads as one, not as a

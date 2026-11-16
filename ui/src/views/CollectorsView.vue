@@ -354,7 +354,7 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 
         <Notice v-if="c.id_mismatch" tone="warn" class="mismatch" data-id-mismatch>
           Configured as <strong>{{ c.id_mismatch }}</strong>, but this endpoint answered as
-          <strong>{{ c.collector }}</strong> -- someone pointed
+          <strong>{{ c.collector }}</strong>: someone pointed
           <strong>{{ c.id_mismatch }}</strong>'s endpoint at a different collector's process.
         </Notice>
 
@@ -481,7 +481,7 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 /* auto-fit, not auto-fill: two collectors on a wide screen fill the row
    rather than sitting in the left half beside two empty tracks. */
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 14px; }

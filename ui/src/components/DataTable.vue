@@ -248,7 +248,7 @@ function titleIfTruncated(e: MouseEvent) {
     <div v-if="$slots.toolbar" class="toolbar"><slot name="toolbar" /></div>
 
     <p v-if="error" class="error" role="alert">{{ error.message }}</p>
-    <p v-else-if="loading && rows.length === 0" class="quiet">loading…</p>
+    <p v-else-if="loading && rows.length === 0" class="quiet loading" role="status">loading…</p>
     <p v-else-if="rows.length === 0 && filteredOut" class="quiet" data-filtered-empty>
       Nothing here matches the filter. It is hiding {{ filteredOut }}
       {{ filteredOut === 1 ? 'row' : 'rows' }} of a complete answer.
@@ -318,6 +318,18 @@ function titleIfTruncated(e: MouseEvent) {
 /* overflow-x, not hidden: a table wider than its container scrolls HERE,
    inside its own card, so the page body never scrolls sideways. */
 .scroll { overflow-x: auto; overflow-y: hidden; }
+/* Scroll shadows: a shade at whichever edge cuts content off, and none when
+   the table fits. The two "local" covers scroll with the content and hide
+   the two "scroll" shades once an edge is reached, so the shade shows only
+   where there is more to see. Without it, a table cut at the card's edge
+   looked like a rendering fault rather than something to scroll. */
+.scroll {
+  background:
+    linear-gradient(to right, var(--surface) 30%, transparent) left / 40px 100% no-repeat local,
+    linear-gradient(to left, var(--surface) 30%, transparent) right / 40px 100% no-repeat local,
+    radial-gradient(farthest-side at 0 50%, var(--scroll-shade), transparent) left / 14px 100% no-repeat scroll,
+    radial-gradient(farthest-side at 100% 50%, var(--scroll-shade), transparent) right / 14px 100% no-repeat scroll;
+}
 .toolbar {
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
   padding: 10px 18px; border-bottom: 1px solid var(--line);
@@ -359,4 +371,12 @@ tbody tr:last-child td { border-bottom: 0; }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .error { margin: 0; padding: 14px 16px; color: var(--bad-2); background: var(--bad-tint); font: 400 var(--text-body) var(--font-ui); }
 .quiet { margin: 0; padding: 14px 16px; color: var(--muted); font: 400 var(--text-body) var(--font-ui); }
+.loading { display: flex; align-items: center; gap: 10px; }
+.loading::before {
+  content: ''; width: 14px; height: 14px; flex: none; border-radius: 50%;
+  border: 2px solid var(--line-2); border-top-color: var(--muted);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .loading::before { animation: none; } }
 </style>

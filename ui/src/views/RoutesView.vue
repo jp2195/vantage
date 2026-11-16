@@ -277,7 +277,7 @@ const counts = computed(() => {
              from the query. -->
         <template #actions="{ row }">
           <RouterLink
-            class="detail"
+            class="detail btn small"
             :to="{
               path: '/looking-glass',
               query: { mode: 'prefix', q: (row as UnicastRoute).prefix },
@@ -293,28 +293,23 @@ const counts = computed(() => {
            nothing here is virtualized, and no request duration is measured,
            so the control is what ships and the readout is not invented. -->
       <footer v-if="walk.hasMore.value" class="foot">
-        <button class="more" @click="walk.loadMore()">Load more</button>
+        <button type="button" class="more btn" @click="walk.loadMore()">Load more</button>
       </footer>
     </template>
   </section>
 </template>
 
 <style scoped>
-.screen { padding: 18px 0 20px; display: flex; flex-direction: column; gap: 12px; }
-.screen > :not(.filters) { margin-inline: 18px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+/* The scope controls as a card, the same shape the Looking glass gives its
+   query: the question above, the answer under it. */
 .filters {
-  padding: 10px 18px; background: var(--surface-2);
-  border-top: 1px solid var(--line-faint); border-bottom: 1px solid var(--line);
+  padding: 14px 16px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg);
 }
 .quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .holder { margin-left: 6px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .communities { color: var(--ink-2); font-size: 11px; }
 .foot { display: flex; justify-content: flex-end; }
-.detail {
-  display: inline-block; padding: 2px 8px; border: 1px solid var(--line);
-  border-radius: var(--radius-md); color: var(--ink-2); text-decoration: none;
-  font: 500 var(--text-sm) var(--font-ui);
-}
-.detail:hover { border-color: var(--ink); color: var(--ink); }
-.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
+.more { align-self: flex-start; }
 </style>

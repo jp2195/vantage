@@ -271,7 +271,7 @@ function select(asn: number) {
     <ScreenHeader title="AS paths" :eyebrow="['all collectors', 'live rib']" />
 
     <form class="scope" @submit.prevent="submit()">
-      <div class="modes">
+      <div class="modes seg" role="group" aria-label="Draw">
         <button
           type="button"
           data-mode="prefix"
@@ -301,7 +301,7 @@ function select(asn: number) {
         />
         <label v-if="mode === 'prefix'"><input v-model="covers" type="checkbox" /> covering</label>
         <label v-else><input v-model="inPath" type="checkbox" /> in path</label>
-        <button type="submit">Draw</button>
+        <button type="submit" class="btn primary">Draw</button>
       </template>
     </form>
 
@@ -325,7 +325,7 @@ function select(asn: number) {
          every route in the archive as one graph" -- and an empty graph pane
          rendered before a scope exists would claim this scope reaches no AS,
          about a question nobody asked. -->
-    <p v-if="!scope" class="quiet">
+    <p v-if="!scope" class="empty-state">
       Name a prefix, an AS, or a router and peer, to draw the graph their routes form.
     </p>
 
@@ -340,7 +340,7 @@ function select(asn: number) {
       <p v-else-if="!graph" class="quiet">loading…</p>
 
       <template v-else-if="graph">
-        <div class="families">
+        <div class="families seg" role="group" aria-label="Address family">
           <button
             v-for="f in FAMILIES"
             :key="f.key"
@@ -383,7 +383,7 @@ function select(asn: number) {
                same one every time. This re-seeds PathGraph's starting
                positions, which is the only nondeterminism the simulation
                has. -->
-          <button type="button" data-relayout @click="seed++">Re-layout</button>
+          <button type="button" class="btn small" data-relayout @click="seed++">Re-layout</button>
         </div>
 
         <!-- The family's own two counts. A third number like
@@ -546,29 +546,20 @@ function select(asn: number) {
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
-.scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.modes, .families { display: flex; gap: 2px; }
-.modes button, .families button {
-  font: 500 var(--text-sm) var(--font-ui);
-  padding: 5px 11px;
-  border: 1px solid var(--line-2);
-  background: var(--surface);
-  color: var(--muted);
-  border-radius: var(--radius-md);
-  cursor: pointer;
+/* The question as a card, the shape Looking glass and Routes give theirs. */
+.scope {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
-.modes button.on, .families button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
-.scope input.term { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 6px 10px; font-size: 12px; min-width: 220px; }
+.scope input.term { padding: 7px 10px; font-size: var(--text-body); min-width: 260px; }
 .scope label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.scope button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .controls label { display: flex; gap: 6px; align-items: center; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .controls input, .controls select { font: 400 var(--text-sm) var(--font-ui); padding: 5px 8px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
 .controls input { width: 72px; }
-.controls button { font: 500 var(--text-sm) var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: var(--radius-md); cursor: pointer; }
 
 .summary { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .summary strong { color: var(--ink); font-weight: 600; }

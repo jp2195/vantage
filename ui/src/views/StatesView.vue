@@ -132,7 +132,7 @@ const dumping = {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
 .lede { margin: 0; max-width: 84ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .block { display: flex; flex-direction: column; gap: 8px; }
 h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }

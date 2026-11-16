@@ -4,6 +4,7 @@ import { PiniaColada } from '@pinia/colada'
 import App from './App.vue'
 import { router } from './router'
 import './styles/tokens.css'
+import './styles/controls.css'
 
 const app = createApp(App)
 app.use(createPinia())

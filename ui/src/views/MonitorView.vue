@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref } from 'vue'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import EventKindMark from '@/components/EventKindMark.vue'
@@ -8,7 +9,6 @@ import AboutThis from '@/components/AboutThis.vue'
 import StatePill from '@/components/StatePill.vue'
 import StatTile from '@/components/StatTile.vue'
 import WindowPicker from '@/components/WindowPicker.vue'
-import { formatClock } from '@/lib/formatClock'
 import { formatCount } from '@/lib/formatCount'
 import { formatRate } from '@/lib/formatRate'
 import { bestVantageRouters } from '@/lib/bestVantage'
@@ -390,7 +390,7 @@ const tiles = computed(() => {
       // the per-row one, and composition is not a verdict.
       sub: `${formatCount(dt.dumps)} dumps · ${formatCount(dt.changes)} changes`,
       note:
-        'A dump is a router re-sending a route after its BMP session reset -- ' +
+        'A dump is a router re-sending a route after its BMP session reset — ' +
         'ordinary behavior, not a fault. This is what the window\'s archived rows ' +
         'are composed of.',
     })
@@ -599,7 +599,7 @@ function stepBreakdown(by: 1 | -1) {
              (lib/eventReason.ts: the kind decides). -->
         <li v-for="(e, i) in recentEvents" :key="i" class="event">
           <span class="line">
-            <span class="mono when">{{ formatClock(e.ts_collector) }}</span>
+            <Clock class="when" :iso="e.ts_collector" today />
             <EventKindMark :kind="e.kind" />
             <span class="who mono">{{ e.router_sysname || e.router_ip }} · {{ e.peer_ip }}</span>
             <!-- WHOSE view this row is. /v1/events is one row per
@@ -615,7 +615,7 @@ function stepBreakdown(by: 1 | -1) {
         </li>
         <li v-if="!recentEvents.length" class="quiet">
           No peer event in the {{ windowLabel }}. An empty list here is an
-          answer -- the window held no session change -- not a missing feed.
+          answer — the window held no session change — not a missing feed.
         </li>
       </ul>
     </section>
@@ -656,7 +656,7 @@ function stepBreakdown(by: 1 | -1) {
             class="mono link"
             :to="`/peers/${(row as RankedPeer).router_ip}/${(row as RankedPeer).peer_ip}`"
           >{{ (row as RankedPeer).peer_ip }}</RouterLink>
-          <RouterLink class="history" :to="historyOf(row as RankedPeer)">history</RouterLink>
+          <RouterLink class="history" :to="historyOf(row as RankedPeer)" :title="`Session history for ${(row as RankedPeer).peer_ip}`"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg><span class="sr-only">Session history</span></RouterLink>
         </template>
         <template #cell-router_sysname="{ row }">
           <RouterLink class="link" :to="peersOf(row as RankedPeer)">{{
@@ -717,7 +717,7 @@ function stepBreakdown(by: 1 | -1) {
       <h2>Dumps</h2>
       <p
         class="note"
-        title="A dump is a router re-sending a route it already sent, because its BMP session reset -- ordinary BMP behavior, not a fault. This column says what the window's archived rows are composed of; it is not an error state and not a ranking."
+        title="A dump is a router re-sending a route it already sent, because its BMP session reset — ordinary BMP behavior, not a fault. This column says what the window's archived rows are composed of; it is not an error state and not a ranking."
       >
         A dump is a session reset re-sending routes: composition, not a fault.
       </p>
@@ -750,7 +750,7 @@ function stepBreakdown(by: 1 | -1) {
       <h2>Sessions</h2>
       <p
         class="note"
-        title="Sessions counts distinct BMP sessions, never events -- one session can carry many peer events. down is the router stating, on the wire, that a session ended. view_lost is the collector losing its own BMP transport while the router said nothing at all. The two are never summed."
+        title="Sessions counts distinct BMP sessions, never events — one session can carry many peer events. down is the router stating, on the wire, that a session ended. view_lost is the collector losing its own BMP transport while the router said nothing at all. The two are never summed."
       >
         Distinct sessions, never events. <EventKindMark kind="down" /> is the
         router's statement; <EventKindMark kind="view_lost" /> is the
@@ -799,7 +799,7 @@ function stepBreakdown(by: 1 | -1) {
             class="mono link"
             :to="`/peers/${(row as PeerLocRib).router_ip}/${(row as PeerLocRib).peer_ip}`"
           >{{ (row as PeerLocRib).peer_ip }}</RouterLink>
-          <RouterLink class="history" :to="historyOf(row as PeerLocRib)">history</RouterLink>
+          <RouterLink class="history" :to="historyOf(row as PeerLocRib)" :title="`Session history for ${(row as PeerLocRib).peer_ip}`"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg><span class="sr-only">Session history</span></RouterLink>
         </template>
         <template #cell-reported="{ row }">
           <span v-if="!(row as PeerLocRib).has_stat" data-no-stat>no stat</span>
@@ -813,7 +813,7 @@ function stepBreakdown(by: 1 | -1) {
       <p
         class="note"
         data-flags-note
-        title="A flag counted in this window may describe a bug already fixed before the window even opened -- never read this count as a current diagnosis."
+        title="A flag counted in this window may describe a bug already fixed before the window even opened — never read this count as a current diagnosis."
       >
         Parse flags are historical: the count records the decoder as it stood
         when the row was written, never the current one.
@@ -833,7 +833,7 @@ function stepBreakdown(by: 1 | -1) {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; container: monitor / inline-size; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; container: monitor / inline-size; }
 /* Wraps so that on a phone the window picker drops under the title rather
    than running past the screen's right edge. */
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
@@ -906,8 +906,10 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 .events .quiet { padding: 7px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* The one span that must never wrap: a broken timestamp reads as two
    events, which is what the rail did before the row became two lines. */
-.when { color: var(--faint); white-space: nowrap; }
-.who { color: var(--ink-2); }
+.when { color: var(--muted); white-space: nowrap; }
+/* Shrinks and wraps inside itself, so a long IPv6 pair cannot push the
+   collector id past the card edge. */
+.who { color: var(--ink-2); flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .seen { margin-left: auto; padding-left: 10px; color: var(--muted); white-space: nowrap; }
 /* Indented under the row it explains, so a reason cannot be read as the
    next event's own line. */
@@ -920,7 +922,15 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 /* PeersView.vue's own link convention, not a second one. `history` is a
    secondary destination beside the peer address, so it reads as the
    quieter of the two rather than competing with it. */
-.history { margin-left: 7px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+/* An icon, not the word: after a long IPv6 peer, "history" was the part
+   the column cut off. The name is still there for a screen reader and on
+   hover. */
+.history {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: 4px;
+  vertical-align: middle; border-radius: var(--radius-sm); color: var(--muted);
+}
+.history:hover { color: var(--link); background: var(--surface-2); }
+.history svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .attention .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
 .attention .count { margin-left: 6px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
 .attention .more { font: 500 var(--text-sm) var(--font-ui); }
