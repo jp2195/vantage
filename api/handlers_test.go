@@ -37,6 +37,23 @@ import (
 // on why each package gets one.
 const apiTestDB = "vantage_api_test"
 
+// fixDay and fixTS date this package's fixtures RELATIVE to the run, not on a
+// calendar. They used to be fixed (2026-08-01 and 2026-08-15), and the API
+// clamps every since= to the history tables' 90-day TTL (query.RetentionDays),
+// so once those dates aged past 90 days the history and events tests read an
+// empty window and failed on every branch at once, with no code change behind
+// it.
+//
+// Seven days back sits well inside the TTL and well outside the handlers' 1h
+// default window, which TestHandlerHistory relies on in both directions. Both
+// are computed once per test binary, so every fixture insert in one run lands
+// on the same identity and a re-run within the binary (-count) overwrites
+// rather than accumulates; chtest drops and recreates apiTestDB per binary.
+var (
+	fixDay = time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -7)
+	fixTS  = fixDay.Add(12 * time.Hour)
+)
+
 // The fixture's coordinates. One collector, one router, two peers, so that
 // a filter which ignores its peer argument returns rows from both and is
 // caught.
@@ -208,7 +225,7 @@ func requireAPIWithLSFixture(t *testing.T) *Server {
 //	              otherwise.
 func insertHandlerFixture(t *testing.T, ctx context.Context, conn driver.Conn) {
 	t.Helper()
-	ts := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	ts := fixTS
 
 	peers, err := conn.PrepareBatch(ctx, "INSERT INTO "+apiTestDB+".peer_events "+peerEventsCols)
 	if err != nil {
@@ -322,7 +339,7 @@ const (
 
 func insertDualCollectorFixture(t *testing.T, ctx context.Context, conn driver.Conn) {
 	t.Helper()
-	ts := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	ts := fixTS
 
 	peers, err := conn.PrepareBatch(ctx, "INSERT INTO "+apiTestDB+".peer_events "+peerEventsCols)
 	if err != nil {
@@ -423,7 +440,7 @@ func insertDualCollectorFixture(t *testing.T, ctx context.Context, conn driver.C
 // properties of it directly.
 func insertLSFixture(t *testing.T, ctx context.Context, conn driver.Conn) {
 	t.Helper()
-	ts := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	ts := fixTS
 
 	nodes, err := conn.PrepareBatch(ctx, "INSERT INTO "+apiTestDB+".ls_nodes")
 	if err != nil {
@@ -1009,7 +1026,7 @@ func TestHandlerHistory(t *testing.T) {
 		getOK(t, s, "/v1/routes/history?prefix=10.77.1.0/24", &got)
 		if len(got) != 0 {
 			t.Errorf("the default since= returned %d events; the fixture is dated "+
-				"2026-08-01 and the contract's default is 1h, so the default is "+
+				"seven days back and the contract's default is 1h, so the default is "+
 				"not being applied", len(got))
 		}
 	})
