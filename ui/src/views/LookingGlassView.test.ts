@@ -1,4 +1,4 @@
-import { type VueWrapper, mount } from '@vue/test-utils'
+import { RouterLinkStub, type VueWrapper, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, ref } from 'vue'
 import routes from '@/api/fixtures/routes.json'
@@ -158,7 +158,7 @@ async function runSearch(
 // answer to describe -- so a test about rows, groups or a footer has to
 // search first, the same way an operator does.
 async function mountSearched() {
-  const w = mount(LookingGlassView)
+  const w = mount(LookingGlassView, { global: { stubs: { RouterLink: RouterLinkStub } } })
   await runSearch(w, { term: routes.data.unicast[0].prefix })
   return w
 }
@@ -365,6 +365,27 @@ describe('LookingGlassView', () => {
     const counts = w.get('[data-topology-counts]').text()
     expect(counts).toContain(`${topology.data.unicast.nodes.length} ASNs`)
     expect(counts).toContain(`${topology.data.unicast.edges.length} edges`)
+  })
+
+  it('links the Topology tab to the same question on AS paths', async () => {
+    // AS paths has what this tab leaves out (depth, the other families, the
+    // per-AS rail), so the tab hands its question over in the keys both
+    // screens read -- and offers nothing for a community search, which AS
+    // paths has no mode for.
+    freshState()
+    const w = await mountSearched()
+    await w.get('[data-tab="topology"]').trigger('click')
+    const link = w.getComponent(RouterLinkStub)
+    expect(link.props('to')).toEqual({
+      path: '/topology',
+      query: { mode: 'prefix', q: routes.data.unicast[0].prefix },
+    })
+
+    freshState()
+    const byCommunity = mount(LookingGlassView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+    await runSearch(byCommunity, { mode: 'community', term: '65000:100' })
+    await byCommunity.get('[data-tab="topology"]').trigger('click')
+    expect(byCommunity.find('[data-open-as-paths]').exists()).toBe(false)
   })
 
   it('asks no topology question while the Topology tab is closed', async () => {

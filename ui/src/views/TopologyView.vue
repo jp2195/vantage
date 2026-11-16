@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import PathGraph from '@/components/PathGraph.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import CodeText from '@/components/CodeText.vue'
@@ -103,12 +104,88 @@ const { data, error } = useTopology(scope)
 // rather than reinterpreting it. Without this, switching to "from a peer"
 // would leave the previous prefix's graph on screen under a picker that names
 // no peer -- an answer to a question the screen is no longer asking.
-watch(mode, () => {
+//
+// A function the buttons call rather than a watcher on `mode`: restoring a
+// link sets the mode AND the scope in one go, and a watcher would run after
+// both and throw the restored scope away.
+function setMode(m: Mode) {
+  if (mode.value === m) return
+  mode.value = m
   scope.value = undefined
   selectedAsn.value = undefined
-})
+  // The URL is left alone: it names the last graph DRAWN, and switching the
+  // form's shape draws nothing. Rewriting it here would replace that graph's
+  // history entry, so back from the next search would land on an empty form
+  // instead of the graph before it.
+}
 
-function submit() {
+const route = useRoute()
+const router = useRouter()
+
+/**
+ * The URL carries the question that was ASKED -- the scope -- never the
+ * half-typed form. The same keys Looking glass uses (mode, q, covers,
+ * inPath), so a link built for one screen reads the same on the other, plus
+ * router and peer for the third mode and the family on screen.
+ */
+function currentQuery(): Record<string, string> {
+  const q: Record<string, string> = { mode: mode.value }
+  const s = scope.value
+  if (!s) return q
+  if (s.prefix !== undefined) q.q = s.prefix
+  if (s.covers !== undefined) {
+    q.q = s.covers
+    q.covers = '1'
+  }
+  if (s.origin_asn !== undefined) q.q = String(s.origin_asn)
+  if (s.through_asn !== undefined) {
+    q.q = String(s.through_asn)
+    q.inPath = '1'
+  }
+  if (s.router !== undefined && s.peer !== undefined) {
+    q.router = s.router
+    q.peer = s.peer
+  }
+  if (family.value !== 'unicast') q.family = family.value
+  return q
+}
+
+const asString = (v: unknown) => (typeof v === 'string' ? v : undefined)
+
+/** True when the address bar already says exactly what this screen is showing. */
+function urlMatchesState(): boolean {
+  const want = currentQuery()
+  const have = route.query
+  const keys = new Set([...Object.keys(want), ...Object.keys(have)])
+  for (const k of keys) if (want[k] !== have[k]) return false
+  return true
+}
+
+/** The picker's seed in peer mode: the pair a link named, if it named one. */
+const seededRouter = computed(() => (mode.value === 'peer' ? asString(route.query.router) : undefined))
+const seededPeer = computed(() => (mode.value === 'peer' ? asString(route.query.peer) : undefined))
+
+// Applied on setup AND whenever the query changes underneath us, for the
+// reason LookingGlassView.vue gives: a query-only navigation (the back button)
+// reuses this component, so reading the URL only at setup would leave the
+// address bar naming one graph while the screen draws another.
+function applyQuery() {
+  const q = route.query
+  const seededMode = asString(q.mode)
+  mode.value = seededMode === 'asn' || seededMode === 'peer' ? seededMode : 'prefix'
+  covers.value = q.covers === '1'
+  inPath.value = q.inPath === '1'
+  const seededFamily = asString(q.family)
+  family.value = FAMILIES.find((f) => f.key === seededFamily)?.key ?? 'unicast'
+  selectedAsn.value = undefined
+  // Peer mode's scope arrives from the picker once it has resolved the
+  // seeded pair, exactly as on Routes; nothing to set here.
+  term.value = mode.value === 'peer' ? '' : (asString(q.q) ?? '')
+  if (mode.value !== 'peer' && term.value.trim()) submit({ fromUrl: true })
+  else scope.value = undefined
+}
+
+function submit(opts: { fromUrl?: boolean } = {}) {
   const v = term.value.trim()
   if (!v) return
   if (mode.value === 'prefix') {
@@ -124,6 +201,9 @@ function submit() {
     scope.value = inPath.value ? { through_asn: asn } : { origin_asn: asn }
   }
   selectedAsn.value = undefined
+  // A drawn graph is a new question, so it gets a history entry; arriving by
+  // a link is not one.
+  if (!opts.fromUrl && !urlMatchesState()) router.push({ query: currentQuery() })
 }
 
 /**
@@ -140,6 +220,14 @@ function submit() {
 function onPeerScope(s: { router: string; peer: string; session: string } | undefined) {
   scope.value = s ? { router: s.router, peer: s.peer } : undefined
   selectedAsn.value = undefined
+  syncPeerUrl(s)
+}
+
+// Only a resolved pair reaches the URL, as a question asked. "No scope" never
+// does: the picker emits it at mount and after a back-button re-seed, before
+// /v1/peers has answered, and the URL names the last graph drawn either way.
+function syncPeerUrl(s: { router: string; peer: string } | undefined) {
+  if (s && !urlMatchesState()) router.push({ query: currentQuery() })
 }
 
 /**
@@ -262,6 +350,25 @@ const selectedEdges = computed(() => {
 function select(asn: number) {
   selectedAsn.value = asn
 }
+
+applyQuery()
+
+// Both watchers act only when the URL and the screen disagree, which is what
+// keeps them from chasing each other.
+watch(
+  () => route.query,
+  () => {
+    if (urlMatchesState()) return
+    applyQuery()
+  },
+)
+
+// The family changes what you are looking AT, not what was asked: replace
+// keeps it in a shareable link without spending a history entry per click.
+watch(family, () => {
+  if (!scope.value || urlMatchesState()) return
+  router.replace({ query: currentQuery() })
+})
 </script>
 
 <template>
@@ -280,18 +387,18 @@ function select(asn: number) {
           type="button"
           data-mode="prefix"
           :class="{ on: mode === 'prefix' }"
-          @click="mode = 'prefix'"
+          @click="setMode('prefix')"
         >
           For a prefix
         </button>
-        <button type="button" data-mode="asn" :class="{ on: mode === 'asn' }" @click="mode = 'asn'">
+        <button type="button" data-mode="asn" :class="{ on: mode === 'asn' }" @click="setMode('asn')">
           Around an AS
         </button>
         <button
           type="button"
           data-mode="peer"
           :class="{ on: mode === 'peer' }"
-          @click="mode = 'peer'"
+          @click="setMode('peer')"
         >
           From a peer
         </button>
@@ -316,7 +423,13 @@ function select(asn: number) {
          is a stronger position than being unable to offer one: since
          2026-09-20 every count here deduplicates on the route identity with the
          collector removed, so a dual-homed router's graph is not doubled. -->
-    <ScopePicker v-if="mode === 'peer'" :pins-collector="false" @scope="onPeerScope">
+    <ScopePicker
+      v-if="mode === 'peer'"
+      :router="seededRouter"
+      :peer="seededPeer"
+      :pins-collector="false"
+      @scope="onPeerScope"
+    >
       <template #ambiguous>
         Both collectors' observations feed this one graph, which counts route
         identities rather than collector copies — so nothing here is doubled

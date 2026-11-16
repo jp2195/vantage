@@ -90,6 +90,30 @@ const { data: graphs, error: graphError } = useTopology(topologyScope)
  */
 const unicastGraph = computed<Graph | undefined>(() => graphs.value?.data.unicast)
 
+/**
+ * The same question on the AS paths screen, which has what this tab
+ * deliberately leaves out: Depth, Min paths, the other two families and the
+ * per-AS rail. Built from the filters the search composed, in the URL keys
+ * both screens read. Absent for a community search, which AS paths has no
+ * mode for -- a link that silently dropped the community would draw a
+ * different graph under the same name.
+ */
+const asPathsLink = computed(() => {
+  const f = filters.value
+  if (!f) return undefined
+  if (f.prefix !== undefined) return { path: '/topology', query: { mode: 'prefix', q: f.prefix } }
+  if (f.covers !== undefined) {
+    return { path: '/topology', query: { mode: 'prefix', q: f.covers, covers: '1' } }
+  }
+  if (f.origin_asn !== undefined) {
+    return { path: '/topology', query: { mode: 'asn', q: String(f.origin_asn) } }
+  }
+  if (f.through_asn !== undefined) {
+    return { path: '/topology', query: { mode: 'asn', q: String(f.through_asn), inPath: '1' } }
+  }
+  return undefined
+})
+
 const hasGraph = (g: Graph | undefined) => Boolean(g && (g.nodes.length > 0 || g.edges.length > 0))
 
 function graphSize(g: Graph): string {
@@ -779,6 +803,10 @@ function compareSeq(a: string, b: string): number {
         <p class="quiet" data-topology-counts>
           <strong>{{ graphSize(unicastGraph) }}</strong> in unicast — one node per AS, one edge per
           adjacency their paths cross. Click a node to search the routes crossing that AS.
+          <template v-if="asPathsLink">
+            For depth, the other families and each AS's detail,
+            <RouterLink :to="asPathsLink" data-open-as-paths>open this graph in AS paths</RouterLink>.
+          </template>
         </p>
         <Notice v-if="otherGraphs" class="scope-note" data-topology-families>{{ otherGraphs }}</Notice>
         <PathGraph v-if="hasGraph(unicastGraph)" :graph="unicastGraph" @select="onGraphSelect" />
