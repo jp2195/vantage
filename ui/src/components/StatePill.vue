@@ -38,11 +38,27 @@ const title = computed(() => ({
 </template>
 
 <style scoped>
-.pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font: 500 10.5px var(--font-ui); }
+.pill { display: inline-block; padding: 2px 9px 2px 7px; border-radius: var(--radius-full); font: 500 var(--text-sm) var(--font-ui); white-space: nowrap; }
 .up { background: var(--good-tint); color: var(--good); }
 /* down is amber: the network told us something. view_lost is red: we are
    blind. The color difference is the finding, not decoration. */
-.down { background: var(--accent-tint); color: var(--accent-ink-2); }
+.down { background: var(--warn-tint); color: var(--warn-ink); }
+/* A shape beside the color, so the state still reads in a grayscale
+   screenshot or to a color-blind operator: a dot is up, a bar is down, a
+   cross is blind, a ring is unknown. Drawn in currentColor, as a pseudo
+   element, so the text a screen reader or a test reads is unchanged. */
+.pill::before {
+  content: ''; display: inline-block; vertical-align: 1px; margin-right: 5px;
+  width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+}
+.down::before { width: 7px; height: 2px; border-radius: 1px; vertical-align: 2px; }
+.view_lost::before {
+  width: 7px; height: 7px; border-radius: 0; vertical-align: 0;
+  background:
+    linear-gradient(45deg, transparent 43%, currentColor 43% 57%, transparent 57%),
+    linear-gradient(-45deg, transparent 43%, currentColor 43% 57%, transparent 57%);
+}
+
 .view_lost { background: var(--bad-tint); color: var(--bad-2); }
 /* stale is neither: nobody is contradicting "up", nobody is confirming it.
    Neutral, and dashed, because it is a gap in what we know rather than a
@@ -55,4 +71,6 @@ const title = computed(() => ({
    chip with no dash, apart from stale's "last known up". */
 .unspecified { background: var(--neutral-chip); color: var(--ink-2); }
 .stale { background: var(--neutral-chip); color: var(--ink-2); outline: 1px dashed var(--muted-2); outline-offset: -1px; }
+.stale::before { background: none; box-shadow: inset 0 0 0 1.5px currentColor; }
+.unspecified::before { display: none; }
 </style>

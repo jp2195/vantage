@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Meta } from '@/api/generated'
+import { formatTimeOfDay } from '@/lib/formatClock'
 
 // The generated Meta, not a second one declared here. A local re-declaration
 // is a copy of the contract that nothing keeps in sync: it compiled happily
@@ -44,7 +45,7 @@ const unrecognized = computed(() => props.meta.warnings.filter((w) => !CURATED.h
 // on screen instead of freezing at whatever first mounted this instance.
 const seenAt = computed(() => {
   void props.meta
-  return new Date().toLocaleTimeString([], { hour12: false })
+  return formatTimeOfDay(new Date().toISOString())
 })
 </script>
 
@@ -75,8 +76,8 @@ const seenAt = computed(() => {
 </template>
 
 <style scoped>
-.meta { display: flex; gap: 12px; padding: 7px 18px; font: 400 11px var(--font-ui); border-top: 1px solid var(--line-faint); }
+.meta { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); padding: var(--space-2) 18px; font: 400 var(--text-sm) var(--font-ui); border-top: 1px solid var(--line-faint); }
 .ok { color: var(--muted); }
-.warn { color: var(--accent-ink-2); background: var(--accent-tint); padding: 2px 7px; border-radius: 4px; }
+.warn { color: var(--warn-ink); background: var(--warn-tint); padding: 2px 7px; border-radius: var(--radius-sm); }
 .note { color: var(--muted); }
 </style>

@@ -41,11 +41,19 @@ defineProps<{
 </template>
 
 <style scoped>
-.segmented { display: inline-flex; border: 1px solid var(--line-2); border-radius: 6px; overflow: hidden; }
-.segmented button {
-  border: 0; background: var(--surface); color: var(--muted);
-  font: 500 11px var(--font-ui); padding: 6px 11px; cursor: pointer; white-space: nowrap;
+/* max-content, so in a column of controls it stays its own width rather
+   than stretching into a full-width bar; overflow-x for the six-option
+   history picker on a phone. */
+.segmented {
+  display: inline-flex; width: max-content; max-width: 100%; overflow-x: auto;
+  border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface);
 }
+.segmented button {
+  border: 0; background: var(--surface); color: var(--ink-2);
+  font: 500 var(--text-sm) var(--font-ui); padding: 7px 12px; cursor: pointer; white-space: nowrap;
+}
+.segmented button:hover { color: var(--ink); background: var(--surface-2); }
 .segmented button + button { border-left: 1px solid var(--line-2); }
-.segmented button.on { background: var(--ink); color: var(--on-dark); }
+.segmented button.on { background: var(--ink); color: var(--on-ink); }
+.segmented button:focus-visible { outline-offset: -2px; }
 </style>

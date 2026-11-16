@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed } from 'vue'
 import { routerLabel } from '@/lib/routerLabel'
 import DataTable, { type Column } from '@/components/DataTable.vue'
@@ -7,7 +8,6 @@ import { formatCount } from '@/lib/formatCount'
 import { bestVantageRouters } from '@/lib/bestVantage'
 import type { Router } from '@/api/generated'
 import { useRouters } from '@/api/queries'
-import { formatClock } from '@/lib/formatClock'
 
 // isPending, not isLoading. Colada's isLoading aliases asyncStatus ===
 // 'loading', which is true for the first fetch AND for every later
@@ -50,14 +50,14 @@ const counts = computed(() => [
 // whether nobody has heard from the collector at all -- three different
 // operational situations, and only the first is fine.
 const columns: Column<Router>[] = [
-  { id: 'sysname', header: 'Router', width: '15%' },
-  { id: 'ip', header: 'Address', width: '140px' },
-  { id: 'collector', header: 'Collector', width: '14%' },
-  { id: 'peers_up', header: 'Up', numeric: true, width: '70px' },
-  { id: 'peers_down', header: 'Down', numeric: true, width: '76px' },
-  { id: 'peers_view_lost', header: 'View lost', numeric: true, width: '86px' },
-  { id: 'peers_stale', header: 'Stale', numeric: true, width: '70px' },
-  { id: 'last_seen', header: 'Last seen', width: '170px' },
+  { id: 'sysname', header: 'Router', width: '15%', sortable: true, sortValue: (r) => r.sysname || r.ip },
+  { id: 'ip', header: 'Address', width: '140px', sortable: true, mono: true },
+  { id: 'collector', header: 'Collector', width: '14%', sortable: true },
+  { id: 'peers_up', header: 'Up', numeric: true, width: '70px', sortable: true },
+  { id: 'peers_down', header: 'Down', numeric: true, width: '76px', sortable: true },
+  { id: 'peers_view_lost', header: 'View lost', numeric: true, width: '86px', sortable: true },
+  { id: 'peers_stale', header: 'Stale', numeric: true, width: '70px', sortable: true },
+  { id: 'last_seen', header: 'Last seen', width: '170px', sortable: true },
 ]
 
 // The fixed columns alone are 612px, so below that width table-layout:fixed
@@ -87,14 +87,21 @@ const ROUTERS_MIN_WIDTH = '880px'
       :error="error ?? undefined"
       :min-width="ROUTERS_MIN_WIDTH"
     >
-      <template #cell-sysname="{ row }">{{ routerLabel(row.sysname) }}</template>
-      <template #cell-last_seen="{ row }">{{ formatClock(row.last_seen) }}</template>
+      <!-- A router's name opens its peers: the inventory row was a dead end,
+           and "which sessions does this router have" is the next question. -->
+      <template #cell-sysname="{ row }">
+        <RouterLink :to="{ path: '/peers', query: { router: row.ip } }" :class="{ unnamed: !row.sysname }">{{ routerLabel(row.sysname) }}</RouterLink>
+      </template>
+      <template #cell-last_seen="{ row }"><Clock :iso="row.last_seen" /></template>
     </DataTable>
   </section>
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.lede { margin: 0 0 4px; font: 400 12px var(--font-ui); color: var(--muted); }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+.lede { margin: 0 0 4px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; }
 </style>

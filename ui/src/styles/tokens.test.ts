@@ -110,10 +110,66 @@ describe('design tokens', () => {
     expect(contrast(token('--ink-2'), token('--neutral-chip'))).toBeCloseTo(9.25, 1)
 
     const muted = token('--muted')
-    const failing = ['--surface', '--surface-2', '--neutral-chip']
+    const failing = ['--surface', '--surface-2', '--neutral-chip', '--canvas']
       .map((bg) => [bg, contrast(muted, token(bg))] as const)
       .filter(([, ratio]) => ratio < 4.5)
       .map(([bg, ratio]) => `${bg} ${ratio.toFixed(2)}:1`)
+    expect(failing).toEqual([])
+  })
+
+  // Every Notice tone and every status chip is small text on its own tint,
+  // in both themes. The dark values live in the prefers-color-scheme block,
+  // which redefines the same names; a pairing that passes in one theme and
+  // not the other is the defect a theme most often ships with.
+  it('keeps every text-on-tint pairing at AA contrast in both themes', () => {
+    const palette = readFileSync(PALETTE, 'utf8')
+    const darkStart = palette.indexOf('@media (prefers-color-scheme: dark)')
+    expect(darkStart).toBeGreaterThan(0)
+    const light = palette.slice(0, darkStart)
+    const dark = palette.slice(darkStart)
+    const read = (css: string, name: string): string => {
+      const m = css.match(new RegExp(`^\\s*${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`, 'm'))
+      if (!m) throw new Error(`${name} is not a six-digit hex here`)
+      return m[1]
+    }
+    const luminance = (hex: string): number => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    const contrast = (a: string, b: string): number => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+      return (hi + 0.05) / (lo + 0.05)
+    }
+    const pairs: [string, string][] = [
+      ['--info-ink', '--info-tint'],
+      ['--warn-ink', '--warn-tint'],
+      ['--bad-2', '--bad-tint'],
+      ['--good', '--good-tint'],
+      ['--muted', '--surface'],
+      ['--muted', '--surface-2'],
+      ['--muted', '--canvas'],
+      ['--muted', '--neutral-chip'],
+      ['--link', '--surface'],
+      ['--ink', '--canvas'],
+    ]
+    const failing: string[] = []
+    for (const [theme, css] of [['light', light], ['dark', dark]] as const) {
+      // A token the dark block does not redefine keeps its light value.
+      const valueOf = (name: string) => {
+        try {
+          return read(css, name)
+        } catch {
+          return read(light, name)
+        }
+      }
+      for (const [fg, bg] of pairs) {
+        const ratio = contrast(valueOf(fg), valueOf(bg))
+        if (ratio < 4.5) failing.push(`${theme}: ${fg} on ${bg} ${ratio.toFixed(2)}:1`)
+      }
+    }
     expect(failing).toEqual([])
   })
 

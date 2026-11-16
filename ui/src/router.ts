@@ -1,9 +1,29 @@
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import {
+  createRouter,
+  createWebHistory,
+  type RouteLocationNormalizedLoaded,
+  type RouteLocationRaw,
+  type RouteRecordRaw,
+} from 'vue-router'
+
+declare module 'vue-router' {
+  interface RouteMeta {
+    /**
+     * The breadcrumb trail AppShell draws above a screen that has a parent,
+     * ending in the screen itself (no `to`). Top-level screens leave it out.
+     */
+    crumbs?: (route: RouteLocationNormalizedLoaded) => { label: string; to?: RouteLocationRaw }[]
+  }
+}
+
+const param = (v: string | string[]) => (Array.isArray(v) ? v[0] : v)
 
 const routes: RouteRecordRaw[] = [
   // AppShell has no nav entry for "/" itself, so a bare visit lands
-  // somewhere the nav actually highlights rather than a blank main.
-  { path: '/', redirect: '/routers' },
+  // somewhere the nav actually highlights rather than a blank main. Monitor,
+  // because it answers the first question anyone opening this has: is
+  // collection healthy, and is anything down?
+  { path: '/', redirect: '/monitor' },
   {
     path: '/routers',
     name: 'routers',
@@ -14,6 +34,15 @@ const routes: RouteRecordRaw[] = [
     path: '/peers/:router/:peer',
     name: 'peer-detail',
     component: () => import('@/views/PeerDetailView.vue'),
+    meta: {
+      // Back to every peer, then to this router's peers (PeersView reads
+      // ?router=), then this one.
+      crumbs: (r) => [
+        { label: 'Peers', to: '/peers' },
+        { label: param(r.params.router), to: { path: '/peers', query: { router: param(r.params.router) } } },
+        { label: param(r.params.peer) },
+      ],
+    },
   },
   {
     path: '/looking-glass',

@@ -6,6 +6,7 @@ import DataTable from '@/components/DataTable.vue'
 import type { GuardedColumn } from '@/test-support/columnGuard'
 import { tableMinWidthPx } from '@/test-support/columnsOf'
 import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
+import { formatClock } from '@/lib/formatClock'
 
 describe('StatesView', () => {
   // The page's whole purpose: the states are distinguishable. If the empty
@@ -17,9 +18,9 @@ describe('StatesView', () => {
     const text = (state: string) => w.find(`[data-state="${state}"]`).text()
 
     expect(text('loading')).toMatch(/loading…/)
-    expect(text('loading')).not.toMatch(/no rows matched/)
+    expect(text('loading')).not.toMatch(/no rows matched/i)
 
-    expect(text('empty')).toMatch(/no rows matched/)
+    expect(text('empty')).toMatch(/no rows matched/i)
     expect(text('empty')).not.toMatch(/loading…/)
     // The footer's claim: an empty answer with no warnings says so.
     expect(w.find('[data-state="empty"] footer.meta').text()).toMatch(/complete as of/i)
@@ -55,7 +56,7 @@ describe('StatesView', () => {
     const raw = routers.data[0].last_seen
     expect(warned).not.toContain(raw)
     expect(warned).toContain(
-      new Date(raw).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' }),
+      formatClock(raw),
     )
   })
 

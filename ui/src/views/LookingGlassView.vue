@@ -7,6 +7,8 @@ import { formatCount } from '@/lib/formatCount'
 import DumpStateMark from '@/components/DumpStateMark.vue'
 import PathGraph from '@/components/PathGraph.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
+import Notice from '@/components/Notice.vue'
+import { jumpTarget } from '@/lib/jumpTarget'
 import { useFindRoutes, useRouteHistory, useTopology, type RouteFilters } from '@/api/queries'
 import type { Graph, HistoryEvent, UnicastRoute } from '@/api/generated'
 
@@ -87,6 +89,30 @@ const { data: graphs, error: graphError } = useTopology(topologyScope)
  * of edge, and one graph made of both would assert that they are.
  */
 const unicastGraph = computed<Graph | undefined>(() => graphs.value?.data.unicast)
+
+/**
+ * The same question on the AS paths screen, which has what this tab
+ * deliberately leaves out: Depth, Min paths, the other two families and the
+ * per-AS rail. Built from the filters the search composed, in the URL keys
+ * both screens read. Absent for a community search, which AS paths has no
+ * mode for -- a link that silently dropped the community would draw a
+ * different graph under the same name.
+ */
+const asPathsLink = computed(() => {
+  const f = filters.value
+  if (!f) return undefined
+  if (f.prefix !== undefined) return { path: '/topology', query: { mode: 'prefix', q: f.prefix } }
+  if (f.covers !== undefined) {
+    return { path: '/topology', query: { mode: 'prefix', q: f.covers, covers: '1' } }
+  }
+  if (f.origin_asn !== undefined) {
+    return { path: '/topology', query: { mode: 'asn', q: String(f.origin_asn) } }
+  }
+  if (f.through_asn !== undefined) {
+    return { path: '/topology', query: { mode: 'asn', q: String(f.through_asn), inPath: '1' } }
+  }
+  return undefined
+})
 
 const hasGraph = (g: Graph | undefined) => Boolean(g && (g.nodes.length > 0 || g.edges.length > 0))
 
@@ -212,9 +238,33 @@ watch([tab, since], () => {
   router.replace({ query: currentQuery() })
 })
 
+/**
+ * The mode a typed term unmistakably is, when it is not the one selected:
+ * "AS65002" in Prefix mode is an ASN search, "65002:100" a community and
+ * "10.0.0.0/8" a prefix, whichever button is pressed. Same rules as the
+ * sidebar's jump box (lib/jumpTarget); a bare number is an AS, since it is
+ * never a prefix or a community. A bare address is left alone: whether it
+ * means "this exact host prefix" or "everything covering it" is the
+ * operator's call, made with the Covering box.
+ */
+function detectedMode(v: string): { mode: Mode; term: string } | undefined {
+  const to = jumpTarget(v)
+  if (!to || typeof to !== 'object' || !('query' in to) || !to.query) return undefined
+  const q = to.query as Record<string, string>
+  if (q.mode === 'asn') return { mode: 'asn', term: q.q }
+  if (q.mode === 'community') return { mode: 'community', term: q.q }
+  if (q.mode === 'prefix' && !q.covers) return { mode: 'prefix', term: q.q }
+  return undefined
+}
+
 function search(opts: { fromUrl?: boolean } = {}) {
-  const v = term.value.trim()
+  let v = term.value.trim()
   if (!v) return
+  const detected = opts.fromUrl ? undefined : detectedMode(v)
+  if (detected) {
+    mode.value = detected.mode
+    term.value = v = detected.term
+  }
   if (mode.value === 'prefix') {
     filters.value = covers.value ? { covers: v } : { prefix: v }
     // Only an EXACT prefix search gives the Changes tab something to track.
@@ -253,12 +303,12 @@ const columns: Column<UnicastRoute>[] = [
   // phone read 10.91.0.0/16 as "10.91.0.0/..." -- the two points came from
   // AS path, which wraps.
   { id: 'prefix', header: 'Prefix', width: '16%' },
-  { id: 'rib', header: 'RIB', width: '88px' },
+  { id: 'rib', header: 'RIB', width: '72px' },
   // 78px, not 74: PATH ID needs 77px with its padding (measured in
   // Chromium), and at the Paths floor below this column gets exactly its px.
   { id: 'path_id', header: 'Path ID', numeric: true, width: '78px' },
-  { id: 'router_sysname', header: 'Router', width: '12%' },
-  { id: 'peer_ip', header: 'Peer', width: '12%' },
+  { id: 'router_sysname', header: 'Router', width: '10%' },
+  { id: 'peer_ip', header: 'Peer', width: '15%', mono: true },
   // /v1/routes is one row per (collector, router, peer, rib, prefix,
   // path_id), so a router two collectors monitor renders each route twice.
   // Without this the pair is two rows identical in every rendered column --
@@ -275,8 +325,8 @@ const columns: Column<UnicastRoute>[] = [
   // (measured in Chromium), and 10% of the 652px table a 1024px viewport
   // leaves cut it off. The two points came from AS path, which wraps.
   { id: 'collector', header: 'Collector', width: '12%' },
-  { id: 'next_hop', header: 'Next hop', width: '12%' },
-  { id: 'as_path', header: 'AS path', width: '16%' },
+  { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
+  { id: 'as_path', header: 'AS path', width: '14%' },
 ]
 
 // Two of the eight columns are fixed px, 166px between them, and the rest
@@ -472,7 +522,7 @@ const scopeNote = computed(() => {
   if (n === 0) return undefined
   const noun = n === 1 ? 'route' : 'routes'
   const verb = n === 1 ? 'is' : 'are'
-  return `${n} matched ${noun} ${verb} in VPN/EVPN and not shown on this screen -- this view renders unicast only. Nothing is missing from the network, only from this view.`
+  return `${n} matched ${noun} ${verb} in VPN/EVPN and not shown on this screen — this view renders unicast only. Nothing is missing from the network, only from this view.`
 })
 
 /** One key per route, not just per prefix: the same (prefix, path_id) is
@@ -580,13 +630,15 @@ function compareSeq(a: string, b: string): number {
       :counts="filters ? counts : undefined"
     />
 
-    <!-- Two-column shape: a 290px query rail beside the result pane. The
-         rail holds the question and what the answer says ABOUT its
-         subject; the pane holds the rows. -->
+    <!-- The question across the top, the rows under it. The rail holds the
+         question and what the answer says ABOUT its subject; the pane holds
+         the rows, at the full width the next-hop and AS-path columns need.
+         (It was a 290px column beside the pane, which cost those columns
+         their width once the sidebar took its own.) -->
     <div class="split">
       <aside class="rail">
         <form class="query" @submit.prevent="search()">
-      <div class="modes">
+      <div class="modes seg" role="group" aria-label="Search by">
         <button type="button" :class="{ on: mode === 'prefix' }" @click="mode = 'prefix'">Prefix</button>
         <button type="button" :class="{ on: mode === 'asn' }" @click="mode = 'asn'">ASN</button>
         <button type="button" :class="{ on: mode === 'community' }" @click="mode = 'community'">Community</button>
@@ -594,7 +646,7 @@ function compareSeq(a: string, b: string): number {
       <input v-model="term" class="mono" :placeholder="mode === 'prefix' ? '10.0.0.0/24' : mode === 'asn' ? '65010' : '65010:100'" />
       <label v-if="mode === 'prefix'"><input v-model="covers" type="checkbox" /> covering</label>
       <label v-if="mode === 'asn'"><input v-model="inPath" type="checkbox" /> in path</label>
-          <button type="submit">Search</button>
+          <button type="submit" class="btn primary">Search</button>
         </form>
 
         <!-- Facts about the subject, counted over the rows in hand. RPKI,
@@ -602,33 +654,33 @@ function compareSeq(a: string, b: string): number {
              than empty, because no feed or endpoint supplies them: "-"
              beside RPKI reads as "no ROA". -->
         <dl v-if="facts.length" class="facts" data-facts>
-          <template v-for="f in facts" :key="f.label">
+          <div v-for="f in facts" :key="f.label" class="fact">
             <dt>{{ f.label }}</dt>
             <dd class="mono">{{ f.value }}</dd>
-          </template>
+          </div>
         </dl>
       </aside>
 
       <div class="pane">
-        <div class="tabs">
-      <button data-tab="paths" :class="{ on: tab === 'paths' }" @click="tab = 'paths'">Paths</button>
-      <button data-tab="grouped" :class="{ on: tab === 'grouped' }" @click="tab = 'grouped'">Grouped</button>
-      <button data-tab="diff" :class="{ on: tab === 'diff' }" @click="tab = 'diff'">Changes</button>
-      <button data-tab="topology" :class="{ on: tab === 'topology' }" @click="tab = 'topology'">Topology</button>
+        <div class="tabs tabbar">
+      <button type="button" data-tab="paths" :class="{ on: tab === 'paths' }" @click="tab = 'paths'">Paths</button>
+      <button type="button" data-tab="grouped" :class="{ on: tab === 'grouped' }" @click="tab = 'grouped'">Grouped</button>
+      <button type="button" data-tab="diff" :class="{ on: tab === 'diff' }" @click="tab = 'diff'">Changes</button>
+      <button type="button" data-tab="topology" :class="{ on: tab === 'topology' }" @click="tab = 'topology'">Topology</button>
     </div>
 
     <!-- Visible regardless of the active tab: the fanout matched these
          routes whichever tab is open, and a note that only showed up on
          the Paths tab would vanish the moment an operator switched to
          Grouped and stayed gone if they forgot to switch back. -->
-    <p v-if="scopeNote" class="scope-note" role="status">{{ scopeNote }}</p>
+    <Notice v-if="scopeNote" class="scope-note" role="status">{{ scopeNote }}</Notice>
 
     <!-- Beside the counts it reconciles, and for the same reason the counts
          dedupe at all: "paths" is a question about the network, a row is
          one collector's observation of it. Without this the rail reads
          "Paths 1" over two identical-looking rows and the operator is left
          to guess which number is wrong. -->
-    <p
+    <Notice
       v-if="observingCollectors"
       class="scope-note"
       data-observers-note
@@ -638,7 +690,7 @@ function compareSeq(a: string, b: string): number {
       collector below. The counts beside the results are per
       route, not per observation — two collectors watching does not make a
       second path.
-    </p>
+    </Notice>
 
     <!-- Nothing is answered until something is asked. Rendering the paths
          or grouped tab before a search would print "no rows matched" -- and,
@@ -648,7 +700,7 @@ function compareSeq(a: string, b: string): number {
          Changes tab is excluded because it has a narrower thing to say:
          history is per exact prefix, so an ASN or community search leaves
          it with nothing to track even after a search HAS been made. -->
-    <p v-if="!filters && tab !== 'diff'" class="quiet">
+    <p v-if="!filters && tab !== 'diff'" class="empty-state">
       Search a prefix, ASN or community to see routes.
     </p>
 
@@ -751,8 +803,12 @@ function compareSeq(a: string, b: string): number {
         <p class="quiet" data-topology-counts>
           <strong>{{ graphSize(unicastGraph) }}</strong> in unicast — one node per AS, one edge per
           adjacency their paths cross. Click a node to search the routes crossing that AS.
+          <template v-if="asPathsLink">
+            For depth, the other families and each AS's detail,
+            <RouterLink :to="asPathsLink" data-open-as-paths>open this graph in AS paths</RouterLink>.
+          </template>
         </p>
-        <p v-if="otherGraphs" class="scope-note" data-topology-families>{{ otherGraphs }}</p>
+        <Notice v-if="otherGraphs" class="scope-note" data-topology-families>{{ otherGraphs }}</Notice>
         <PathGraph v-if="hasGraph(unicastGraph)" :graph="unicastGraph" @select="onGraphSelect" />
         <!-- Not an alert, and worded so it cannot read as one: `nodes` and
              `edges` are arrays with no null form, so an empty one is this
@@ -842,34 +898,30 @@ function compareSeq(a: string, b: string): number {
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
-/* 290px is the rail's fixed width. minmax(0, 1fr) on the pane, not
-   1fr: without the 0 minimum a wide table inside it pushes the grid wider
-   than the viewport instead of scrolling in its own card. */
-.split { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+/* One column: the rail is a band above the pane. minmax(0, 1fr), not 1fr:
+   without the 0 minimum a wide table inside it pushes the grid wider than
+   the viewport instead of scrolling in its own card. */
+.split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .rail {
-  display: flex; flex-direction: column; gap: 12px; padding: 12px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .pane { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.facts { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 0; }
+/* A strip of label-over-value pairs, each pair one unit, so a phone wraps
+   whole pairs onto a second line. It used to scroll sideways instead, with
+   no scrollbar to say so: the fourth fact was simply cut at the card edge. */
+.facts { display: flex; flex-wrap: wrap; gap: 10px 28px; margin: 0; }
+.fact { display: flex; flex-direction: column; gap: 2px; }
 .facts dt {
-  color: var(--muted); text-transform: uppercase;
-  font: 600 9.5px var(--font-ui); letter-spacing: .07em; align-self: center;
+  color: var(--muted); text-transform: uppercase; white-space: nowrap;
+  font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em;
 }
-.facts dd { margin: 0; color: var(--ink-2); font-size: 11.5px; text-align: right; }
-@media (max-width: 900px) {
-  .split { grid-template-columns: minmax(0, 1fr); }
-}
+.facts dd { margin: 0; color: var(--ink); font-size: var(--text-data); white-space: nowrap; }
 .query { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.modes { display: flex; gap: 2px; }
-.modes button, .tabs button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
-.modes button.on, .tabs button.on { background: var(--ink); color: var(--on-dark); border-color: var(--ink); }
-.query input[type="text"], .query input:not([type]) { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 220px; }
-.query label { font: 400 11.5px var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.query button[type="submit"] { background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
-.tabs { display: flex; gap: 2px; }
-.groups, .diff, .topology { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+.query input[type="text"], .query input:not([type]) { min-width: 260px; }
+.query label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.groups, .diff, .topology { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; }
 .topology { display: flex; flex-direction: column; gap: 10px; }
 .group h3 { margin: 10px 0 4px; font: 600 12px var(--font-data); color: var(--ink-2); }
 .count { color: var(--muted); font-weight: 400; }
@@ -878,14 +930,13 @@ function compareSeq(a: string, b: string): number {
 .detail { color: var(--muted); font-size: 10.5px; }
 .events li { display: flex; gap: 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--divider); }
 .via { color: var(--muted); font-size: 10.5px; }
-.window { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; font: 400 11.5px var(--font-ui); color: var(--muted); }
-.window select { border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 8px; font: 400 11.5px var(--font-ui); background: var(--surface); color: var(--ink); }
-.action { padding: 1px 7px; border-radius: 4px; font: 500 10px var(--font-ui); }
+.window { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
+
+.action { padding: 1px 7px; border-radius: var(--radius-sm); font: 500 var(--text-label) var(--font-ui); }
 .announce { background: var(--good-tint); color: var(--good); }
 .withdraw { background: var(--bad-tint); color: var(--bad-2); }
 .path { color: var(--muted); }
 .when { margin-left: auto; color: var(--muted); }
-.quiet { margin: 0 0 8px; color: var(--muted); font: 400 11.5px var(--font-ui); }
-.error { margin: 0; color: var(--bad-2); font: 400 11.5px var(--font-ui); }
-.scope-note { margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
+.quiet { margin: 0 0 8px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
 </style>

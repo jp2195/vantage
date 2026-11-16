@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { RouterLinkStub, mount } from '@vue/test-utils'
 import AppShell from './AppShell.vue'
 
 // The unauthenticated banner is the only thing on screen that tells an
@@ -8,7 +8,9 @@ import AppShell from './AppShell.vue'
 // chrome rather than a dismissible toast; nothing held it there.
 //
 // RouterLink is stubbed rather than installing a router: which paths exist
-// is router.ts's concern, and this test is about one span. FleetChrome is
+// is router.ts's concern, and this test is about one span. RouterLinkStub,
+// not a bare stub, because the wordmark is inside the home link and a bare
+// stub renders no slot content. FleetChrome is
 // stubbed because it reads /v1/routers through Colada, which would make
 // this test -- and App's boot tests, which mount the shell through the boot
 // sequence -- need an active Pinia to assert one span. Its own rules live
@@ -16,7 +18,7 @@ import AppShell from './AppShell.vue'
 function shell(mode: 'token' | 'oidc' | 'none') {
   return mount(AppShell, {
     props: { mode },
-    global: { stubs: { RouterLink: true, FleetChrome: true } },
+    global: { stubs: { RouterLink: RouterLinkStub, FleetChrome: true } },
   })
 }
 

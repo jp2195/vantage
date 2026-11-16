@@ -9,6 +9,7 @@ import { columnWidths, columnsOf, tableMinWidthPx } from '@/test-support/columns
 import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
 import { inventedColumns } from '@/test-support/columnGuard'
 import type { EventScope } from '@/api/queries'
+import { formatClock } from '@/lib/formatClock'
 
 // Set inside each test below, never left at these initial values: the
 // isolation rule requires every test to pass alone via `-t`, so each test
@@ -318,10 +319,7 @@ describe('SessionHistoryView', () => {
     routersFixture = routers
     const w = mount(SessionHistoryView)
     await chooseScope(w)
-    const expected = new Date(events.data[0].ts_collector).toLocaleString([], {
-      dateStyle: 'medium',
-      timeStyle: 'medium',
-    })
+    const expected = formatClock(events.data[0].ts_collector)
     expect(w.text()).toContain(expected)
     expect(w.text()).not.toContain(events.data[0].ts_collector)
   })

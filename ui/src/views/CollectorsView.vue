@@ -27,6 +27,7 @@ import { routerLabel } from '@/lib/routerLabel'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import StatTile from '@/components/StatTile.vue'
+import Notice from '@/components/Notice.vue'
 import { formatClock } from '@/lib/formatClock'
 import { formatCount } from '@/lib/formatCount'
 import { formatGoDuration } from '@/lib/goDuration'
@@ -276,6 +277,11 @@ function formatLastHeard(lastBeatAt: string | null): string {
 function activityPeak(activity: Collector['activity']): number {
   return Math.max(1, ...activity.map((a) => a.rows))
 }
+/** The busiest minute's rows, for the caption: 0 when nothing arrived,
+ *  where activityPeak floors at 1 to keep the bar math finite. */
+function peakRows(activity: Collector['activity']): number {
+  return activity.reduce((m, a) => Math.max(m, a.rows), 0)
+}
 function barWidth(n: number): number {
   return n > 0 ? 100 / n : 100
 }
@@ -313,8 +319,8 @@ function barTop(rows: number, peak: number): number {
 // floor and more everywhere above it. Router and Peers both wrap, so the
 // three points came from them.
 const routerColumns: Column<CollectorRouter>[] = [
-  { id: 'sysname', header: 'Router', width: '38%' },
-  { id: 'ip', header: 'Address', width: '28%' },
+  { id: 'sysname', header: 'Router', width: '38%', sortable: true, sortValue: (r) => r.sysname || r.ip },
+  { id: 'ip', header: 'Address', width: '28%', sortable: true, mono: true },
   { id: 'peers_up', header: 'Peers', width: '34%' },
 ]
 
@@ -351,11 +357,11 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
         </header>
         <p class="threshold" data-threshold>{{ badgeOf(c).threshold }}</p>
 
-        <p v-if="c.id_mismatch" class="mismatch" data-id-mismatch>
+        <Notice v-if="c.id_mismatch" tone="warn" class="mismatch" data-id-mismatch>
           Configured as <strong>{{ c.id_mismatch }}</strong>, but this endpoint answered as
-          <strong>{{ c.collector }}</strong> -- someone pointed
+          <strong>{{ c.collector }}</strong>: someone pointed
           <strong>{{ c.id_mismatch }}</strong>'s endpoint at a different collector's process.
-        </p>
+        </Notice>
 
         <p v-if="c.reachable === false" class="error" data-error role="alert">{{ c.error }}</p>
         <p v-else-if="c.reachable === null" class="quiet" data-no-status>
@@ -363,7 +369,7 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
           rate or publish count to show -- not zero of each.
         </p>
 
-        <div class="tiles">
+        <div class="tiles tile-grid">
           <StatTile
             v-if="c.archive"
             data-tile="peers"
@@ -418,7 +424,10 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 
         <figure class="activity">
           <figcaption class="axis" data-activity-axis>
-            Rows archived per minute, over the last {{ activityWindow }}
+            <span>Rows archived per minute, over the last {{ activityWindow }}</span>
+            <span class="peak mono">{{
+              peakRows(c.activity) > 0 ? `peak ${formatCount(peakRows(c.activity))}` : 'none archived'
+            }}</span>
           </figcaption>
           <svg
             v-if="c.activity.length"
@@ -438,9 +447,9 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
               <rect
                 :x="i * barWidth(c.activity.length)"
                 :y="barTop(bucket.rows, activityPeak(c.activity))"
-                :width="Math.max(barWidth(c.activity.length) - 0.4, 0.6)"
+                :width="bucket.rows ? Math.max(barWidth(c.activity.length) - 0.4, 0.6) : barWidth(c.activity.length)"
                 :height="drawnBarHeight(bucket.rows, activityPeak(c.activity))"
-                :class="{ current: i === c.activity.length - 1 }"
+                :class="{ current: i === c.activity.length - 1, zero: !bucket.rows }"
               />
             </g>
           </svg>
@@ -455,16 +464,22 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
           :min-width="ROUTER_TABLE_MIN_WIDTH"
         >
           <template #cell-sysname="{ row }">
-            {{ routerLabel((row as CollectorRouter).sysname) }}
+            <span :class="{ unnamed: !(row as CollectorRouter).sysname }">{{ routerLabel((row as CollectorRouter).sysname) }}</span>
             <div v-if="(row as CollectorRouter).sys_descr" class="os-line" data-os-line>
               {{ (row as CollectorRouter).sys_descr }}
             </div>
           </template>
+          <!-- Up always, the rest only when nonzero: the cell is read for
+               what is wrong, and four counts with three zeros wrapped to two
+               lines in a third of a card. The tile above still says every
+               count for the collector as a whole. -->
           <template #cell-peers_up="{ row }">
-            {{ (row as CollectorRouter).peers_up }} up ·
-            {{ (row as CollectorRouter).peers_down }} down ·
-            {{ (row as CollectorRouter).peers_view_lost }} view lost ·
-            {{ (row as CollectorRouter).peers_stale }} stale
+            <span class="peer-counts">
+              <span class="mono">{{ (row as CollectorRouter).peers_up }} up</span>
+              <span v-if="(row as CollectorRouter).peers_down" class="pc down">{{ (row as CollectorRouter).peers_down }} down</span>
+              <span v-if="(row as CollectorRouter).peers_view_lost" class="pc lost">{{ (row as CollectorRouter).peers_view_lost }} view lost</span>
+              <span v-if="(row as CollectorRouter).peers_stale" class="pc stale">{{ (row as CollectorRouter).peers_stale }} stale</span>
+            </span>
           </template>
         </DataTable>
         <p v-else class="quiet" data-not-archived>{{ notArchivedNote(c) }}</p>
@@ -474,41 +489,57 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); gap: 14px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+/* auto-fit, not auto-fill: two collectors on a wide screen fill the row
+   rather than sitting in the left half beside two empty tracks. */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 14px; }
 .card {
   display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .card-head { display: flex; align-items: center; gap: 10px; }
 .card-head h2 { margin: 0; font: 600 13px var(--font-data); color: var(--ink); flex: 1 1 auto; overflow-wrap: anywhere; }
 .badge {
-  display: inline-block; padding: 2px 8px; border-radius: 20px;
-  font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+  display: inline-block; padding: 2px 8px; border-radius: var(--radius-full);
+  font: 600 var(--text-label) var(--font-ui); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
 }
 .badge.healthy { background: var(--good-tint); color: var(--good); }
 .badge.degraded { background: var(--bad-tint); color: var(--bad-2); }
 .badge.unconfigured { background: var(--surface-2); color: var(--muted); }
-.threshold { margin: 0; color: var(--muted); font: 400 10.5px var(--font-ui); }
-.mismatch {
-  margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--accent-tint);
-  color: var(--accent-ink-2); font: 400 11px var(--font-ui);
-}
+.threshold { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .error {
-  margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--bad-tint);
-  color: var(--bad-2); font: 400 11px var(--font-ui);
+  margin: 0; padding: 8px 10px; border-radius: var(--radius-md); background: var(--bad-tint);
+  color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui);
 }
-.quiet { margin: 0; color: var(--muted); font: 400 11px var(--font-ui); }
-.tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+/* A grid, not a wrapping row: seven tiles in a row of six left the seventh
+   stretched across the card on a line of its own. */
+.tiles { grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 8px; }
 .tiles :deep(.tile) { min-width: 110px; padding: 8px 10px; }
+/* Peers up carries the longest sub-line (down, view lost, stale) and spans
+   two cells, so seven tiles fill whole rows of four instead of leaving a
+   hole at the end of the second. */
+.tiles :deep([data-tile='peers']) { grid-column: span 2; }
 .tiles :deep(.value) { font-size: 17px; }
 .activity { margin: 0; display: flex; flex-direction: column; gap: 4px; }
-.axis { margin: 0; color: var(--muted); font: 400 10.5px var(--font-data); }
+.axis { margin: 0; display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.axis .peak { flex: none; font-size: var(--text-label); }
 .plot { width: 100%; height: 44px; display: block; }
 .plot rect { fill: var(--ink-2); }
 /* The final bar is the current, still-accumulating minute -- never drawn
    as though it were a completed one. */
 .plot rect.current { fill: var(--muted); }
+/* A minute with no rows is the floor, drawn edge to edge: as separate
+   stubs, a quiet half hour looked like a dashed rule rather than zero. */
+.plot rect.zero { fill: var(--line-2); }
 .routers { font-size: 11px; }
-.os-line { color: var(--muted); font: 400 10.5px var(--font-ui); }
+.os-line { color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.peer-counts { display: inline-flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
+.pc { padding: 1px 7px; border-radius: var(--radius-full); font: 500 var(--text-sm) var(--font-ui); white-space: nowrap; }
+.pc.down { background: var(--warn-tint); color: var(--warn-ink); }
+.pc.lost { background: var(--bad-tint); color: var(--bad-2); }
+.pc.stale { background: var(--neutral-chip); color: var(--ink-2); outline: 1px dashed var(--muted-2); outline-offset: -1px; }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; color: var(--muted); }
 </style>

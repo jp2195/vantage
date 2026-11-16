@@ -132,10 +132,10 @@ const dumping = {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
-.lede { margin: 0; max-width: 84ch; color: var(--muted); font: 400 12px var(--font-ui); }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+.lede { margin: 0; max-width: 84ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .block { display: flex; flex-direction: column; gap: 8px; }
-h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
-.note { margin: 0; max-width: 84ch; color: var(--muted); font: 400 11px var(--font-ui); }
+h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
+.note { margin: 0; max-width: 84ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 code { font: 400 11px var(--font-data); color: var(--ink-2); }
 </style>

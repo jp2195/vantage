@@ -158,6 +158,25 @@ describe('PeerDetailView', () => {
     }
   })
 
+  // Each link lands on a screen that takes this peer as its scope, so the
+  // operator arrives at an answer rather than a picker.
+  it('links to this peer on Routes, Session history and its origin AS', () => {
+    const peer = peers.data[1]
+    route.params = { router: peer.router_ip, peer: peer.peer_ip }
+    fixture = peers
+    pending = false
+    loading = false
+    const w = mountDetail()
+    const to = (key: string) =>
+      w.get(`[data-action="${key}"]`).findComponent(RouterLinkStub).props('to')
+    expect(to('routes')).toEqual({ path: '/routes', query: { router: peer.router_ip, peer: peer.peer_ip } })
+    expect(to('history')).toEqual({
+      path: '/session-history',
+      query: { router: peer.router_ip, peer: peer.peer_ip },
+    })
+    expect(to('origin')).toEqual({ path: '/looking-glass', query: { mode: 'asn', q: String(peer.asn) } })
+  })
+
   it("names each family's dump state rather than summarizing it", () => {
     // dump_states is per-family: one family complete and another dumping is
     // a normal, meaningful situation, and a single "dumping: yes" would
@@ -657,7 +676,7 @@ describe('PeerDetailView churn panels', () => {
     eventRows = events.data
     const w = mountDetail()
     await nextTick()
-    expect(w.find('[data-section="churn"]').text()).toContain('30m0s')
+    expect(w.find('[data-section="churn"]').text()).toContain('30 min buckets')
   })
 })
 
