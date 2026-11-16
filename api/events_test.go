@@ -83,9 +83,9 @@ func insertPeerEventRIB(t *testing.T, kind string, downReason uint32, rib string
 	// ts is anchored to NOW, not a fixed date: the handler defaults ?since=
 	// to 1h ago (api/handlers.go's since), and every test in this file
 	// queries with no since= at all, matching how a caller with no time
-	// filter behaves. A fixed historical timestamp -- insertHandlerFixture's own
-	// 2026-08-01, chosen because nothing there reads it against the
-	// default window -- would fall outside that default and never appear.
+	// filter behaves. insertHandlerFixture's own fixTS, seven days back and
+	// chosen because nothing there reads it against the default window,
+	// would fall outside that default and never appear.
 	n := eventsFixSeq.Add(1)
 	ts := time.Now().UTC().Add(time.Duration(n) * time.Millisecond)
 
@@ -256,10 +256,11 @@ func TestEventsUnknownReasonCodeIsUnnamedNotGuessed(t *testing.T) {
 // never truncates -- so each row here lands at the SAME
 // (router_ip, peer_ip, rib, ts_router, stream_seq), peer_events' own
 // ReplacingMergeTree key, and a re-run overwrites rather than
-// accumulates. The date is fixed and arbitrary, chosen only to sit inside
-// peer_events' 90-day TTL for the foreseeable life of this test.
+// accumulates. The date is relative to the run (see fixDay in
+// handlers_test.go): a fixed calendar date aged out of peer_events' 90-day
+// TTL and took this test down with it.
 var (
-	walkFixBase = time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	walkFixBase = fixDay
 	walkFixRIB  = "out_pre" // isolates from insertPeerEvent's own "in_pre" rows
 )
 
