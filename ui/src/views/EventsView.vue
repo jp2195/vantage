@@ -95,16 +95,16 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // where two collectors each lost their own session, and the sessions are
 // genuinely different (different session_id on the wire).
 const columns: Column<PeerEvent>[] = [
-  { id: 'ts_collector', header: 'Time', width: '180px' },
-  { id: 'kind', header: 'Kind', width: '112px' },
-  { id: 'router_sysname', header: 'Router', width: '13%' },
-  { id: 'peer_ip', header: 'Peer', width: '13%' },
-  { id: 'collector', header: 'Collector', width: '11%' },
+  { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
+  { id: 'kind', header: 'Kind', width: '112px', sortable: true },
+  { id: 'router_sysname', header: 'Router', width: '13%', sortable: true },
+  { id: 'peer_ip', header: 'Peer', width: '13%', sortable: true },
+  { id: 'collector', header: 'Collector', width: '11%', sortable: true },
   // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
   // padding (measured in Chromium). At 84px it read "42000..." at every
   // width, 1440 included.
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px' },
-  { id: 'rib', header: 'RIB', width: '92px' },
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
+  { id: 'rib', header: 'RIB', width: '92px', sortable: true },
   { id: 'down_reason', header: 'Reason', width: '18%' },
 ]
 

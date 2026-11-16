@@ -314,8 +314,8 @@ function barTop(rows: number, peak: number): number {
 // floor and more everywhere above it. Router and Peers both wrap, so the
 // three points came from them.
 const routerColumns: Column<CollectorRouter>[] = [
-  { id: 'sysname', header: 'Router', width: '38%' },
-  { id: 'ip', header: 'Address', width: '28%' },
+  { id: 'sysname', header: 'Router', width: '38%', sortable: true, sortValue: (r) => r.sysname || r.ip },
+  { id: 'ip', header: 'Address', width: '28%', sortable: true },
   { id: 'peers_up', header: 'Peers', width: '34%' },
 ]
 

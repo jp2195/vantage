@@ -228,15 +228,15 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // reads TWO session lifecycles as one, which is the single thing it exists
 // to show. Same column, same argument, as EventsView.vue and PeersView.vue.
 const columns: Column<PeerEvent>[] = [
-  { id: 'ts_collector', header: 'Time', width: '180px' },
-  { id: 'kind', header: 'Kind', width: '112px' },
-  { id: 'collector', header: 'Collector', width: '11%' },
-  { id: 'rib', header: 'RIB', width: '92px' },
+  { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
+  { id: 'kind', header: 'Kind', width: '112px', sortable: true },
+  { id: 'collector', header: 'Collector', width: '11%', sortable: true },
+  { id: 'rib', header: 'RIB', width: '92px', sortable: true },
   { id: 'down_reason', header: 'Reason', width: '20%' },
   // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
   // padding (measured in Chromium); 84px cut it to "42000...".
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px' },
-  { id: 'router_sysname', header: 'Router', width: '16%' },
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
+  { id: 'router_sysname', header: 'Router', width: '16%', sortable: true },
 ]
 
 // Four of the seven columns are fixed px, 494px between them, and

@@ -301,3 +301,76 @@ describe('DataTable, titles on truncated cells', () => {
     expect(td.attributes('title')).toBeUndefined()
   })
 })
+
+describe('DataTable sorting', () => {
+  const rows = [
+    { name: 'xr-p10', n: 3 },
+    { name: 'xr-p2', n: 10 },
+    { name: 'xr-p1', n: null },
+  ]
+  const sortCols = [
+    { id: 'name', header: 'Router', sortable: true },
+    { id: 'n', header: 'Count', numeric: true, sortable: true },
+  ]
+  const complete: Meta = { warnings: [], total_matched: 3 } as unknown as Meta
+  const names = (w: ReturnType<typeof mount>) => w.findAll('tbody tr').map((tr) => tr.findAll('td')[0].text())
+
+  it('keeps the caller’s order until a header is clicked, then cycles up, down, and back', async () => {
+    const w = mount(DataTable, { props: { columns: sortCols, rows, meta: complete } })
+    expect(names(w)).toEqual(['xr-p10', 'xr-p2', 'xr-p1'])
+    const header = w.findAll('th')[0]
+    expect(header.attributes('aria-sort')).toBe('none')
+    // The header's text is still just its label: tests and screen readers
+    // read "Router", not an arrow glyph.
+    expect(header.text()).toBe('Router')
+
+    await header.get('button').trigger('click')
+    // Numeric collation: p2 before p10.
+    expect(names(w)).toEqual(['xr-p1', 'xr-p2', 'xr-p10'])
+    expect(header.attributes('aria-sort')).toBe('ascending')
+
+    await header.get('button').trigger('click')
+    expect(names(w)).toEqual(['xr-p10', 'xr-p2', 'xr-p1'])
+    expect(header.attributes('aria-sort')).toBe('descending')
+
+    await header.get('button').trigger('click')
+    expect(names(w)).toEqual(['xr-p10', 'xr-p2', 'xr-p1'])
+    expect(header.attributes('aria-sort')).toBe('none')
+  })
+
+  it('sorts numbers as numbers and puts a missing value last in both directions', async () => {
+    const w = mount(DataTable, { props: { columns: sortCols, rows, meta: complete } })
+    const btn = w.findAll('th')[1].get('button')
+    await btn.trigger('click')
+    expect(names(w)).toEqual(['xr-p10', 'xr-p2', 'xr-p1'])
+    await btn.trigger('click')
+    expect(names(w)).toEqual(['xr-p2', 'xr-p10', 'xr-p1'])
+  })
+
+  it('never reorders the caller’s array', async () => {
+    const mine = rows.slice()
+    const w = mount(DataTable, { props: { columns: sortCols, rows: mine, meta: complete } })
+    await w.findAll('th')[0].get('button').trigger('click')
+    expect(mine.map((r) => r.name)).toEqual(['xr-p10', 'xr-p2', 'xr-p1'])
+  })
+
+  // Sorting the first N of M by a column reads as "the top N", which a
+  // truncated answer is not; the header stays a plain label.
+  it.each(['truncated', 'paginated_smear'])('offers no sort over an answer the footer flags %s', (code) => {
+    const partial = { warnings: [{ code, message: '' }], total_matched: 9 } as unknown as Meta
+    const w = mount(DataTable, { props: { columns: sortCols, rows, meta: partial } })
+    expect(w.findAll('th button')).toHaveLength(0)
+    expect(w.findAll('th')[0].attributes('aria-sort')).toBeUndefined()
+  })
+
+  it('says a filter emptied the table, rather than that nothing matched', () => {
+    const w = mount(DataTable, {
+      props: { columns: sortCols, rows: [], meta: complete, filteredOut: 3 },
+      slots: { toolbar: () => h('input', { 'data-filter': '' }) },
+    })
+    expect(w.find('[data-filtered-empty]').text()).toMatch(/filter.*3 rows/)
+    expect(w.text()).not.toMatch(/no rows matched/i)
+    // The control that can undo it is still on screen.
+    expect(w.find('[data-filter]').exists()).toBe(true)
+  })
+})

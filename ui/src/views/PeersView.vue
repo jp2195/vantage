@@ -81,19 +81,19 @@ const columns: Column<PeerRow>[] = [
   // seven points came from Collector, ASN, State, Up since and Changes,
   // each still at least as wide as its header and its widest value at the
   // floor.
-  { id: 'peer_ip', header: 'Peer', width: '19%' },
-  { id: 'router_ip', header: 'Router', width: '11%' },
-  { id: 'collector', header: 'Collector', width: '9%' },
-  { id: 'rib', header: 'RIB', width: '7%' },
+  { id: 'peer_ip', header: 'Peer', width: '19%', sortable: true },
+  { id: 'router_ip', header: 'Router', width: '11%', sortable: true },
+  { id: 'collector', header: 'Collector', width: '9%', sortable: true },
+  { id: 'rib', header: 'RIB', width: '7%', sortable: true },
   // Not `numeric`: once a holder name is beside it, the cell holds more
   // than a number, and right-aligned tabular figures are the wrong shape
   // for a name. Widened accordingly -- 92px fit a bare ASN, not "LEVEL3 -
   // Level 3 Parent, LLC" beside one. The name wraps; the ten digits of the
   // longest ASN do not, and need 109px.
-  { id: 'asn', header: 'ASN', width: '11%' },
+  { id: 'asn', header: 'ASN', width: '11%', sortable: true },
   // The widest pill, "view lost", needs 95px; the dumping chip wraps below it.
-  { id: 'state', header: 'State', width: '9%' },
-  { id: 'routes', header: 'Routes', numeric: true, width: '7%' },
+  { id: 'state', header: 'State', width: '9%', sortable: true, sortValue: (r) => STATE_ORDER[r.state] },
+  { id: 'routes', header: 'Routes', numeric: true, width: '7%', sortable: true },
   // "Up since", not "Uptime", and the difference is measured rather than
   // stylistic. A measurement on 2026-09-21 ran `now - up_since` over a
   // lab archive: for 25 of 35 peers it equaled how long the ROUTER had
@@ -103,7 +103,7 @@ const columns: Column<PeerRow>[] = [
   // collection-artifact-as-network-fact class, in a column an operator would
   // trust. The instant is a fact the archive holds; the duration is an
   // inference about the present it cannot support.
-  { id: 'up_since', header: 'Up since', width: '11%' },
+  { id: 'up_since', header: 'Up since', width: '11%', sortable: true, sortValue: (r) => (showsUpSince(r.state) ? r.up_since : null) },
   // Named for the field it carries -- changes_per_second, off
   // /v1/collection/churn/peers -- not for its header. The column guard
   // checks ids against the shapes real endpoints return, so an id invented
@@ -113,7 +113,7 @@ const columns: Column<PeerRow>[] = [
   // the router's own update rate -- what it holds is rows THIS collector
   // stored. Reporting it as the network's is the artifact-as-fact
   // defect, and the note beside the table says which of the two this is.
-  { id: 'changes_per_second', header: 'Archived/s', numeric: true, width: '8%' },
+  { id: 'changes_per_second', header: 'Archived/s', numeric: true, width: '8%', sortable: true },
   // The shape the rate beside it averages away: two peers with one rate may
   // have churned steadily and all at once. Named for the field it carries,
   // like its neighbor.
@@ -236,6 +236,61 @@ const rows = computed<PeerRow[]>(() =>
  * of its own: the batch changes the moment usePeers' own 30s poll hands
  * this a new row, and that change is what refetches it.
  */
+/** Worst first: blind, then reported down, then unvouched-for, then fine. */
+const STATE_ORDER: Record<Peer['state'], number> = {
+  view_lost: 0,
+  down: 1,
+  stale: 2,
+  unspecified: 3,
+  up: 4,
+}
+
+/**
+ * The table's own filter: a free-text match over the identifiers on a row,
+ * and one state at a time. Client-side, over the rows this screen already
+ * holds -- /v1/peers answers with the whole fleet in one response, so
+ * narrowing it here hides nothing the server sent.
+ */
+type StateFilter = 'all' | Peer['state'] | 'dumping'
+const query = ref('')
+const stateFilter = ref<StateFilter>('all')
+
+const matchesState = (p: PeerRow, f: StateFilter) =>
+  f === 'all' ? true : f === 'dumping' ? dumping(p) : p.state === f
+
+const filteredRows = computed<PeerRow[]>(() => {
+  const needle = query.value.trim().toLowerCase()
+  return rows.value.filter((p) => {
+    if (!matchesState(p, stateFilter.value)) return false
+    if (!needle) return true
+    const hay = [p.peer_ip, p.router_ip, p.collector, p.rib, String(p.asn), holderName(p.asn) ?? '']
+    return hay.some((v) => v.toLowerCase().includes(needle))
+  })
+})
+
+/**
+ * A chip per state that occurs, with its count, so the filter doubles as a
+ * summary: "View lost 3" is the answer to the question before it is a
+ * control. A state with no rows gets no chip.
+ */
+const stateChips = computed(() => {
+  const chips: { value: StateFilter; label: string; count: number }[] = [
+    { value: 'all', label: 'All', count: rows.value.length },
+  ]
+  const named: [StateFilter, string][] = [
+    ['up', 'Up'],
+    ['down', 'Down'],
+    ['view_lost', 'View lost'],
+    ['stale', 'Stale'],
+    ['dumping', 'Dumping'],
+  ]
+  for (const [value, label] of named) {
+    const count = rows.value.filter((p) => matchesState(p, value)).length
+    if (count) chips.push({ value, label, count })
+  }
+  return chips
+})
+
 const asnsOnScreen = computed(() => (data.value?.data ?? []).map((p) => p.asn))
 const asNamesQuery = useAsNames(asnsOnScreen)
 const asNameIndex = computed(() => indexAsNames(asNamesQuery.data.value?.data))
@@ -349,12 +404,33 @@ function dumping(p: Peer): boolean {
     </p>
     <DataTable
       :columns="columns"
-      :rows="rows"
+      :rows="filteredRows"
       :meta="data?.meta"
       :loading="isPending"
       :error="error ?? undefined"
       :min-width="PEERS_MIN_WIDTH"
+      :filtered-out="rows.length - filteredRows.length"
     >
+      <template v-if="rows.length" #toolbar>
+        <label class="search">
+          <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" /><path d="M11 11l3.5 3.5" /></svg>
+          <span class="sr-only">Filter peers</span>
+          <input v-model="query" type="search" placeholder="Filter by peer, router, ASN or name" data-peer-filter />
+        </label>
+        <div class="chips" role="group" aria-label="State">
+          <button
+            v-for="c in stateChips"
+            :key="c.value"
+            type="button"
+            class="chip"
+            :aria-pressed="stateFilter === c.value"
+            :data-state-chip="c.value"
+            @click="stateFilter = c.value"
+          >
+            {{ c.label }} <span class="n">{{ formatCount(c.count) }}</span>
+          </button>
+        </div>
+      </template>
       <!-- The same formatClock every other screen's timestamps go through:
            one clock rendering in this app, not a second one that drifts.
            Null is the wire's "this session never came up" and gets the dash,
@@ -445,4 +521,22 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
   background: var(--neutral-chip); color: var(--muted);
   font: 500 10px var(--font-ui);
 }
+.search {
+  display: flex; align-items: center; gap: var(--space-2); flex: 1 1 240px; max-width: 360px;
+  padding: 0 var(--space-2); border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface);
+}
+.search:focus-within { border-color: var(--focus); box-shadow: 0 0 0 3px var(--focus-ring); }
+.search svg { flex: none; fill: none; stroke: var(--muted); stroke-width: 1.6; }
+.search input[type='search'] { flex: 1; min-width: 0; border: 0; padding: 7px 0; background: transparent; }
+.search input[type='search']:focus-visible { box-shadow: none; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-full); background: var(--surface);
+  color: var(--ink-2); font: 500 var(--text-sm) var(--font-ui); cursor: pointer;
+}
+.chip:hover { border-color: var(--muted-2); }
+.chip[aria-pressed='true'] { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.chip .n { font: 500 11px var(--font-data); opacity: .75; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>

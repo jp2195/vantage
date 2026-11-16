@@ -50,14 +50,14 @@ const counts = computed(() => [
 // whether nobody has heard from the collector at all -- three different
 // operational situations, and only the first is fine.
 const columns: Column<Router>[] = [
-  { id: 'sysname', header: 'Router', width: '15%' },
-  { id: 'ip', header: 'Address', width: '140px' },
-  { id: 'collector', header: 'Collector', width: '14%' },
-  { id: 'peers_up', header: 'Up', numeric: true, width: '70px' },
-  { id: 'peers_down', header: 'Down', numeric: true, width: '76px' },
-  { id: 'peers_view_lost', header: 'View lost', numeric: true, width: '86px' },
-  { id: 'peers_stale', header: 'Stale', numeric: true, width: '70px' },
-  { id: 'last_seen', header: 'Last seen', width: '170px' },
+  { id: 'sysname', header: 'Router', width: '15%', sortable: true, sortValue: (r) => r.sysname || r.ip },
+  { id: 'ip', header: 'Address', width: '140px', sortable: true },
+  { id: 'collector', header: 'Collector', width: '14%', sortable: true },
+  { id: 'peers_up', header: 'Up', numeric: true, width: '70px', sortable: true },
+  { id: 'peers_down', header: 'Down', numeric: true, width: '76px', sortable: true },
+  { id: 'peers_view_lost', header: 'View lost', numeric: true, width: '86px', sortable: true },
+  { id: 'peers_stale', header: 'Stale', numeric: true, width: '70px', sortable: true },
+  { id: 'last_seen', header: 'Last seen', width: '170px', sortable: true },
 ]
 
 // The fixed columns alone are 612px, so below that width table-layout:fixed
@@ -87,7 +87,11 @@ const ROUTERS_MIN_WIDTH = '880px'
       :error="error ?? undefined"
       :min-width="ROUTERS_MIN_WIDTH"
     >
-      <template #cell-sysname="{ row }">{{ routerLabel(row.sysname) }}</template>
+      <!-- A router's name opens its peers: the inventory row was a dead end,
+           and "which sessions does this router have" is the next question. -->
+      <template #cell-sysname="{ row }">
+        <RouterLink :to="{ path: '/peers', query: { router: row.ip } }">{{ routerLabel(row.sysname) }}</RouterLink>
+      </template>
       <template #cell-last_seen="{ row }">{{ formatClock(row.last_seen) }}</template>
     </DataTable>
   </section>

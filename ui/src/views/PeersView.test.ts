@@ -984,3 +984,58 @@ describe('PeersView, peer address', () => {
     expect(collectors.map((c) => c.text())).toEqual(peersDown.data.map((p) => p.collector))
   })
 })
+
+describe('PeersView filter', () => {
+  beforeEach(() => {
+    route.query = {}
+    err = undefined
+    pending = false
+    loading = false
+    churnFixture = undefined
+    asNamesTruncated = false
+    asNamesFixture = { data: [], meta: { warnings: [], total_matched: null, asnames_loaded: true } }
+  })
+
+  // A chip per state that occurs, counted, so the filter is also the
+  // summary; a state with no rows gets none.
+  it('offers a chip for each state present, with its count', async () => {
+    fixture = peersStale
+    const w = mountPeers()
+    await nextTick()
+    const chips = w.findAll('[data-state-chip]').map((c) => c.text().replace(/\s+/g, ' '))
+    const lost = peersStale.data.filter((p) => p.state === 'view_lost').length
+    const stale = peersStale.data.filter((p) => p.state === 'stale').length
+    expect(chips).toEqual([`All ${peersStale.data.length}`, `View lost ${lost}`, `Stale ${stale}`])
+  })
+
+  it('narrows the rows to one state, and back', async () => {
+    fixture = peersStale
+    const w = mountPeers()
+    await nextTick()
+    await w.get('[data-state-chip="view_lost"]').trigger('click')
+    const lost = peersStale.data.filter((p) => p.state === 'view_lost')
+    expect(w.findAll('tbody tr')).toHaveLength(lost.length)
+    expect(w.get('[data-state-chip="view_lost"]').attributes('aria-pressed')).toBe('true')
+    await w.get('[data-state-chip="all"]').trigger('click')
+    expect(w.findAll('tbody tr')).toHaveLength(peersStale.data.length)
+  })
+
+  it('matches typed text against the peer and router, and says when it hides everything', async () => {
+    fixture = peersDown
+    const w = mountPeers()
+    await nextTick()
+    // The peer cell is a (stubbed) link, so count rows rather than read them.
+    const one = peersDown.data[0]
+    const want = peersDown.data.filter((p) =>
+      [p.peer_ip, p.router_ip, p.collector, p.rib, String(p.asn)].some((v) => v.includes(one.peer_ip)),
+    ).length
+    await w.get('[data-peer-filter]').setValue(one.peer_ip)
+    expect(w.findAll('tbody tr')).toHaveLength(want)
+    expect(want).toBeLessThan(peersDown.data.length)
+
+    await w.get('[data-peer-filter]').setValue('no-such-peer')
+    expect(w.find('[data-filtered-empty]').text()).toMatch(/filter/)
+    // The answer itself was complete: the filter, not the network, emptied it.
+    expect(w.text()).not.toMatch(/no rows matched/i)
+  })
+})

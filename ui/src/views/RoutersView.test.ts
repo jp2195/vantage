@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { RouterLinkStub, mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { columnWidths, columnsOf, tableMinWidthPx } from '@/test-support/columnsOf'
@@ -28,7 +28,7 @@ describe('RoutersView', () => {
       isPending: ref(false),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     const r = routers.data[0]
     expect(w.text()).toContain(r.sysname)
     expect(w.text()).toContain(r.ip)
@@ -53,7 +53,7 @@ describe('RoutersView', () => {
       isPending: ref(false),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     expect(w.findAll('tbody tr')).toHaveLength(2)
     const header = w.find('header, .head')?.text() ?? w.text()
     expect(header).toMatch(/Routers\s*1\b/)
@@ -66,7 +66,7 @@ describe('RoutersView', () => {
       isPending: ref(false),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     const headers = w.findAll('th').map((h) => h.text().toLowerCase())
     expect(headers.some((h) => /view lost/.test(h))).toBe(true)
     expect(headers.some((h) => /^down$/.test(h))).toBe(true)
@@ -78,7 +78,7 @@ describe('RoutersView', () => {
       isPending: ref(false),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     const headers = w.findAll('th').map((h) => h.text())
     const col = headers.indexOf('Stale')
     expect(col).toBeGreaterThan(-1)
@@ -142,7 +142,7 @@ describe('RoutersView', () => {
       isPending: ref(false),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     const expected = formatClock(routers.data[0].last_seen)
     expect(w.text()).toContain(expected)
     expect(w.text()).not.toContain(routers.data[0].last_seen)
@@ -183,7 +183,7 @@ describe('RoutersView', () => {
       isLoading: ref(true),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     expect(w.text()).not.toMatch(/loading/i)
     expect(w.text()).toMatch(/no rows matched/i)
     // routers.meta carries an empty warnings array -- the footer must still
@@ -198,7 +198,7 @@ describe('RoutersView', () => {
       isLoading: ref(true),
       error: ref(undefined),
     } as never)
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     expect(w.text()).toMatch(/loading/i)
     expect(w.text()).not.toContain(routers.data[0].sysname)
   })
@@ -206,7 +206,7 @@ describe('RoutersView', () => {
   // spread across a 2000px viewport; see columnWidths' own note for the
   // measurement that prompted it.
   it('declares a width for every column, so the table cannot smear', () => {
-    const w = mount(RoutersView)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     const widths = columnWidths(w)
     expect(widths.length).toBeGreaterThan(0)
     expect(widths.filter((x) => !x)).toEqual([])
@@ -224,7 +224,7 @@ it('names a router that sent no sysName instead of leaving the cell blank', asyn
     isPending: ref(false),
     error: ref(undefined),
   } as never)
-  const w = mount(RoutersView)
+  const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
   expect(w.text()).toContain('(no sysName TLV)')
 })
 
