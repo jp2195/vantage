@@ -33,5 +33,5 @@ defineProps<{ windowLabel: string }>()
 </template>
 
 <style scoped>
-.notes { margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font: 400 11.5px var(--font-ui); }
+.notes { margin: 0; padding: 9px 12px; border-radius: var(--radius-md); background: var(--surface-2); border: 1px solid var(--line); color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 </style>

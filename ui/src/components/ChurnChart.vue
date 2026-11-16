@@ -343,13 +343,13 @@ function describe(b: ChurnBucket): string {
 .chart { margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .cap { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .legend { display: flex; gap: 12px; flex-wrap: wrap; }
-.key { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font: 400 11px var(--font-ui); }
+.key { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .swatch { width: 9px; height: 9px; border-radius: 2px; }
 .controls { display: inline-flex; align-items: center; gap: 10px; }
 .bucket { color: var(--muted); font: 400 10.5px var(--font-data); }
 .toggle {
-  border: 1px solid var(--line); border-radius: 5px; background: var(--surface);
-  color: var(--ink-2); font: 500 10.5px var(--font-ui); padding: 2px 8px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+  color: var(--ink-2); font: 500 var(--text-sm) var(--font-ui); padding: 2px 8px; cursor: pointer;
 }
 .toggle:hover { border-color: var(--ink); color: var(--ink); }
 .plot { width: 100%; display: block; }
@@ -362,11 +362,11 @@ function describe(b: ChurnBucket): string {
    panel. */
 .tick.middle { transform: translateX(-50%); }
 .tick.end { transform: translateX(-100%); }
-.quiet { margin: 0; max-width: 72ch; color: var(--muted); font: 400 11px var(--font-ui); }
-.table { width: 100%; border-collapse: collapse; font: 400 11px var(--font-ui); }
+.quiet { margin: 0; max-width: 72ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.table { width: 100%; border-collapse: collapse; font: 400 var(--text-sm) var(--font-ui); }
 .table th {
   text-align: left; padding: 4px 8px; color: var(--muted); background: var(--surface-2);
-  font: 600 9.5px var(--font-ui); text-transform: uppercase; letter-spacing: .07em;
+  font: 600 var(--text-label) var(--font-ui); text-transform: uppercase; letter-spacing: .07em;
 }
 .table td { padding: 4px 8px; border-bottom: 1px solid var(--line-faint); color: var(--ink-2); }
 .num { text-align: right; }

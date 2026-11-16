@@ -476,26 +476,28 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
 
 <style scoped>
 .screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(420px, 100%), 1fr)); gap: 14px; }
+/* auto-fit, not auto-fill: two collectors on a wide screen fill the row
+   rather than sitting in the left half beside two empty tracks. */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); gap: 14px; }
 .card {
   display: flex; flex-direction: column; gap: 10px; padding: 14px 16px;
-  border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .card-head { display: flex; align-items: center; gap: 10px; }
 .card-head h2 { margin: 0; font: 600 13px var(--font-data); color: var(--ink); flex: 1 1 auto; overflow-wrap: anywhere; }
 .badge {
-  display: inline-block; padding: 2px 8px; border-radius: 20px;
-  font: 600 10px var(--font-ui); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
+  display: inline-block; padding: 2px 8px; border-radius: var(--radius-full);
+  font: 600 var(--text-label) var(--font-ui); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap;
 }
 .badge.healthy { background: var(--good-tint); color: var(--good); }
 .badge.degraded { background: var(--bad-tint); color: var(--bad-2); }
 .badge.unconfigured { background: var(--surface-2); color: var(--muted); }
-.threshold { margin: 0; color: var(--muted); font: 400 10.5px var(--font-ui); }
+.threshold { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .error {
-  margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--bad-tint);
-  color: var(--bad-2); font: 400 11px var(--font-ui);
+  margin: 0; padding: 8px 10px; border-radius: var(--radius-md); background: var(--bad-tint);
+  color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui);
 }
-.quiet { margin: 0; color: var(--muted); font: 400 11px var(--font-ui); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; }
 .tiles :deep(.tile) { min-width: 110px; padding: 8px 10px; }
 .tiles :deep(.value) { font-size: 17px; }
@@ -507,5 +509,5 @@ function routerRowAttrs(row: CollectorRouter): Record<string, string> {
    as though it were a completed one. */
 .plot rect.current { fill: var(--muted); }
 .routers { font-size: 11px; }
-.os-line { color: var(--muted); font: 400 10.5px var(--font-ui); }
+.os-line { color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 </style>

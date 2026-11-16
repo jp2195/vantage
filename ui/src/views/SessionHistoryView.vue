@@ -332,17 +332,17 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
 
 <style scoped>
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .note code { font: 400 11px var(--font-data); }
 .window {
   display: flex; flex-direction: column; gap: 4px; align-self: flex-start;
-  font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
 }
 .window select {
-  font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2);
-  border-radius: 6px; background: var(--surface); color: var(--ink);
+  font: 400 var(--text-sm) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2);
+  border-radius: var(--radius-md); background: var(--surface); color: var(--ink);
   text-transform: none; letter-spacing: normal;
 }
-.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
 </style>

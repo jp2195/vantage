@@ -6,6 +6,7 @@ import ChurnChart from '@/components/ChurnChart.vue'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import AboutThis from '@/components/AboutThis.vue'
 import StatePill from '@/components/StatePill.vue'
 import StatTile from '@/components/StatTile.vue'
 import { bestVantageCount } from '@/lib/bestVantage'
@@ -406,6 +407,36 @@ const endpoints = computed(() => {
           </div>
         </div>
 
+        <!-- Where to go next from one peer. Each is a screen that already
+             takes this peer as its scope, so the link lands on an answer,
+             not on a picker. -->
+        <nav class="actions" aria-label="This peer elsewhere">
+          <RouterLink
+            class="action"
+            data-action="routes"
+            :to="{ path: '/routes', query: { router: peerRows[0].router_ip, peer: peerRows[0].peer_ip } }"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h8" /></svg>
+            Route table
+          </RouterLink>
+          <RouterLink
+            class="action"
+            data-action="history"
+            :to="{ path: '/session-history', query: { router: peerRows[0].router_ip, peer: peerRows[0].peer_ip } }"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg>
+            Session history
+          </RouterLink>
+          <RouterLink
+            class="action"
+            data-action="origin"
+            :to="{ path: '/looking-glass', query: { mode: 'asn', q: String(peerRows[0].asn) } }"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M10.5 10.5L14 14" /></svg>
+            Routes AS{{ peerRows[0].asn }} originates
+          </RouterLink>
+        </nav>
+
         <!-- Only the tiles with an answer behind them are shown, and
              each says which window it covers. -->
         <div class="tiles">
@@ -528,14 +559,16 @@ const endpoints = computed(() => {
             <h2>Most churn from this peer · {{ WINDOW_LABEL }}</h2>
             <!-- Said here because the ranking is not the obvious one, and a
                  reader who assumes it is will misread every row. -->
-            <p class="note">
-              Ranked by changes — re-advertisements and withdrawals — so a prefix
-              re-sent by a restarting session does not outrank one the network
-              actually moved. Observations counts every archived row, including
-              those dumps, which is why it does not match the order. Unicast
-              only: a prefix means one thing on route_unicast and something
-              else under a route distinguisher.
-            </p>
+            <AboutThis summary="How this is ranked">
+              <p class="note">
+                Ranked by changes — re-advertisements and withdrawals — so a prefix
+                re-sent by a restarting session does not outrank one the network
+                actually moved. Observations counts every archived row, including
+                those dumps, which is why it does not match the order. Unicast
+                only: a prefix means one thing on route_unicast and something
+                else under a route distinguisher.
+              </p>
+            </AboutThis>
             <DataTable
               :columns="prefixChurnColumns"
               :rows="prefixChurn.data.value?.data ?? []"
@@ -590,7 +623,15 @@ const endpoints = computed(() => {
 
 <style scoped>
 .screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.action {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface);
+  color: var(--ink); font: 500 var(--text-sm) var(--font-ui); text-decoration: none;
+}
+.action:hover { border-color: var(--muted-2); color: var(--ink); }
+.action svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
 .states { display: flex; gap: 12px; }
 .state-of { display: inline-flex; align-items: center; gap: 6px; }
 .rib-tag { color: var(--muted); font-size: 10.5px; }
@@ -598,13 +639,13 @@ const endpoints = computed(() => {
 .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
 .panel {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
-h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
+h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; }
 .facts dt {
   color: var(--muted); text-transform: uppercase;
-  font: 600 9.5px var(--font-ui); letter-spacing: .07em; align-self: center;
+  font: 600 var(--text-label) var(--font-ui); letter-spacing: .07em; align-self: center;
 }
 .facts dd { margin: 0; color: var(--ink-2); font-size: 11.5px; text-align: right; }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -615,7 +656,7 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 .event:last-child { border-bottom: 0; }
 .when { color: var(--faint); }
 .why { color: var(--muted); margin-left: auto; }
-.note { margin: 0; color: var(--muted); font: 400 11px var(--font-ui); }
+.note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .rib-view { display: flex; flex-direction: column; gap: 8px; }
 /* A visible seam between two rib views of the same peer, not just
    whitespace -- when peerRows has one row (the common case today) this
@@ -623,25 +664,25 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
    to draw the rule against. */
 .rib-view + .rib-view { padding-top: 12px; border-top: 1px solid var(--divider); }
 .rib-label {
-  margin: 0; padding: 1px 7px; align-self: flex-start; border-radius: 4px;
-  background: var(--neutral-chip); color: var(--muted); font: 500 10px var(--font-ui);
+  margin: 0; padding: 1px 7px; align-self: flex-start; border-radius: var(--radius-sm);
+  background: var(--neutral-chip); color: var(--muted); font: 500 var(--text-label) var(--font-ui);
   text-transform: uppercase; letter-spacing: .04em;
 }
-h3 { margin: 2px 0 0; font: 600 12px var(--font-ui); color: var(--ink-2); }
-.strip { display: flex; gap: 26px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+h3 { margin: 2px 0 0; font: 600 var(--text-sm) var(--font-ui); color: var(--ink-2); }
+.strip { display: flex; gap: 26px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
 .stat { display: flex; flex-direction: column; gap: 5px; }
-.k { font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.k { font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .v { font: 500 15px var(--font-data); color: var(--ink); }
-.dumps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font: 400 12px var(--font-ui); }
+.dumps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font: 400 var(--text-sm) var(--font-ui); }
 .dumps li { display: flex; gap: 10px; align-items: center; }
-.dump { padding: 1px 7px; border-radius: 4px; font: 500 10px var(--font-ui); }
+.dump { padding: 1px 7px; border-radius: var(--radius-sm); font: 500 var(--text-label) var(--font-ui); }
 .complete { background: var(--good-tint); color: var(--good); }
 .dumping { background: var(--warn-tint); color: var(--warn-ink); }
-.error { margin: 0; color: var(--bad-2); font: 400 12px var(--font-ui); }
-.quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .descr { white-space: normal; line-height: 1.45; }
 .bucket {
-  margin-left: 7px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2);
+  margin-left: 7px; padding: 1px 6px; border-radius: var(--radius-sm); background: var(--surface-2);
   color: var(--muted); font: 400 10px var(--font-data); letter-spacing: .02em;
 }
 </style>

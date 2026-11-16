@@ -547,32 +547,32 @@ function select(asn: number) {
 
 <style scoped>
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
 .scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .modes, .families { display: flex; gap: 2px; }
 .modes button, .families button {
-  font: 500 11.5px var(--font-ui);
+  font: 500 var(--text-sm) var(--font-ui);
   padding: 5px 11px;
   border: 1px solid var(--line-2);
   background: var(--surface);
   color: var(--muted);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   cursor: pointer;
 }
 .modes button.on, .families button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
-.scope input.term { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 220px; }
-.scope label { font: 400 11.5px var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.scope button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.scope input.term { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 6px 10px; font-size: 12px; min-width: 220px; }
+.scope label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.scope button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.controls label { display: flex; gap: 6px; align-items: center; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.controls input, .controls select { font: 400 12px var(--font-ui); padding: 5px 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
+.controls label { display: flex; gap: 6px; align-items: center; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.controls input, .controls select { font: 400 var(--text-sm) var(--font-ui); padding: 5px 8px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
 .controls input { width: 72px; }
-.controls button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
+.controls button { font: 500 var(--text-sm) var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: var(--radius-md); cursor: pointer; }
 
-.summary { margin: 0; font: 400 12px var(--font-ui); color: var(--muted); }
+.summary { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .summary strong { color: var(--ink); font-weight: 600; }
-.matched { margin: 0; font: 400 11px var(--font-ui); color: var(--muted); }
+.matched { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 
 /* The rail is a fixed 300px and the canvas took whatever was left, down to
    nothing: `min-width: 0` let it shrink past its own content, so below about
@@ -602,27 +602,27 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
    thing a wide table does inside its card -- instead of pushing the whole
    page 174px sideways at a 390px viewport. It never scrolls on a desktop,
    where the pane is wider than its content. */
-.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; overflow-x: auto; }
+.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
 .rail { width: 300px; flex: none; border-left: 1px solid var(--divider); padding-left: 16px; }
 .rail h2 { margin: 0 0 4px; font: 600 13px var(--font-data); color: var(--ink); }
-.rail .holder { margin: 0 0 8px; color: var(--muted); font: 400 11px var(--font-ui); }
-.rail h3 { margin: 14px 0 6px; font: 600 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.rail .holder { margin: 0 0 8px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.rail h3 { margin: 14px 0 6px; font: 600 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .fields { margin: 0; display: flex; flex-direction: column; gap: 5px; }
 .field { display: flex; gap: 8px; align-items: baseline; }
-.field dt { font: 500 10.5px var(--font-ui); color: var(--muted); min-width: 108px; }
-.field dd { margin: 0; font: 400 11.5px var(--font-ui); color: var(--ink-2); }
+.field dt { font: 500 var(--text-sm) var(--font-ui); color: var(--muted); min-width: 108px; }
+.field dd { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--ink-2); }
 .field dd.mono { font-family: var(--font-data); font-size: 10.5px; }
 
 .edges { width: 100%; border-collapse: collapse; font-size: 11px; }
-.edges th { text-align: left; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 4px; border-bottom: 1px solid var(--divider); }
+.edges th { text-align: left; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 4px; border-bottom: 1px solid var(--divider); }
 .edges td { padding: 3px 0; color: var(--ink-2); border-bottom: 1px solid var(--line-faint); }
 .edges td.mono { font: 400 10.5px var(--font-data); }
 .edges td.num { text-align: right; font: 400 10.5px var(--font-data); }
 .edges tr.withdrawn td { color: var(--bad-2); }
 
-.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 11.5px var(--font-ui); max-width: 46em; }
-.says { margin: 8px 0 0; color: var(--muted); font: 400 10.5px var(--font-ui); }
-.quiet { margin: 0; color: var(--muted); font: 400 11.5px var(--font-ui); }
-.error { margin: 0; color: var(--bad-2); font: 400 11.5px var(--font-ui); }
+.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); max-width: 46em; }
+.says { margin: 8px 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
 </style>

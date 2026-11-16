@@ -4,6 +4,7 @@ import DataTable, { type Column } from '@/components/DataTable.vue'
 import EventKindMark from '@/components/EventKindMark.vue'
 import ChurnChart from '@/components/ChurnChart.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import AboutThis from '@/components/AboutThis.vue'
 import StatePill from '@/components/StatePill.vue'
 import StatTile from '@/components/StatTile.vue'
 import WindowPicker from '@/components/WindowPicker.vue'
@@ -464,6 +465,23 @@ const flagColumns: Column<FlagCount>[] = [
   { id: 'flag', header: 'Flag' },
   { id: 'envelopes', header: 'Envelopes', numeric: true },
 ]
+
+const BREAKDOWNS = [
+  { key: 'dumps', label: 'Dumps' },
+  { key: 'sessions', label: 'Sessions' },
+  { key: 'locrib', label: 'Loc-RIB' },
+  { key: 'flags', label: 'Parse flags' },
+] as const
+type Breakdown = (typeof BREAKDOWNS)[number]['key']
+const breakdown = ref<Breakdown>('dumps')
+
+/** Arrow keys move between tabs, the WAI-ARIA tabs pattern. */
+function stepBreakdown(by: 1 | -1) {
+  const i = BREAKDOWNS.findIndex((t) => t.key === breakdown.value)
+  const next = BREAKDOWNS[(i + by + BREAKDOWNS.length) % BREAKDOWNS.length]
+  breakdown.value = next.key
+  document.getElementById(`tab-${next.key}`)?.focus()
+}
 </script>
 
 <template>
@@ -580,13 +598,15 @@ const flagColumns: Column<FlagCount>[] = [
            STORED inside the window; a BGP speaker's own update rate is not
            observable from a BMP archive, and reporting one would treat a
            collection artifact as a network fact. -->
-      <p class="note" data-churn-peers-note>
-        Ranked by changes archived — re-advertisements and withdrawals, not
-        session dumps, so a peer whose session restarted once does not outrank
-        a busy one. Archived/s is rows this collector stored per second over
-        {{ windowLabel }}, which is a collection rate and not the router's
-        update rate.
-      </p>
+      <AboutThis summary="What Archived/s measures">
+        <p class="note" data-churn-peers-note>
+          Ranked by changes archived — re-advertisements and withdrawals, not
+          session dumps, so a peer whose session restarted once does not outrank
+          a busy one. Archived/s is rows this collector stored per second over
+          {{ windowLabel }}, which is a collection rate and not the router's
+          update rate.
+        </p>
+      </AboutThis>
       <DataTable
         :columns="churnPeerColumns"
         :rows="churnPeerRows"
@@ -633,8 +653,31 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
+    <!-- Four breakdowns of the same window, one at a time. Side by side
+         they made this screen four tables tall; as tabs, the summary above
+         stays on screen with whichever breakdown you are reading. Hidden
+         ones stay mounted (v-show), so switching costs no refetch. -->
+    <div class="breakdowns">
+    <div class="tabs" role="tablist" aria-label="Breakdowns">
+      <button
+        v-for="t in BREAKDOWNS"
+        :id="`tab-${t.key}`"
+        :key="t.key"
+        type="button"
+        role="tab"
+        class="tab"
+        :aria-selected="breakdown === t.key"
+        :aria-controls="`panel-${t.key}`"
+        :tabindex="breakdown === t.key ? 0 : -1"
+        @click="breakdown = t.key"
+        @keydown.right.prevent="stepBreakdown(1)"
+        @keydown.left.prevent="stepBreakdown(-1)"
+      >
+        {{ t.label }}
+      </button>
+    </div>
     <div class="panels">
-    <section class="panel" data-section="dumps">
+    <section v-show="breakdown === 'dumps'" id="panel-dumps" class="panel" data-section="dumps" role="tabpanel" aria-labelledby="tab-dumps">
       <h2>Dumps</h2>
       <p
         class="note"
@@ -667,7 +710,7 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
-    <section class="panel" data-section="sessions">
+    <section v-show="breakdown === 'sessions'" id="panel-sessions" class="panel" data-section="sessions" role="tabpanel" aria-labelledby="tab-sessions">
       <h2>Sessions</h2>
       <p
         class="note"
@@ -694,17 +737,19 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
-    <section class="panel" data-section="locrib">
+    <section v-show="breakdown === 'locrib'" id="panel-locrib" class="panel" data-section="locrib" role="tabpanel" aria-labelledby="tab-locrib">
       <h2>Loc-RIB</h2>
-      <p class="note" data-locrib-note>
-        A gap is not proof of loss: most peers send adj-RIB-in, and RFC 9069
-        Loc-RIB monitoring is a separate capability most routers do not
-        enable. A peer that never sent the stat reads "no stat", never a
-        reported gap of 0; the window scopes reported only. Archived counts
-        the peer's live Loc-RIB routes in its router's current BMP session,
-        never what a superseded session left behind, so widening the window
-        never adds an archived route.
-      </p>
+      <AboutThis summary="What a gap here means">
+        <p class="note" data-locrib-note>
+          A gap is not proof of loss: most peers send adj-RIB-in, and RFC 9069
+          Loc-RIB monitoring is a separate capability most routers do not
+          enable. A peer that never sent the stat reads "no stat", never a
+          reported gap of 0; the window scopes reported only. Archived counts
+          the peer's live Loc-RIB routes in its router's current BMP session,
+          never what a superseded session left behind, so widening the window
+          never adds an archived route.
+        </p>
+      </AboutThis>
       <DataTable
         :columns="locribColumns"
         :rows="locribRows"
@@ -727,7 +772,7 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
-    <section class="panel" data-section="flags">
+    <section v-show="breakdown === 'flags'" id="panel-flags" class="panel" data-section="flags" role="tabpanel" aria-labelledby="tab-flags">
       <h2>Parse flags</h2>
       <p
         class="note"
@@ -747,6 +792,7 @@ const flagColumns: Column<FlagCount>[] = [
       />
     </section>
     </div>
+    </div>
   </section>
 </template>
 
@@ -755,8 +801,8 @@ const flagColumns: Column<FlagCount>[] = [
 /* Wraps so that on a phone the window picker drops under the title rather
    than running past the screen's right edge. */
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
-h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
-.window-note { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
+h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
+.window-note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .tiles { display: flex; flex-wrap: wrap; gap: 12px; }
 .wide { margin-bottom: 0; }
 /* The chart gets the wider share because it is the only mark on this screen
@@ -788,9 +834,28 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
    was as much of a flag name as fit. Two columns on a laptop, three on a
    wide display, one below 620. */
 .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(620px, 100%), 1fr)); gap: 14px; }
+/* One breakdown at a time, so it takes the full width. */
+.breakdowns .panels { grid-template-columns: minmax(0, 1fr); }
+.breakdowns .panel { border-top-left-radius: 0; border-top-right-radius: 0; }
+/* The tab already names the panel; its h2 stays for screen readers, which
+   announce the panel by it. */
+.breakdowns .panel > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tabs {
+  display: flex; gap: var(--space-6); padding: 0 14px; overflow-x: auto;
+  border: 1px solid var(--line); border-bottom: 0; background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.tab {
+  border: 0; background: none; padding: 0 2px; min-height: 40px; cursor: pointer; white-space: nowrap;
+  font: 500 var(--text-body) var(--font-ui); color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--focus); }
+.tab:focus-visible { outline-offset: -2px; }
 .panel {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .event {
@@ -802,7 +867,7 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 /* The events panel's empty line had no rule of its own and inherited the
    body's 14px inside an 11px panel -- visible in a browser, invisible to
    every test, since jsdom computes no styles. */
-.events .quiet { padding: 7px 0; color: var(--muted); font: 400 11px var(--font-ui); }
+.events .quiet { padding: 7px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* The one span that must never wrap: a broken timestamp reads as two
    events, which is what the rail did before the row became two lines. */
 .when { color: var(--faint); white-space: nowrap; }
@@ -811,7 +876,7 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 /* Indented under the row it explains, so a reason cannot be read as the
    next event's own line. */
 .why { color: var(--muted); padding-left: 14px; }
-.note { margin: 0; max-width: 84ch; color: var(--muted); font: 400 11px var(--font-ui); }
+.note { margin: 0; max-width: 84ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* Deliberately no color, no weight, no threshold-based class: a dump
    ratio describes composition, not a fault. See dumpCompositionPct's
    own comment. */
@@ -819,5 +884,5 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 /* PeersView.vue's own link convention, not a second one. `history` is a
    secondary destination beside the peer address, so it reads as the
    quieter of the two rather than competing with it. */
-.history { margin-left: 7px; color: var(--muted); font: 400 11px var(--font-ui); }
+.history { margin-left: 7px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 </style>

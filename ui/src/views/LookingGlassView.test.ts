@@ -1290,3 +1290,29 @@ it('floors the Paths table where every header fits its column', async () => {
   // cut 10.91.0.0/16 off.
   expect(crampedAt(columns, floor!, { prefix: 130 })).toEqual([])
 })
+
+describe('LookingGlassView reads the term, not only the button', () => {
+  // A term that is unmistakably one kind is searched as that kind, so
+  // "AS65002" typed with Prefix pressed is an origin-AS search rather than
+  // a prefix the daemon would reject.
+  it.each([
+    ['prefix', 'AS65002', { origin_asn: 65002 }, 'asn'],
+    ['prefix', '65002', { origin_asn: 65002 }, 'asn'],
+    ['prefix', '65002:100', { community: '65002:100' }, 'community'],
+    ['asn', '10.91.0.0/16', { prefix: '10.91.0.0/16' }, 'prefix'],
+  ] as const)('in %s mode, searches %s as %o', async (mode, term, want, pressed) => {
+    const w = mount(LookingGlassView)
+    await runSearch(w, { mode, term })
+    expect(filtersRef?.value).toEqual(want)
+    const on = w.findAll('.modes button').findIndex((b) => b.classes('on'))
+    expect(on).toBe(MODE_INDEX[pressed])
+  })
+
+  // An address alone is left as typed: exact host prefix or every prefix
+  // covering it is the operator's call, made with the Covering box.
+  it('leaves a bare address in prefix mode as an exact search', async () => {
+    const w = mount(LookingGlassView)
+    await runSearch(w, { term: '10.255.0.2' })
+    expect(filtersRef?.value).toEqual({ prefix: '10.255.0.2' })
+  })
+})

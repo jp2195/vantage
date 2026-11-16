@@ -48,7 +48,7 @@ defineProps<{ state: string }>()
    As an atomic inline it drops under the prefix instead. */
 .mark {
   display: inline-block; margin-left: 7px; padding: 1px 6px; border-radius: var(--radius-sm);
-  font: 500 11px var(--font-ui);
+  font: 500 var(--text-sm) var(--font-ui);
 }
 .dumping { background: var(--neutral-chip); color: var(--muted); }
 /* Amber, not neutral: "we cannot say" is a caveat about the answer, the

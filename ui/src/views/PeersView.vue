@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import AboutThis from '@/components/AboutThis.vue'
 import { formatCount } from '@/lib/formatCount'
 import { formatRate } from '@/lib/formatRate'
 import { formatClock } from '@/lib/formatClock'
@@ -375,20 +376,22 @@ function dumping(p: Peer): boolean {
       {{ churnFailed.length ? churnFailed.join(', ') : 'this window' }} — that
       request failed, so those rows show no rate rather than a zero.
     </p>
-    <p class="note" data-archived-note>
-      Archived/s is rows this collector stored per second over the
-      {{ windowLabel }} — a collection rate, not the router's update rate. It
-      is measured per peer, across whatever RIB views that peer is mirrored
-      under.
-    </p>
-    <p class="note" data-up-since-note>
-      Up since is when this collector last saw the session come up, and it is
-      shown only while that session is up or stale: a stale peer is the same
-      last-known session, whose routes are still shown, while a peer now down
-      or view_lost has an up to report and no ongoing state to report it as.
-      It is still not a liveness claim — a session the collector has stopped
-      hearing from shows the same value forever.
-    </p>
+    <AboutThis summary="How to read Archived/s and Up since">
+      <p class="note" data-archived-note>
+        Archived/s is rows this collector stored per second over the
+        {{ windowLabel }} — a collection rate, not the router's update rate. It
+        is measured per peer, across whatever RIB views that peer is mirrored
+        under.
+      </p>
+      <p class="note" data-up-since-note>
+        Up since is when this collector last saw the session come up, and it is
+        shown only while that session is up or stale: a stale peer is the same
+        last-known session, whose routes are still shown, while a peer now down
+        or view_lost has an up to report and no ongoing state to report it as.
+        It is still not a liveness claim — a session the collector has stopped
+        hearing from shows the same value forever.
+      </p>
+    </AboutThis>
     <!-- A list narrowed to one router looks exactly like a complete one.
          Saying which router it holds is the difference between a scoped
          answer and a quietly partial one; the way back to the fleet is the
@@ -513,13 +516,13 @@ function dumping(p: Peer): boolean {
 
 <style scoped>
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.note { margin: 0; max-width: 72ch; color: var(--muted); font: 400 12px var(--font-ui); }
-.holder { margin-left: 6px; color: var(--muted); font: 400 11px var(--font-ui); }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+.note { margin: 0; max-width: 72ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.holder { margin-left: 6px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .provisional {
-  margin-left: 7px; padding: 1px 6px; border-radius: 4px;
+  margin-left: 7px; padding: 1px 6px; border-radius: var(--radius-sm);
   background: var(--neutral-chip); color: var(--muted);
-  font: 500 10px var(--font-ui);
+  font: 500 var(--text-label) var(--font-ui);
 }
 .search {
   display: flex; align-items: center; gap: var(--space-2); flex: 1 1 240px; max-width: 360px;

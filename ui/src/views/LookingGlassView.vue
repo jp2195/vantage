@@ -8,6 +8,7 @@ import DumpStateMark from '@/components/DumpStateMark.vue'
 import PathGraph from '@/components/PathGraph.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import Notice from '@/components/Notice.vue'
+import { jumpTarget } from '@/lib/jumpTarget'
 import { useFindRoutes, useRouteHistory, useTopology, type RouteFilters } from '@/api/queries'
 import type { Graph, HistoryEvent, UnicastRoute } from '@/api/generated'
 
@@ -213,9 +214,33 @@ watch([tab, since], () => {
   router.replace({ query: currentQuery() })
 })
 
+/**
+ * The mode a typed term unmistakably is, when it is not the one selected:
+ * "AS65002" in Prefix mode is an ASN search, "65002:100" a community and
+ * "10.0.0.0/8" a prefix, whichever button is pressed. Same rules as the
+ * sidebar's jump box (lib/jumpTarget); a bare number is an AS, since it is
+ * never a prefix or a community. A bare address is left alone: whether it
+ * means "this exact host prefix" or "everything covering it" is the
+ * operator's call, made with the Covering box.
+ */
+function detectedMode(v: string): { mode: Mode; term: string } | undefined {
+  const to = jumpTarget(v)
+  if (!to || typeof to !== 'object' || !('query' in to) || !to.query) return undefined
+  const q = to.query as Record<string, string>
+  if (q.mode === 'asn') return { mode: 'asn', term: q.q }
+  if (q.mode === 'community') return { mode: 'community', term: q.q }
+  if (q.mode === 'prefix' && !q.covers) return { mode: 'prefix', term: q.q }
+  return undefined
+}
+
 function search(opts: { fromUrl?: boolean } = {}) {
-  const v = term.value.trim()
+  let v = term.value.trim()
   if (!v) return
+  const detected = opts.fromUrl ? undefined : detectedMode(v)
+  if (detected) {
+    mode.value = detected.mode
+    term.value = v = detected.term
+  }
   if (mode.value === 'prefix') {
     filters.value = covers.value ? { covers: v } : { prefix: v }
     // Only an EXACT prefix search gives the Changes tab something to track.
@@ -581,9 +606,11 @@ function compareSeq(a: string, b: string): number {
       :counts="filters ? counts : undefined"
     />
 
-    <!-- Two-column shape: a 290px query rail beside the result pane. The
-         rail holds the question and what the answer says ABOUT its
-         subject; the pane holds the rows. -->
+    <!-- The question across the top, the rows under it. The rail holds the
+         question and what the answer says ABOUT its subject; the pane holds
+         the rows, at the full width the next-hop and AS-path columns need.
+         (It was a 290px column beside the pane, which cost those columns
+         their width once the sidebar took its own.) -->
     <div class="split">
       <aside class="rail">
         <form class="query" @submit.prevent="search()">
@@ -844,33 +871,36 @@ function compareSeq(a: string, b: string): number {
 
 <style scoped>
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
-/* 290px is the rail's fixed width. minmax(0, 1fr) on the pane, not
-   1fr: without the 0 minimum a wide table inside it pushes the grid wider
-   than the viewport instead of scrolling in its own card. */
-.split { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+/* One column: the rail is a band above the pane. minmax(0, 1fr), not 1fr:
+   without the 0 minimum a wide table inside it pushes the grid wider than
+   the viewport instead of scrolling in its own card. */
+.split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; }
 .rail {
-  display: flex; flex-direction: column; gap: 12px; padding: 12px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 32px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .pane { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.facts { display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; margin: 0; }
+/* A strip of label-over-value pairs: each dt and the dd after it fill one
+   column, two rows tall. Scrolls sideways on a phone rather than wrapping
+   a label away from its value. */
+.facts {
+  display: grid; grid-template-rows: auto auto; grid-auto-flow: column; justify-content: start;
+  gap: 2px 28px; margin: 0; overflow-x: auto; max-width: 100%;
+}
 .facts dt {
-  color: var(--muted); text-transform: uppercase;
-  font: 600 9.5px var(--font-ui); letter-spacing: .07em; align-self: center;
+  color: var(--muted); text-transform: uppercase; white-space: nowrap;
+  font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em;
 }
-.facts dd { margin: 0; color: var(--ink-2); font-size: 11.5px; text-align: right; }
-@media (max-width: 900px) {
-  .split { grid-template-columns: minmax(0, 1fr); }
-}
+.facts dd { margin: 0; color: var(--ink); font-size: var(--text-data); white-space: nowrap; }
 .query { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .modes { display: flex; gap: 2px; }
-.modes button, .tabs button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
+.modes button, .tabs button { font: 500 var(--text-sm) var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: var(--radius-md); cursor: pointer; }
 .modes button.on, .tabs button.on { background: var(--ink); color: var(--on-ink); border-color: var(--ink); }
-.query input[type="text"], .query input:not([type]) { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 220px; }
-.query label { font: 400 11.5px var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.query button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.query input[type="text"], .query input:not([type]) { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 7px 10px; font-size: var(--text-body); min-width: 260px; }
+.query label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
+.query button[type="submit"] { background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
 .tabs { display: flex; gap: 2px; }
-.groups, .diff, .topology { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; }
+.groups, .diff, .topology { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; }
 .topology { display: flex; flex-direction: column; gap: 10px; }
 .group h3 { margin: 10px 0 4px; font: 600 12px var(--font-data); color: var(--ink-2); }
 .count { color: var(--muted); font-weight: 400; }
@@ -879,13 +909,13 @@ function compareSeq(a: string, b: string): number {
 .detail { color: var(--muted); font-size: 10.5px; }
 .events li { display: flex; gap: 12px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--divider); }
 .via { color: var(--muted); font-size: 10.5px; }
-.window { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; font: 400 11.5px var(--font-ui); color: var(--muted); }
-.window select { border: 1px solid var(--line-2); border-radius: 6px; padding: 4px 8px; font: 400 11.5px var(--font-ui); background: var(--surface); color: var(--ink); }
-.action { padding: 1px 7px; border-radius: 4px; font: 500 10px var(--font-ui); }
+.window { display: flex; gap: 7px; align-items: center; margin-bottom: 10px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
+.window select { border: 1px solid var(--line-2); border-radius: var(--radius-md); padding: 4px 8px; font: 400 var(--text-sm) var(--font-ui); background: var(--surface); color: var(--ink); }
+.action { padding: 1px 7px; border-radius: var(--radius-sm); font: 500 var(--text-label) var(--font-ui); }
 .announce { background: var(--good-tint); color: var(--good); }
 .withdraw { background: var(--bad-tint); color: var(--bad-2); }
 .path { color: var(--muted); }
 .when { margin-left: auto; color: var(--muted); }
-.quiet { margin: 0 0 8px; color: var(--muted); font: 400 11.5px var(--font-ui); }
-.error { margin: 0; color: var(--bad-2); font: 400 11.5px var(--font-ui); }
+.quiet { margin: 0 0 8px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
 </style>

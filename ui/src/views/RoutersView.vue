@@ -99,6 +99,6 @@ const ROUTERS_MIN_WIDTH = '880px'
 
 <style scoped>
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.lede { margin: 0 0 4px; font: 400 12px var(--font-ui); color: var(--muted); }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+.lede { margin: 0 0 4px; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 </style>

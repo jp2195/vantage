@@ -35,7 +35,7 @@ defineProps<{
 
 <style scoped>
 .tile {
-  flex: 1 1 0; min-width: 150px; padding: 14px var(--space-4);
+  flex: 1 1 0; min-width: 150px; padding: 14px var(--space-4); box-sizing: border-box;
   border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .label {

@@ -35,16 +35,16 @@ defineEmits<{ (e: 'retry'): void }>()
 
 <style scoped>
 .boot-error { max-width: 520px; margin: 64px auto; display: flex; flex-direction: column; gap: 12px; font-family: var(--font-ui); }
-h1 { font: 600 19px var(--font-ui); color: var(--ink); margin: 0; }
+h1 { font: 600 var(--text-page) var(--font-ui); color: var(--ink); margin: 0; }
 p { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 0; }
-code { font-size: 11px; background: var(--surface-2); padding: 2px 5px; border-radius: 4px; }
+code { font-size: 11px; background: var(--surface-2); padding: 2px 5px; border-radius: var(--radius-sm); }
 .detail {
   font-size: 12px;
   color: var(--bad-2);
   background: var(--bad-tint);
   border: 1px solid var(--bad);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 9px 11px;
 }
-button { background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 9px; font: 500 12px var(--font-ui); cursor: pointer; align-self: flex-start; padding-inline: 16px; }
+button { background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 9px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; align-self: flex-start; padding-inline: 16px; }
 </style>

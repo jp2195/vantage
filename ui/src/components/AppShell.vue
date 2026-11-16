@@ -210,7 +210,7 @@ watch(rail, (v) => {
 }
 .wordmark { font: 600 15px var(--font-ui); color: var(--on-dark); letter-spacing: .01em; }
 .open-warning {
-  font: 500 11px var(--font-ui); color: var(--chrome);
+  font: 500 var(--text-sm) var(--font-ui); color: var(--chrome);
   background: var(--accent); padding: 2px 8px; border-radius: var(--radius-sm);
 }
 .menu {

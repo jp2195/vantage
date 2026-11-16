@@ -306,15 +306,15 @@ const counts = computed(() => {
   padding: 10px 18px; background: var(--surface-2);
   border-top: 1px solid var(--line-faint); border-bottom: 1px solid var(--line);
 }
-.quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
-.holder { margin-left: 6px; color: var(--muted); font: 400 11px var(--font-ui); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.holder { margin-left: 6px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .communities { color: var(--ink-2); font-size: 11px; }
 .foot { display: flex; justify-content: flex-end; }
 .detail {
   display: inline-block; padding: 2px 8px; border: 1px solid var(--line);
-  border-radius: 5px; color: var(--ink-2); text-decoration: none;
-  font: 500 10.5px var(--font-ui);
+  border-radius: var(--radius-md); color: var(--ink-2); text-decoration: none;
+  font: 500 var(--text-sm) var(--font-ui);
 }
 .detail:hover { border-color: var(--ink); color: var(--ink); }
-.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.more { align-self: flex-start; background: var(--ink); color: var(--on-ink); border: 0; border-radius: var(--radius-md); padding: 7px 13px; font: 500 var(--text-sm) var(--font-ui); cursor: pointer; }
 </style>

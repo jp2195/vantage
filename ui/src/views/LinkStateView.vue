@@ -34,6 +34,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import LinkStateGraph from '@/components/LinkStateGraph.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import AboutThis from '@/components/AboutThis.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import { useLinkState, useRouters, type LinkStateScope } from '@/api/queries'
 import { distinctAdjacencies, distinctNodes, drawnAdjacencies } from '@/lib/lsAdjacencies'
@@ -720,30 +721,32 @@ function select(nodeKey: string) {
           <p class="summary" data-summary>
             <strong>{{ summaryCounts }}</strong> in the link-state view of {{ routerLabel }}
           </p>
-          <p class="says" data-counts-say>
-            Counts of distinct objects, never of rows: a node re-observed on every refresh is one
-            node here, and so is a node two of this router's BMP peers both report. An adjacency
-            here is a DIRECTION — one node's advertisement of a link toward another — and the
-            canvas draws one curve for each, so a link both ends report is two of them: two curves,
-            bowed apart, carrying each end's own IGP metric. They are counted separately because
-            the metric is a per-direction cost and the two ends can disagree. Where one direction
-            advertises several parallel links its curve is marked “×N” and that direction is still
-            counted once; the link total is the sum of those markers, counted as the database
-            identifies links — two that advertise neither interface addresses nor link IDs are
-            indistinguishable here, as they are in the query. A prefix is counted once for each
-            node that originates it, so a transit subnet the routers at both its ends advertise is
-            two of them; where that makes the two numbers differ, “over N networks” is how many
-            distinct networks those originations name.
-            <!-- Said only when it is true of this answer, and with the
-                 number, because it is a statement about these rows rather
-                 than a caveat about the screen. -->
-            <span v-if="unreachablePrefixes > 0" data-unreachable-prefixes>
-              {{ unreachablePrefixes }} of them
-              {{ unreachablePrefixes === 1 ? 'is' : 'are' }} originated by a node this router did
-              not report, so no box on the canvas can be selected to show
-              {{ unreachablePrefixes === 1 ? 'it' : 'them' }}.
-            </span>
-          </p>
+          <AboutThis summary="How these are counted">
+            <p class="says" data-counts-say>
+              Counts of distinct objects, never of rows: a node re-observed on every refresh is one
+              node here, and so is a node two of this router's BMP peers both report. An adjacency
+              here is a DIRECTION — one node's advertisement of a link toward another — and the
+              canvas draws one curve for each, so a link both ends report is two of them: two curves,
+              bowed apart, carrying each end's own IGP metric. They are counted separately because
+              the metric is a per-direction cost and the two ends can disagree. Where one direction
+              advertises several parallel links its curve is marked “×N” and that direction is still
+              counted once; the link total is the sum of those markers, counted as the database
+              identifies links — two that advertise neither interface addresses nor link IDs are
+              indistinguishable here, as they are in the query. A prefix is counted once for each
+              node that originates it, so a transit subnet the routers at both its ends advertise is
+              two of them; where that makes the two numbers differ, “over N networks” is how many
+              distinct networks those originations name.
+              <!-- Said only when it is true of this answer, and with the
+                   number, because it is a statement about these rows rather
+                   than a caveat about the screen. -->
+              <span v-if="unreachablePrefixes > 0" data-unreachable-prefixes>
+                {{ unreachablePrefixes }} of them
+                {{ unreachablePrefixes === 1 ? 'is' : 'are' }} originated by a node this router did
+                not report, so no box on the canvas can be selected to show
+                {{ unreachablePrefixes === 1 ? 'it' : 'them' }}.
+              </span>
+            </p>
+          </AboutThis>
 
           <div class="pane">
             <div class="canvas">
@@ -925,21 +928,21 @@ function select(nodeKey: string) {
 
 <style scoped>
 .screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.lede { margin: 0; max-width: 62em; color: var(--muted); font: 400 11.5px var(--font-ui); }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+.lede { margin: 0; max-width: 62em; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 
 .scope { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
-.scope label { display: flex; flex-direction: column; gap: 4px; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.scope select { font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
+.scope label { display: flex; flex-direction: column; gap: 4px; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.scope select { font: 400 var(--text-sm) var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: var(--radius-md); background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
 
-.whose { margin: 0; font: 400 12px var(--font-ui); color: var(--muted); }
+.whose { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .whose b { font-weight: 600; color: var(--ink-2); }
-.summary { margin: 0; font: 400 12px var(--font-ui); color: var(--muted); }
+.summary { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .summary strong { color: var(--ink); font-weight: 600; }
-.says { margin: 8px 0 0; color: var(--muted); font: 400 10.5px var(--font-ui); max-width: 62em; }
-.quiet { margin: 0; color: var(--muted); font: 400 11.5px var(--font-ui); }
-.error { margin: 0; color: var(--bad-2); font: 400 11.5px var(--font-ui); }
-.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 11.5px var(--font-ui); max-width: 46em; }
+.says { margin: 8px 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); max-width: 62em; }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
+.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); max-width: 46em; }
 
 /* The rail is a fixed 300px and the canvas takes what is left, with a
    measured floor rather than `min-width: 0` -- TopologyView.vue carries the
@@ -952,22 +955,22 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
    thing a wide table does inside its card -- instead of pushing the whole
    page 174px sideways at a 390px viewport. It never scrolls on a desktop,
    where the pane is wider than its content. */
-.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; overflow-x: auto; }
+.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
 .controls { margin: 8px 0 0; }
-.controls button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
+.controls button { font: 500 var(--text-sm) var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: var(--radius-md); cursor: pointer; }
 
 .rail { width: 300px; flex: none; border-left: 1px solid var(--divider); padding-left: 16px; }
 .rail h2 { margin: 0 0 8px; font: 600 13px var(--font-data); color: var(--ink); }
-.rail h3 { margin: 14px 0 6px; font: 600 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.rail h3 { margin: 14px 0 6px; font: 600 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .fields { margin: 0; display: flex; flex-direction: column; gap: 5px; }
 .field { display: flex; gap: 8px; align-items: baseline; }
-.field dt { font: 500 10.5px var(--font-ui); color: var(--muted); min-width: 96px; }
-.field dd { margin: 0; font: 400 11.5px var(--font-ui); color: var(--ink-2); }
+.field dt { font: 500 var(--text-sm) var(--font-ui); color: var(--muted); min-width: 96px; }
+.field dd { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--ink-2); }
 .field dd.mono { font-family: var(--font-data); font-size: 10.5px; }
 
 .prefixes { width: 100%; border-collapse: collapse; font-size: 11px; }
-.prefixes th { text-align: left; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 4px; border-bottom: 1px solid var(--divider); }
+.prefixes th { text-align: left; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 4px; border-bottom: 1px solid var(--divider); }
 .prefixes th.num, .prefixes td.num { text-align: right; }
 .prefixes td { padding: 3px 0; color: var(--ink-2); border-bottom: 1px solid var(--line-faint); }
 .prefixes td.mono, .prefixes td.num { font: 400 10.5px var(--font-data); }
@@ -976,6 +979,6 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
    one query rather than about the screen. */
 .legs { display: flex; flex-direction: column; }
 .leg { display: flex; align-items: baseline; gap: 8px; }
-.leg-name { font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; min-width: 62px; padding-left: 18px; }
+.leg-name { font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; min-width: 62px; padding-left: 18px; }
 .leg :deep(.meta) { flex: 1; border-top: 1px solid var(--line-faint); padding-left: 0; }
 </style>
