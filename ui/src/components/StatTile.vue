@@ -28,7 +28,7 @@ defineProps<{
 <template>
   <div class="tile" :title="note">
     <p class="label">{{ label }}</p>
-    <p class="value mono">{{ value }}</p>
+    <p class="value mono" :class="{ long: value.length > 12 }">{{ value }}</p>
     <p v-if="sub" class="sub">{{ sub }}</p>
   </div>
 </template>
@@ -44,5 +44,9 @@ defineProps<{
 }
 /* The KPI value scale, with -.02em tracking. */
 .value { margin: 6px 0 0; font: 500 var(--text-kpi) var(--font-data); letter-spacing: -.02em; color: var(--ink); }
+/* A timestamp or a duration is not a count and does not need count-sized
+   type: "Sep 7, 2026, 21:11:38" at the KPI size wrapped to three lines in a
+   tile a sixth of the row wide. */
+.value.long { font-size: var(--text-title); letter-spacing: 0; line-height: 1.35; padding-top: 4px; }
 .sub { margin: var(--space-1) 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 </style>

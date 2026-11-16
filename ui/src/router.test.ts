@@ -49,3 +49,40 @@ describe('nav and router agree', () => {
     }
   })
 })
+
+describe('the shell around a route', () => {
+  function shellAt() {
+    return mount(AppShell, {
+      props: { mode: 'token' },
+      global: { plugins: [router], stubs: { FleetChrome: true, JumpBox: true } },
+    })
+  }
+
+  it('lands a bare visit on Monitor', async () => {
+    await router.push('/')
+    expect(router.currentRoute.value.path).toBe('/monitor')
+  })
+
+  // The trail is the way back from a drilled-in screen: to every peer, and
+  // to the peers of this one router, which PeersView reads from ?router=.
+  it('gives peer detail a breadcrumb back to its router and to all peers', async () => {
+    await router.push('/peers/172.22.0.1/10.0.0.10')
+    const w = shellAt()
+    await w.vm.$nextTick()
+    const trail = w.get('nav[aria-label="Breadcrumb"]')
+    expect(trail.findAll('a').map((a) => a.attributes('href'))).toEqual([
+      '/peers',
+      '/peers?router=172.22.0.1',
+    ])
+    expect(trail.get('[aria-current="page"]').text()).toBe('10.0.0.10')
+    // Peers stays marked as where you are, though the path is deeper.
+    expect(w.get('a.nav-item[aria-current="page"]').text()).toBe('Peers')
+  })
+
+  it('draws no breadcrumb on a top-level screen, where it would only repeat the title', async () => {
+    await router.push('/peers')
+    const w = shellAt()
+    await w.vm.$nextTick()
+    expect(w.find('nav[aria-label="Breadcrumb"]').exists()).toBe(false)
+  })
+})

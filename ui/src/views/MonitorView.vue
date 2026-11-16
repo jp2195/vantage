@@ -751,7 +751,7 @@ const flagColumns: Column<FlagCount>[] = [
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; container: monitor / inline-size; }
 /* Wraps so that on a phone the window picker drops under the title rather
    than running past the screen's right edge. */
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
@@ -765,18 +765,21 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
    One column below 1040px, where the feed's own rows start wrapping --
    measured in a browser, not chosen: the feed needs ~330px for a clock, a
    kind, a router/peer pair and a reason, and the grid's own note records
-   620px as the narrowest a table on this screen reads at. */
+   620px as the narrowest a table on this screen reads at.
+   A container query on the screen, not a media query on the viewport: the
+   sidebar takes 228px of the viewport, so the 1040px viewport this was
+   measured at is a 992px screen (1040 less the old 24px side padding). */
 .churn-row { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px; }
 /* minmax(0, 1fr), not 1fr: a bare 1fr track cannot shrink below its
    content's min-content width, and on a 390px phone the event feed's
    one-line rows held it at 422px, so the whole page scrolled sideways. */
-@media (max-width: 1040px) { .churn-row { grid-template-columns: minmax(0, 1fr); } }
+@container monitor (max-width: 992px) { .churn-row { grid-template-columns: minmax(0, 1fr); } }
 /* And an event's line may wrap there, so that the clock, kind, pair and
    collector need not share one line on a phone. Only below the same
    breakpoint: on a desktop the pair already wraps inside its own span, and
    letting the whole line wrap too would move the collector id under the
    clock on the rows with an IPv6 peer. */
-@media (max-width: 1040px) { .line { flex-wrap: wrap; } }
+@container monitor (max-width: 992px) { .line { flex-wrap: wrap; } }
 /* Two columns where there is room, so the four signals and the event feed
    read as one dashboard rather than a stack four screens tall. */
 /* 620px is the narrowest a five-column table on this screen reads at
