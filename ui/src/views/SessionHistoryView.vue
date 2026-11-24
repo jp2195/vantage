@@ -228,28 +228,28 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // reads TWO session lifecycles as one, which is the single thing it exists
 // to show. Same column, same argument, as EventsView.vue and PeersView.vue.
 const columns: Column<PeerEvent>[] = [
-  { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
-  { id: 'kind', header: 'Kind', width: '160px', sortable: true },
+  { id: 'ts_collector', header: 'Time', width: '172px', sortable: true },
+  { id: 'kind', header: 'Kind', width: '176px', sortable: true },
   { id: 'collector', header: 'Collector', width: '11%', sortable: true },
   { id: 'rib', header: 'RIB', width: '92px', sortable: true },
-  { id: 'down_reason', header: 'Reason', width: '15%' },
+  { id: 'down_reason', header: 'Reason', width: '15%', wrap: true },
   // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
   // padding (measured in Chromium); 84px cut it to "42000...".
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '120px', sortable: true },
   { id: 'router_sysname', header: 'Router', width: '15%', sortable: true },
 ]
 
-// Four of the seven columns are fixed px, 494px between them, and
+// Four of the seven columns are fixed px, 560px between them, and
 // table-layout:fixed hands the three percentage columns only what is left:
 // on a 390px phone that was nothing, and Collector, Reason and Router
 // rendered 0px wide with their headers cut off. The floor holds the fixed
-// columns plus the percentages taken of the floor itself (494 + 47% of
-// 933 = 933), the pattern RoutersView uses. At the floor Collector's 11%
-// is 102px, which holds its 99px header, and Router's 16% holds a
-// 12-character sysName (123px). Reason went from 26% to 20% so that the
-// floor stays under the table's 958px at a 1024px viewport; above the
-// floor the browser spreads the slack over every column as before.
-const SESSION_HISTORY_MIN_WIDTH = '933px'
+// columns plus the percentages taken of the floor itself (560 + 41% of
+// 950 = 950), the pattern RoutersView uses. At the floor Collector's 11%
+// is 104px, which holds its 99px header, and Router's 15% holds a
+// 12-character sysName (123px). The floor stays under the table's 958px
+// at a 1024px viewport; above the floor the browser spreads the slack over
+// every column as before.
+const SESSION_HISTORY_MIN_WIDTH = '950px'
 </script>
 
 <template>
@@ -318,7 +318,7 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
           <EventKindMark :kind="kindOf(row as PeerEvent)" />
         </template>
         <template #cell-down_reason="{ row }">
-          <span data-reason class="mono">{{ reasonDisplay(row as PeerEvent) }}</span>
+          <span data-reason>{{ reasonDisplay(row as PeerEvent) }}</span>
         </template>
       </DataTable>
 

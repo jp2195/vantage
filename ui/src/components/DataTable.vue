@@ -60,6 +60,15 @@ export interface Column<Row extends Record<string, unknown> = Record<string, unk
    * one face and the router address beside it in another.
    */
   mono?: boolean
+  /**
+   * Let this column's text wrap. A row is one line by default -- a value
+   * cut off shows an ellipsis and its full text on hover (titleIfTruncated
+   * below) -- because a table whose rows are one, two or four lines tall
+   * depending on which cell happened to run long cannot be scanned down a
+   * column. Opt in only for prose a reader needs whole: a down reason, a
+   * description under a name.
+   */
+  wrap?: boolean
 }
 
 const props = defineProps<{
@@ -299,7 +308,7 @@ function titleIfTruncated(e: MouseEvent) {
       </thead>
       <tbody @mouseover="titleIfTruncated">
         <tr v-for="(row, i) in shownRows" :key="i" v-bind="rowAttrs ? rowAttrs(row) : {}">
-          <td v-for="c in columns" :key="c.id" :class="{ num: c.numeric, mono: c.numeric || c.mono }">
+          <td v-for="c in columns" :key="c.id" :class="{ num: c.numeric, mono: c.numeric || c.mono, wraps: c.wrap }">
             <slot :name="`cell-${c.id}`" :row="row">{{ row[c.id] }}</slot>
           </td>
           <td v-if="$slots.actions" class="actions"><slot name="actions" :row="row" /></td>
@@ -372,7 +381,7 @@ table { width: 100%; table-layout: fixed; border-collapse: collapse; font: 400 v
    Not simply "smaller" than the previous sentence-case 11px -- these
    labels are meant to recede so the data reads first. */
 th {
-  text-align: left; padding: 7px 18px; color: var(--muted);
+  text-align: left; padding: 7px 14px; color: var(--muted);
   font: 600 var(--text-label) var(--font-ui); text-transform: uppercase; letter-spacing: .06em;
   border-bottom: 1px solid var(--line); background: var(--surface-2);
   white-space: nowrap;
@@ -380,9 +389,16 @@ th {
 /* 9px 18px is this project's `regular` density. A `compact` 5px mode, a
    persisted user preference, is not built here. */
 td {
-  padding: 9px 18px; border-bottom: 1px solid var(--line-faint); color: var(--ink);
-  overflow: hidden; text-overflow: ellipsis;
+  padding: 9px 14px; border-bottom: 1px solid var(--line-faint); color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+td.wraps { white-space: normal; }
+/* 14px between columns, 18px at the card's edges: the outer inset lines the
+   table up with the toolbar and footer above and below it, and the tighter
+   gutter inside is what lets a ten-column table such as Peers hold its
+   values on one line at a laptop width. */
+th:first-child, td:first-child { padding-left: 18px; }
+th:last-child, td:last-child { padding-right: 18px; }
 tbody tr:hover td { background: var(--surface-2); }
 .actions { text-align: right; overflow: visible; }
 tbody tr:last-child td { border-bottom: 0; }

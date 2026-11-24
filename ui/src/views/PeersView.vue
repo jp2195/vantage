@@ -83,18 +83,19 @@ const columns: Column<PeerRow>[] = [
   // seven points came from Collector, ASN, State, Up since and Changes,
   // each still at least as wide as its header and its widest value at the
   // floor.
-  { id: 'peer_ip', header: 'Peer', width: '19%', sortable: true },
-  { id: 'router_ip', header: 'Router', width: '11%', sortable: true, mono: true },
-  { id: 'collector', header: 'Collector', width: '8%', sortable: true },
+  { id: 'peer_ip', header: 'Peer', width: '18%', sortable: true },
+  { id: 'router_ip', header: 'Router', width: '10%', sortable: true, mono: true },
+  { id: 'collector', header: 'Collector', width: '9%', sortable: true },
   { id: 'rib', header: 'RIB', width: '7%', sortable: true },
   // Not `numeric`: once a holder name is beside it, the cell holds more
   // than a number, and right-aligned tabular figures are the wrong shape
   // for a name. Widened accordingly -- 92px fit a bare ASN, not "LEVEL3 -
   // Level 3 Parent, LLC" beside one. The name wraps; the ten digits of the
   // longest ASN do not, and need 109px.
-  { id: 'asn', header: 'ASN', width: '11%', sortable: true },
-  // The widest pill, "view lost", needs 95px; the dumping chip wraps below it.
-  { id: 'state', header: 'State', width: '9%', sortable: true, sortValue: (r) => STATE_ORDER[r.state] },
+  { id: 'asn', header: 'ASN', width: '10%', sortable: true, wrap: true },
+  // The widest pill, "view lost", needs 95px; the dumping chip wraps below it,
+  // which is why this cell is allowed to wrap when no other row is.
+  { id: 'state', header: 'State', width: '9%', sortable: true, wrap: true, sortValue: (r) => STATE_ORDER[r.state] },
   { id: 'routes', header: 'Routes', numeric: true, width: '7%', sortable: true },
   // "Up since", not "Uptime", and the difference is measured rather than
   // stylistic. A measurement on 2026-09-21 ran `now - up_since` over a
@@ -105,7 +106,7 @@ const columns: Column<PeerRow>[] = [
   // collection-artifact-as-network-fact class, in a column an operator would
   // trust. The instant is a fact the archive holds; the duration is an
   // inference about the present it cannot support.
-  { id: 'up_since', header: 'Up since', width: '13%', sortable: true, sortValue: (r) => (showsUpSince(r.state) ? r.up_since : null) },
+  { id: 'up_since', header: 'Up since', width: '14%', sortable: true, sortValue: (r) => (showsUpSince(r.state) ? r.up_since : null) },
   // Named for the field it carries -- changes_per_second, off
   // /v1/collection/churn/peers -- not for its header. The column guard
   // checks ids against the shapes real endpoints return, so an id invented
@@ -115,7 +116,7 @@ const columns: Column<PeerRow>[] = [
   // the router's own update rate -- what it holds is rows THIS collector
   // stored. Reporting it as the network's is the artifact-as-fact
   // defect, and the note beside the table says which of the two this is.
-  { id: 'changes_per_second', header: 'Archived/s', numeric: true, width: '8%', sortable: true },
+  { id: 'changes_per_second', header: 'Archived/s', numeric: true, width: '9%', sortable: true },
   // The shape the rate beside it averages away: two peers with one rate may
   // have churned steadily and all at once. Named for the field it carries,
   // like its neighbor.
@@ -125,14 +126,15 @@ const columns: Column<PeerRow>[] = [
 // Percentages alone shrink every column with the screen: on a 390px phone
 // the columns came out 22-40px wide, nine of ten headers were cut off and
 // every state pill was clipped. The column that needs the widest table is
-// Peer, 202px for a 23-character address at 19%, which needs a 1064px
-// table, so the floor is exactly that. State's 95px pill at 9% is next at
-// 1056px, then Archived/s, 84px of header label and padding at 8%, at
-// 1050px. The card is 66px narrower than the viewport, so the table fits
+// Peer, 202px for a 23-character address at 18%, which needs a 1123px
+// table, so the floor is that. Up since holds "Nov 24, 14:54:36" (164px)
+// at 15%, State's 95px pill at 9% and Archived/s, 84px of header label and
+// padding at 8%, all clear it. Rows are one line (DataTable), so a column
+// too narrow for its value ellipsizes rather than wrapping the row. The card is 66px narrower than the viewport, so the table fits
 // without scrolling from a 1130px viewport, or 1145px with a 15px classic
 // scrollbar showing. A narrower screen scrolls the table inside its own
 // card.
-const PEERS_MIN_WIDTH = '1064px'
+const PEERS_MIN_WIDTH = '1123px'
 
 // Same three the other windowed screens offer, and the same reason: every
 // /v1/collection/* endpoint refuses a window past the daemon's

@@ -27,7 +27,7 @@ defineProps<{
 <template>
   <header class="head">
     <div class="titles">
-      <p v-if="eyebrow?.length" class="eyebrow mono" data-eyebrow>{{ eyebrow.join(' · ') }}</p>
+      <p v-if="eyebrow?.length" class="eyebrow" data-eyebrow>{{ eyebrow.join(' · ') }}</p>
       <h1>{{ title }}</h1>
     </div>
     <dl v-if="counts?.length" class="counts">
@@ -42,11 +42,13 @@ defineProps<{
 <style scoped>
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--space-4); }
 .titles { display: flex; flex-direction: column; gap: var(--space-1); }
-/* The label scale, the same one DataTable's column headers use, so a scope
-   and a column read as the same kind of text. */
+/* The label scale, the same one DataTable's column headers and StatTile's
+   labels use, so a scope and a column read as the same kind of text. In the
+   UI face: set in the data face it was the one label on the page that
+   looked different from the rest. */
 .eyebrow {
   margin: 0; color: var(--muted); text-transform: uppercase;
-  font-size: var(--text-label); font-weight: 600; letter-spacing: .06em;
+  font: 600 var(--text-label) var(--font-ui); letter-spacing: .06em;
 }
 h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); letter-spacing: -.01em; color: var(--ink); }
 .counts { display: flex; gap: var(--space-6); margin: 0; }

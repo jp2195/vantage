@@ -28,11 +28,22 @@ const DATE: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day:
  * renderings of the same kind of instant: the chrome said "12:05:58 PM",
  * the table footer said "12:05:58" and a row said "Sep 22, 2026, 11:46:35
  * AM". Operators read these beside router logs and syslog, which are
- * 24-hour, and so is ChurnChart's axis. The year stays: retention is 90
- * days and an archive can go quiet across New Year.
+ * 24-hour, and so is ChurnChart's axis.
+ *
+ * The year appears only when it is not the reader's current year:
+ * "Nov 24, 14:54:36", but "Dec 28, 2025, 10:00:00" once the calendar has
+ * turned. Retention is 90 days and an archive can go quiet across New Year,
+ * so a row from last year must still say so -- but spending ", 2026" on
+ * every row of a table made the time column 22 characters of the data face,
+ * wider than its column, and every timestamp in Events, Peers and Session
+ * history wrapped onto two lines. Same local-calendar comparison as
+ * formatFreshness below, and `now` is injected for the same reason.
  */
-export function formatClock(iso: string): string {
-  return new Date(iso).toLocaleString([], { ...DATE, ...TIME })
+export function formatClock(iso: string, now: Date = new Date()): string {
+  const t = new Date(iso)
+  const date: Intl.DateTimeFormatOptions =
+    t.getFullYear() === now.getFullYear() ? { month: 'short', day: 'numeric' } : DATE
+  return t.toLocaleString([], { ...date, ...TIME })
 }
 
 /**
