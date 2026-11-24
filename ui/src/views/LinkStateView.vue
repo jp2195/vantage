@@ -32,6 +32,7 @@ export const RAIL_PREFIX_COLUMNS: Column<LsPrefix>[] = [
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useRememberedScope } from '@/lib/rememberedScope'
 import LinkStateGraph from '@/components/LinkStateGraph.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import AboutThis from '@/components/AboutThis.vue'
@@ -60,6 +61,9 @@ import type { LsNode, Meta, Router } from '@/api/generated'
 
 const route = useRoute()
 const router = useRouter()
+// Opened bare from the nav, the screen asks the last question it was asked
+// in this tab rather than opening on an empty picker -- see the composable.
+useRememberedScope('link-state', ['router', 'protocol', 'area'])
 
 /**
  * The scope, seeded from the URL so a shared link opens on its question.

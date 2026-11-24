@@ -910,6 +910,16 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 /* The events panel's empty line had no rule of its own and inherited the
    body's 14px inside an 11px panel -- visible in a browser, invisible to
    every test, since jsdom computes no styles. */
+/* A cell that holds no value -- a dash, or "per RIB" where a peer has more
+   than one route count -- recedes, so it is not read as data. "per RIB"
+   is a note about the row in the UI face, not a value in the data face,
+   and its dotted underline says the explanation is on hover. */
+.quiet { color: var(--muted); }
+[data-multi-rib] {
+  font: 400 var(--text-sm) var(--font-ui);
+  text-decoration: underline dotted; text-decoration-color: var(--muted-2); text-underline-offset: 3px;
+  cursor: help;
+}
 .events .quiet { padding: 7px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* The one span that must never wrap: a broken timestamp reads as two
    events, which is what the rail did before the row became two lines. */

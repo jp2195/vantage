@@ -302,13 +302,18 @@ const columns: Column<UnicastRoute>[] = [
   // 10.255.0.2/32 (130px with its padding, measured in Chromium). At 14% a
   // phone read 10.91.0.0/16 as "10.91.0.0/..." -- the two points came from
   // AS path, which wraps.
-  { id: 'prefix', header: 'Prefix', width: '16%' },
+  // Prefix and AS path wrap: the prefix cell carries its dump-state chip
+  // under the address, and an AS path cut off at its end loses the origin,
+  // the one hop a reader most needs.
+  { id: 'prefix', header: 'Prefix', width: '16%', wrap: true },
   { id: 'rib', header: 'RIB', width: '72px' },
   // 78px, not 74: PATH ID needs 77px with its padding (measured in
   // Chromium), and at the Paths floor below this column gets exactly its px.
   { id: 'path_id', header: 'Path ID', numeric: true, width: '78px' },
   { id: 'router_sysname', header: 'Router', width: '10%' },
-  { id: 'peer_ip', header: 'Peer', width: '15%', mono: true },
+  // 16%: an IPv6 peer ran 2px past 15% at 1440 once rows stopped wrapping.
+  // The point came from AS path, which wraps.
+  { id: 'peer_ip', header: 'Peer', width: '16%', mono: true },
   // /v1/routes is one row per (collector, router, peer, rib, prefix,
   // path_id), so a router two collectors monitor renders each route twice.
   // Without this the pair is two rows identical in every rendered column --
@@ -326,7 +331,7 @@ const columns: Column<UnicastRoute>[] = [
   // leaves cut it off. The two points came from AS path, which wraps.
   { id: 'collector', header: 'Collector', width: '12%' },
   { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
-  { id: 'as_path', header: 'AS path', width: '14%' },
+  { id: 'as_path', header: 'AS path', width: '15%', wrap: true },
 ]
 
 // Two of the eight columns are fixed px, 166px between them, and the rest

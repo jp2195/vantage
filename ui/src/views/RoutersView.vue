@@ -37,13 +37,18 @@ const rows = computed(() => data.value?.data ?? [])
 // renders every entry, because two collectors' views are two real
 // observations that can disagree; only the count answers a question about
 // the network. Same division drawn on the Looking glass on 2026-09-20.
-const counts = computed(() => [
-  {
-    key: 'routers',
-    label: 'Routers',
-    value: formatCount(bestVantageRouters(rows.value).length),
-  },
-])
+//
+// When the two differ, the row count is shown beside it as what it is --
+// collector views -- so "Routers 2" above a four-row table reads as two
+// routers seen twice, not as a count that disagrees with its own table.
+const counts = computed(() => {
+  const routers = bestVantageRouters(rows.value).length
+  const out = [{ key: 'routers', label: 'Routers', value: formatCount(routers) }]
+  if (rows.value.length > routers) {
+    out.push({ key: 'views', label: 'Collector views', value: formatCount(rows.value.length) })
+  }
+  return out
+})
 
 // Peer counts stay four columns, never one. "peers: 7" would hide whether
 // this router is healthy, whether the collector has gone blind to it, or

@@ -3,6 +3,7 @@ import Clock from '@/components/Clock.vue'
 import { computed, ref, watch } from 'vue'
 import { routerLabel } from '@/lib/routerLabel'
 import { useRoute, useRouter } from 'vue-router'
+import { useRememberedScope } from '@/lib/rememberedScope'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import WindowPicker from '@/components/WindowPicker.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
@@ -25,6 +26,9 @@ const counts = computed(() =>
 
 const route = useRoute()
 const router = useRouter()
+// Opened bare from the nav, the screen asks the last question it was asked
+// in this tab rather than opening on an empty picker -- see the composable.
+useRememberedScope('session-history', ['router', 'peer'])
 
 // The question, taken from the URL so a shared /session-history?router=..&
 // peer=.. link opens on its scope. Computed, not read once: a query-only
