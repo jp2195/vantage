@@ -55,9 +55,21 @@ describe('RoutersView', () => {
     } as never)
     const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
     expect(w.findAll('tbody tr')).toHaveLength(2)
-    const header = w.find('header, .head')?.text() ?? w.text()
-    expect(header).toMatch(/Routers\s*1\b/)
-    expect(header).not.toMatch(/Routers\s*2\b/)
+    const routers = w.find('[data-count-routers]').text()
+    expect(routers).toMatch(/Routers\s*1$/)
+    // And the rows the table does show are counted as what they are, so the
+    // header and the table no longer appear to disagree.
+    expect(w.find('[data-count-views]').text()).toMatch(/Collector views\s*2\b/)
+  })
+
+  it('shows no collector-views count when each router has one observer', () => {
+    vi.mocked(useRouters).mockReturnValue({
+      data: ref({ ...twoCollectorRouters(), data: twoCollectorRouters().data.slice(0, 1) }),
+      isPending: ref(false),
+      error: ref(undefined),
+    } as never)
+    const w = mount(RoutersView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+    expect(w.find('[data-count-views]').exists()).toBe(false)
   })
 
   it('labels the view_lost count as its own column, not merged into down', () => {

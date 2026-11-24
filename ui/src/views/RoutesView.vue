@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useRememberedScope } from '@/lib/rememberedScope'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import CodeText from '@/components/CodeText.vue'
@@ -19,6 +20,9 @@ import type { UnicastRoute } from '@/api/generated'
 
 const route = useRoute()
 const router = useRouter()
+// Opened bare from the nav, the screen asks the last question it was asked
+// in this tab rather than opening on an empty picker -- see the composable.
+useRememberedScope('routes', ['router', 'peer'])
 
 // The question, taken from the URL so a shared /routes?router=..&peer=.. link
 // opens on its scope. Computed, not read once: a query-only navigation reuses
@@ -93,11 +97,14 @@ function syncUrl(s: RibScope | undefined) {
 // layout spreads these eight short values across a 2000px viewport, so
 // reading one row means tracking the eye over 500px of white.
 const columns: Column<UnicastRoute>[] = [
-  { id: 'prefix', header: 'Prefix', width: '14%' },
+  // Prefix and AS path wrap: the prefix cell carries its dump-state chip
+  // under the address, and an AS path cut off at its end loses the origin,
+  // the one hop a reader most needs.
+  { id: 'prefix', header: 'Prefix', width: '14%', wrap: true },
   { id: 'rib', header: 'RIB', width: '82px' },
   { id: 'path_id', header: 'Path ID', numeric: true, width: '72px' },
   { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
-  { id: 'as_path', header: 'AS path', width: '15%' },
+  { id: 'as_path', header: 'AS path', width: '15%', wrap: true },
   // Not `numeric`: once a holder name is beside it, the cell holds more
   // than a number, and right-aligned tabular figures are the wrong shape
   // for a name. Widened accordingly -- 78px fit a bare ASN, not "LEVEL3 -
