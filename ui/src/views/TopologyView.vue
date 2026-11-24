@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useRememberedScope } from '@/lib/rememberedScope'
 import PathGraph from '@/components/PathGraph.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import CodeText from '@/components/CodeText.vue'
@@ -121,6 +122,9 @@ function setMode(m: Mode) {
 
 const route = useRoute()
 const router = useRouter()
+// Opened bare from the nav, the screen asks the last question it was asked
+// in this tab rather than opening empty -- see the composable.
+useRememberedScope('topology', ['mode', 'q', 'covers', 'inPath', 'family', 'router', 'peer'])
 
 /**
  * The URL carries the question that was ASKED -- the scope -- never the
@@ -501,7 +505,7 @@ watch(family, () => {
                same one every time. This re-seeds PathGraph's starting
                positions, which is the only nondeterminism the simulation
                has. -->
-          <button type="button" class="btn small" data-relayout @click="seed++">Re-layout</button>
+          <button type="button" class="btn" data-relayout @click="seed++">Re-layout</button>
         </div>
 
         <!-- The family's own two counts. A third number like

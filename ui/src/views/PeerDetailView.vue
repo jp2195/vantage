@@ -11,7 +11,7 @@ import AboutThis from '@/components/AboutThis.vue'
 import StatePill from '@/components/StatePill.vue'
 import StatTile from '@/components/StatTile.vue'
 import { bestVantageCount } from '@/lib/bestVantage'
-import { reasonDisplay } from '@/lib/eventReason'
+import { hasDownReason, reasonDisplay } from '@/lib/eventReason'
 import { formatClock } from '@/lib/formatClock'
 import { formatCount } from '@/lib/formatCount'
 import { useEvents, usePeers, type EventScope,
@@ -56,6 +56,10 @@ const peerRows = computed<Peer[]>(
       (p: Peer) => p.peer_ip === route.params.peer && p.router_ip === route.params.router,
     ) ?? [],
 )
+
+/** Every collector watching this peer, in row order. The eyebrow named only
+ *  the first, above a screen showing both collectors' views. */
+const collectors = computed<string[]>(() => [...new Set(peerRows.value.map((p) => p.collector))])
 
 /**
  * One section per (collector, rib), which is what a row actually is.
@@ -398,14 +402,16 @@ const endpoints = computed(() => {
         <div class="head">
           <ScreenHeader
             :title="peerRows[0].peer_ip"
-            :eyebrow="[`as${peerRows[0].asn}`, peerRows[0].collector]"
+            :eyebrow="[`as${peerRows[0].asn}`, ...collectors]"
           />
           <!-- The state belongs beside the subject: one pill per rib
                view, because a peer can be up pre-policy and something
-               else post-policy. -->
+               else post-policy. With two collectors watching, each pill
+               also says whose view it is: "in_pre up, in_pre up" side by
+               side gave no way to tell them apart. -->
           <div class="states">
             <span v-for="row in peerRows" :key="sectionKey(row)" class="state-of">
-              <span class="mono rib-tag">{{ row.rib }}</span>
+              <span class="mono rib-tag">{{ collectors.length > 1 ? `${row.collector} · ${row.rib}` : row.rib }}</span>
               <StatePill :state="row.state" />
             </span>
           </div>
@@ -499,7 +505,7 @@ const endpoints = computed(() => {
               <!-- Verbatim, never parsed into vendor/version on screen: the
                    raw string is what the router actually said. -->
               <template v-if="sessionFacts?.sys_descr">
-                <dt>Router says</dt>
+                <dt class="wide">Router says</dt>
                 <dd class="mono descr" data-sys-descr>{{ sessionFacts.sys_descr }}</dd>
               </template>
             </dl>
@@ -516,7 +522,9 @@ const endpoints = computed(() => {
               <li v-for="(e, i) in recentEvents" :key="i" class="event">
                 <Clock class="when" :iso="e.ts_collector" />
                 <EventKindMark :kind="e.kind" />
-                <span class="mono why">{{ reasonDisplay(e) }}</span>
+                <!-- Only a down has a reason (lib/eventReason.ts). A dash on
+                     every other row was a column of noise at the edge. -->
+                <span v-if="hasDownReason(e)" class="mono why">{{ reasonDisplay(e) }}</span>
               </li>
               <li v-if="!recentEvents.length" class="quiet">
                 No peer event in the {{ WINDOW_LABEL }}. That is an answer — the
@@ -647,11 +655,16 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
   color: var(--muted); text-transform: uppercase;
   font: 600 var(--text-label) var(--font-ui); letter-spacing: .07em; align-self: center;
 }
-.facts dd { margin: 0; color: var(--ink-2); font-size: 11.5px; text-align: right; }
+.facts dd { margin: 0; color: var(--ink-2); font-size: var(--text-sm); text-align: right; }
+/* The router's own description is a sentence, not a value: it gets the
+   whole width under its label, left-aligned, rather than three ragged
+   right-aligned lines beside it. */
+.facts dt.wide { grid-column: 1 / -1; margin-top: 4px; }
+.facts dd.descr { grid-column: 1 / -1; text-align: left; }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .event {
   display: flex; align-items: center; gap: 10px; padding: 6px 0;
-  border-bottom: 1px solid var(--line-faint); font-size: 11px;
+  border-bottom: 1px solid var(--line-faint); font-size: var(--text-sm);
 }
 .event:last-child { border-bottom: 0; }
 .when { color: var(--muted); }
