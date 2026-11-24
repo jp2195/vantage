@@ -75,7 +75,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           # Matches go.mod's `toolchain go1.27.3` line exactly -- not its
           # `go 1.27.0` line, which is the LANGUAGE version floor rather
@@ -90,7 +90,7 @@ jobs:
           # just mean this pin is decorative and the toolchain actually
           # used drifts unpinned between runs. Which is the whole reason
           # it is written down.
-          go-version: "1.27.3"
+          go-version: "1.27.4"
 
       - name: go build
         run: go build ./...
@@ -140,9 +140,9 @@ jobs:
       # schema Job and runs its retention step in the Job's own image
       # (docker is on the runner), so this job needs helm and the chart's
       # dependencies as well.
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
-          version: v4.3.1
+          version: v4.3.2
       # helm dependency build resolves Chart.lock's repository by URL, and
       # only among repositories added to this helm client.
       - run: helm repo add nats https://nats-io.github.io/k8s/helm/charts/ && helm dependency build deploy/helm/vantage
