@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref, watch } from 'vue'
 import { routerLabel } from '@/lib/routerLabel'
 import { useRoute, useRouter } from 'vue-router'
@@ -7,10 +8,10 @@ import WindowPicker from '@/components/WindowPicker.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import { formatCount } from '@/lib/formatCount'
 import ScopePicker from '@/components/ScopePicker.vue'
+import Notice from '@/components/Notice.vue'
 import EventKindMark from '@/components/EventKindMark.vue'
 import EventArchiveNote from '@/components/EventArchiveNote.vue'
 import { reasonDisplay } from '@/lib/eventReason'
-import { formatClock } from '@/lib/formatClock'
 import { useEvents, usePeers, type EventScope } from '@/api/queries'
 import type { PeerEvent } from '@/api/generated'
 
@@ -227,15 +228,15 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // reads TWO session lifecycles as one, which is the single thing it exists
 // to show. Same column, same argument, as EventsView.vue and PeersView.vue.
 const columns: Column<PeerEvent>[] = [
-  { id: 'ts_collector', header: 'Time', width: '180px' },
-  { id: 'kind', header: 'Kind', width: '112px' },
-  { id: 'collector', header: 'Collector', width: '11%' },
-  { id: 'rib', header: 'RIB', width: '92px' },
-  { id: 'down_reason', header: 'Reason', width: '20%' },
+  { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
+  { id: 'kind', header: 'Kind', width: '160px', sortable: true },
+  { id: 'collector', header: 'Collector', width: '11%', sortable: true },
+  { id: 'rib', header: 'RIB', width: '92px', sortable: true },
+  { id: 'down_reason', header: 'Reason', width: '15%' },
   // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
   // padding (measured in Chromium); 84px cut it to "42000...".
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px' },
-  { id: 'router_sysname', header: 'Router', width: '16%' },
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
+  { id: 'router_sysname', header: 'Router', width: '15%', sortable: true },
 ]
 
 // Four of the seven columns are fixed px, 494px between them, and
@@ -263,34 +264,36 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
          collector field, so a scoped walk here spans collectors however
          narrow the pair looks. Saying otherwise put "walking dev-c1's view"
          directly above dev-c2's own rows. -->
-    <ScopePicker
-      :router="seededRouter"
-      :peer="seededPeer"
-      :pins-collector="false"
-      @scope="onScope"
-      @select="onSelect"
-    >
-      <template #ambiguous>
-        Both collectors' events are shown here, newest first, and the
-        Collector column says which saw each one — this walk is not pinned to
-        either.
-      </template>
-    </ScopePicker>
+    <div class="filters query-card">
+      <ScopePicker
+        :router="seededRouter"
+        :peer="seededPeer"
+        :pins-collector="false"
+        @scope="onScope"
+        @select="onSelect"
+      >
+        <template #ambiguous>
+          Both collectors' events are shown here, newest first, and the
+          Collector column says which saw each one — this walk is not pinned to
+          either.
+        </template>
+      </ScopePicker>
+    </div>
 
     <!-- Why a pair is on screen that the pickers above do not list. Without
          this the table would answer for a peer the dropdowns cannot even
          show as selected, which reads as a bug rather than as the archive
          doing its job. -->
-    <p v-if="seedIsArchived" class="note" data-archived-scope>
+    <Notice v-if="seedIsArchived" class="note" data-archived-scope>
       {{ seededPeer }} has no current session on {{ seededRouter }}, so the pickers above
       cannot offer it. Its history is read from the archive all the same:
       <code>/v1/events</code> is scoped by router and peer, not pinned to a session.
-    </p>
+    </Notice>
 
     <!-- /v1/events requires router and peer; an unscoped request is a 400.
          Rendering an empty table before a scope exists would say "this
          session has no history" about a question nobody asked. -->
-    <p v-if="!scope" class="quiet">Choose a router and peer to see its session history.</p>
+    <p v-if="!scope" class="empty-state">Choose a router and peer to see every time its session went up or down.</p>
 
     <template v-else>
       <WindowPicker v-model="since" :windows="WINDOWS" />
@@ -304,9 +307,9 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
         :row-attrs="rowAttrs"
         :min-width="SESSION_HISTORY_MIN_WIDTH"
       >
-        <template #cell-router_sysname="{ row }">{{ routerLabel(row.router_sysname) }}</template>
+        <template #cell-router_sysname="{ row }"><span :class="{ unnamed: !row.router_sysname }">{{ routerLabel(row.router_sysname) }}</span></template>
         <template #cell-ts_collector="{ row }">
-          <span class="mono">{{ formatClock((row as PeerEvent).ts_collector) }}</span>
+          <Clock :iso="(row as PeerEvent).ts_collector" />
         </template>
         <template #cell-collector="{ row }">
           <span class="mono">{{ (row as PeerEvent).collector }}</span>
@@ -319,7 +322,7 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
         </template>
       </DataTable>
 
-      <button v-if="walk.hasMore.value" class="more" @click="walk.loadMore()">
+      <button v-if="walk.hasMore.value" type="button" class="more btn" @click="walk.loadMore()">
         Load more
       </button>
 
@@ -330,22 +333,18 @@ const SESSION_HISTORY_MIN_WIDTH = '933px'
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
-.note {
-  margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint);
-  color: var(--accent-ink-2); font: 400 11.5px var(--font-ui);
-}
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .note code { font: 400 11px var(--font-data); }
 .window {
   display: flex; flex-direction: column; gap: 4px; align-self: flex-start;
-  font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
 }
-.window select {
-  font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2);
-  border-radius: 6px; background: var(--surface); color: var(--ink);
-  text-transform: none; letter-spacing: normal;
-}
-.more { align-self: flex-start; background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.window select { text-transform: none; letter-spacing: normal; }
+.more { align-self: flex-start; }
+/* A router that sent no sysName: the placeholder reads as one, not as a
+   router called "(no sysName TLV)". The text itself matches Grafana's. */
+.unnamed { font-style: italic; color: var(--muted); }
+/* The scope controls as a card, the same shape Routes gives them. */
 </style>

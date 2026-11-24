@@ -1,4 +1,4 @@
-import { type VueWrapper, mount } from '@vue/test-utils'
+import { RouterLinkStub, type VueWrapper, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive, ref } from 'vue'
 import routes from '@/api/fixtures/routes.json'
@@ -158,7 +158,7 @@ async function runSearch(
 // answer to describe -- so a test about rows, groups or a footer has to
 // search first, the same way an operator does.
 async function mountSearched() {
-  const w = mount(LookingGlassView)
+  const w = mount(LookingGlassView, { global: { stubs: { RouterLink: RouterLinkStub } } })
   await runSearch(w, { term: routes.data.unicast[0].prefix })
   return w
 }
@@ -365,6 +365,27 @@ describe('LookingGlassView', () => {
     const counts = w.get('[data-topology-counts]').text()
     expect(counts).toContain(`${topology.data.unicast.nodes.length} ASNs`)
     expect(counts).toContain(`${topology.data.unicast.edges.length} edges`)
+  })
+
+  it('links the Topology tab to the same question on AS paths', async () => {
+    // AS paths has what this tab leaves out (depth, the other families, the
+    // per-AS rail), so the tab hands its question over in the keys both
+    // screens read -- and offers nothing for a community search, which AS
+    // paths has no mode for.
+    freshState()
+    const w = await mountSearched()
+    await w.get('[data-tab="topology"]').trigger('click')
+    const link = w.getComponent(RouterLinkStub)
+    expect(link.props('to')).toEqual({
+      path: '/topology',
+      query: { mode: 'prefix', q: routes.data.unicast[0].prefix },
+    })
+
+    freshState()
+    const byCommunity = mount(LookingGlassView, { global: { stubs: { RouterLink: RouterLinkStub } } })
+    await runSearch(byCommunity, { mode: 'community', term: '65000:100' })
+    await byCommunity.get('[data-tab="topology"]').trigger('click')
+    expect(byCommunity.find('[data-open-as-paths]').exists()).toBe(false)
   })
 
   it('asks no topology question while the Topology tab is closed', async () => {
@@ -1289,4 +1310,30 @@ it('floors the Paths table where every header fits its column', async () => {
   // A prefix does not wrap: 10.255.0.2/32 needs 130px, and at 14% a phone
   // cut 10.91.0.0/16 off.
   expect(crampedAt(columns, floor!, { prefix: 130 })).toEqual([])
+})
+
+describe('LookingGlassView reads the term, not only the button', () => {
+  // A term that is unmistakably one kind is searched as that kind, so
+  // "AS65002" typed with Prefix pressed is an origin-AS search rather than
+  // a prefix the daemon would reject.
+  it.each([
+    ['prefix', 'AS65002', { origin_asn: 65002 }, 'asn'],
+    ['prefix', '65002', { origin_asn: 65002 }, 'asn'],
+    ['prefix', '65002:100', { community: '65002:100' }, 'community'],
+    ['asn', '10.91.0.0/16', { prefix: '10.91.0.0/16' }, 'prefix'],
+  ] as const)('in %s mode, searches %s as %o', async (mode, term, want, pressed) => {
+    const w = mount(LookingGlassView)
+    await runSearch(w, { mode, term })
+    expect(filtersRef?.value).toEqual(want)
+    const on = w.findAll('.modes button').findIndex((b) => b.classes('on'))
+    expect(on).toBe(MODE_INDEX[pressed])
+  })
+
+  // An address alone is left as typed: exact host prefix or every prefix
+  // covering it is the operator's call, made with the Covering box.
+  it('leaves a bare address in prefix mode as an exact search', async () => {
+    const w = mount(LookingGlassView)
+    await runSearch(w, { term: '10.255.0.2' })
+    expect(filtersRef?.value).toEqual({ prefix: '10.255.0.2' })
+  })
 })

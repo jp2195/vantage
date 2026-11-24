@@ -1,6 +1,6 @@
 import { type VueWrapper, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { nextTick, ref } from 'vue'
+import { nextTick, reactive, ref } from 'vue'
 import topology from '@/api/fixtures/topology.json'
 import routers from '@/api/fixtures/routers.json'
 import peers from '@/api/fixtures/peers.json'
@@ -177,6 +177,16 @@ let scopeRef: { value: TopologyScope | undefined } | undefined
 // Everything else drives the captured single-collector answer.
 let peersFixture: { data: unknown[]; meta: unknown } = peers
 
+// A route whose query a test sets BEFORE mounting, mirroring an operator
+// opening a shared link -- the same seam LookingGlassView.test.ts uses.
+const route = reactive({ query: {} as Record<string, string> })
+const push = vi.fn()
+const replace = vi.fn()
+vi.mock('vue-router', () => ({
+  useRoute: () => route,
+  useRouter: () => ({ push, replace }),
+}))
+
 vi.mock('@/api/queries', () => ({
   // ScopePicker's own two composables. The screen does not call them; the
   // picker it mounts for the "from a peer" mode does.
@@ -206,6 +216,9 @@ vi.mock('@/api/queries', () => ({
 const TopologyView = (await import('./TopologyView.vue')).default
 
 function freshState() {
+  route.query = {}
+  push.mockReset()
+  replace.mockReset()
   answer = captured
   topologyError = undefined
   scopeRef = undefined
@@ -770,6 +783,78 @@ describe('TopologyView', () => {
   })
 
   // --- AS holder names: rail only, never the graph nodes (@/lib/asname.ts) ---
+  describe('the address bar', () => {
+    it('draws the graph a link names, without being asked again', async () => {
+      // The Looking glass Topology tab links here with its own keys, so a
+      // link has to arrive as a drawn graph rather than an empty form.
+      route.query = { mode: 'prefix', q: '10.91.0.0/16' }
+      const w = mount(TopologyView)
+      expect(scopeRef?.value).toEqual({ prefix: '10.91.0.0/16' })
+      expect((w.get('form.scope input.term').element as HTMLInputElement).value).toBe('10.91.0.0/16')
+      // Arriving is not a new question, so it spends no history entry.
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('reads covering, in-path and the family from the link', async () => {
+      route.query = { mode: 'prefix', q: '10.10.1.1', covers: '1' }
+      mount(TopologyView)
+      expect(scopeRef?.value).toEqual({ covers: '10.10.1.1' })
+
+      route.query = { mode: 'asn', q: '65002', inPath: '1', family: 'evpn' }
+      const w = mount(TopologyView)
+      expect(scopeRef?.value).toEqual({ through_asn: 65002 })
+      expect(w.get('[data-family="evpn"]').classes()).toContain('on')
+    })
+
+    it('puts a drawn question in the URL, as a history entry', async () => {
+      const w = mount(TopologyView)
+      await search(w, { mode: 'asn', term: '65001' })
+      expect(push).toHaveBeenLastCalledWith({ query: { mode: 'asn', q: '65001' } })
+    })
+
+    it('keeps the family in the link without spending history on it', async () => {
+      route.query = { mode: 'prefix', q: '10.10.1.0/24' }
+      const w = mount(TopologyView)
+      await w.get('[data-family="vpn"]').trigger('click')
+      expect(replace).toHaveBeenLastCalledWith({
+        query: { mode: 'prefix', q: '10.10.1.0/24', family: 'vpn' },
+      })
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('leaves the last drawn graph in history when only the mode changes', async () => {
+      // Switching the form's shape draws nothing. Rewriting the URL there
+      // replaced the drawn graph's history entry, so back from the next search
+      // landed on an empty form rather than the graph before it.
+      route.query = { mode: 'prefix', q: '10.10.1.0/24' }
+      const w = mount(TopologyView)
+      await w.get('[data-mode="asn"]').trigger('click')
+      expect(scopeRef?.value).toBeUndefined()
+      expect(replace).not.toHaveBeenCalled()
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('follows the back button to the previous graph', async () => {
+      route.query = { mode: 'prefix', q: '10.10.1.0/24' }
+      mount(TopologyView)
+      route.query = { mode: 'asn', q: '65003' }
+      await nextTick()
+      expect(scopeRef?.value).toEqual({ origin_asn: 65003 })
+    })
+
+    it('seeds the picker from a router and peer link, and resolves the pair', async () => {
+      route.query = { mode: 'peer', router: routers.data[0].ip, peer: peers.data[1].peer_ip }
+      const w = mount(TopologyView)
+      await nextTick()
+      const selects = w.findAll('select')
+      expect((selects[0].element as HTMLSelectElement).value).toBe(routers.data[0].ip)
+      expect(scopeRef?.value).toEqual({ router: routers.data[0].ip, peer: peers.data[1].peer_ip })
+      // Restoring the link is not the operator asking again.
+      expect(push).not.toHaveBeenCalled()
+      expect(replace).not.toHaveBeenCalled()
+    })
+  })
+
   describe('AS holder names', () => {
     it('keeps AS-path graph nodes on the bare ASN and puts the name in the rail', async () => {
       const node = requireNode(captured.data.unicast, 65001)

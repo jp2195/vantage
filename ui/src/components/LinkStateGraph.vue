@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AboutThis from '@/components/AboutThis.vue'
 import { computed } from 'vue'
 import type { LsEndpoint, LsLink, LsNode } from '@/api/generated'
 import { HANDOFF_MAX_PX, NODE, round, settleGraph, type Positioned } from '@/lib/graphLayout'
@@ -598,24 +599,26 @@ function clearanceAt(at: Point, halfWidth: number, boxes: Positioned<LsNode>[]) 
     <figcaption class="legend" data-legend>
       <span class="key"><i class="swatch" />seen from both sides in this view</span>
       <span class="key"><i class="swatch one-sided" />seen from one side in this view</span>
-      <span class="says">
-        Each curve is one DIRECTION of an adjacency — one node's advertisement of a link toward
-        another — so a link both ends report draws as two curves, bowed apart, each carrying that
-        end's own IGP metric. They stay apart because the metric is a per-direction cost and the
-        two ends can disagree. Every adjacency draws at the same width: line thickness encodes
-        nothing here. The number on a line is that metric, which is a cost — a thicker line for a
-        higher one would read as better-when-worse, and for a lower one would invert the AS-path
-        graph's convention one screen over. Maximum bandwidth is kept off the picture for a
-        stronger reason: it is the link's configured capacity and says nothing about what the IGP
-        will do with it. Both numbers are in each line's tooltip: the metric as the unitless cost
-        it is, and the bandwidth in bytes per second, the unit BGP-LS advertises it in. “×2” marks
-        one direction the database carries as two parallel links, drawn
-        as one line because they run between the same two boxes; a line without one is one link as
-        the database identifies links — two that advertise neither interface addresses nor link IDs
-        are indistinguishable here, as they are in the query. “Seen from one side” says that this
-        router's database holds one direction of an adjacency and not the other. Why that is, this
-        data does not decide, and neither does this screen.
-      </span>
+      <AboutThis summary="How to read this graph">
+        <span class="says">
+          Each curve is one DIRECTION of an adjacency — one node's advertisement of a link toward
+          another — so a link both ends report draws as two curves, bowed apart, each carrying that
+          end's own IGP metric. They stay apart because the metric is a per-direction cost and the
+          two ends can disagree. Every adjacency draws at the same width: line thickness encodes
+          nothing here. The number on a line is that metric, which is a cost — a thicker line for a
+          higher one would read as better-when-worse, and for a lower one would invert the AS-path
+          graph's convention one screen over. Maximum bandwidth is kept off the picture for a
+          stronger reason: it is the link's configured capacity and says nothing about what the IGP
+          will do with it. Both numbers are in each line's tooltip: the metric as the unitless cost
+          it is, and the bandwidth in bytes per second, the unit BGP-LS advertises it in. “×2” marks
+          one direction the database carries as two parallel links, drawn
+          as one line because they run between the same two boxes; a line without one is one link as
+          the database identifies links — two that advertise neither interface addresses nor link IDs
+          are indistinguishable here, as they are in the query. “Seen from one side” says that this
+          router's database holds one direction of an adjacency and not the other. Why that is, this
+          data does not decide, and neither does this screen.
+        </span>
+      </AboutThis>
     </figcaption>
   </figure>
 </template>
@@ -633,22 +636,22 @@ function clearanceAt(at: Point, halfWidth: number, boxes: Positioned<LsNode>[]) 
    nodes or fewer still lays out on the project's 580-unit canvas, so its
    cap fell 640 -> 580 and every small graph -- which is every graph in
    this archive -- rendered 9.4% smaller than before, silently. */
-svg { width: 100%; height: auto; display: block; }
+svg { width: 100%; height: auto; display: block; margin-inline: auto; }
 
-.whose { margin: 0; font: 400 11.5px var(--font-ui); color: var(--muted); }
+.whose { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .whose b { font-weight: 600; color: var(--ink-2); }
 /* --bad-2 rather than --bad: this is TEXT, and the design system's two reds
    are split by role across the UI -- --bad-2 for words an operator reads
    (every .error paragraph, the withdrawn-route cells, the view_lost pills),
    --bad for strokes, borders and swatches. Both clear AA on this ground, so
    the fix is consistency rather than contrast. */
-.mixed { margin: 0; font: 500 11.5px var(--font-ui); color: var(--bad-2); }
+.mixed { margin: 0; font: 500 var(--text-sm) var(--font-ui); color: var(--bad-2); }
 
 .edge { fill: none; stroke: var(--faint); }
 /* Distinct, and deliberately not alarming: a dash and the design system's
    accent ink, not --bad. Red would be a verdict, and rule 5 says the screen
    offers none -- in this archive one-sidedness tracks view completeness. */
-.edge.one-sided { stroke: var(--accent-ink); }
+.edge.one-sided { stroke: var(--warn); }
 /* The metric sits ON its own line, so it is painted with a halo of the pane
    color first and the glyphs over it -- `paint-order: stroke` is what makes
    the stroke go under rather than over the fill. Testing in a browser is
@@ -672,11 +675,11 @@ svg { width: 100%; height: auto; display: block; }
 .node:focus-visible rect { stroke: var(--ink); stroke-width: 1.5; }
 .node .name { font: 500 12.5px var(--font-data); fill: var(--ink); text-anchor: middle; }
 .node .rid { font: 400 10.5px var(--font-data); fill: var(--muted); text-anchor: middle; }
-.node .tier { font: 400 10px var(--font-ui); fill: var(--muted); text-anchor: middle; }
+.node .tier { font: 400 var(--text-label) var(--font-ui); fill: var(--muted); text-anchor: middle; }
 
-.legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font: 400 10.5px var(--font-ui); color: var(--muted); }
+.legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .key { display: flex; align-items: center; gap: 6px; }
 .swatch { width: 14px; height: 3px; display: block; background: var(--faint); }
-.swatch.one-sided { background: repeating-linear-gradient(to right, var(--accent-ink) 0 5px, transparent 5px 9px); }
+.swatch.one-sided { background: repeating-linear-gradient(to right, var(--warn) 0 5px, transparent 5px 9px); }
 .says { flex-basis: 100%; color: var(--muted); }
 </style>

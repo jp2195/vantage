@@ -1,0 +1,201 @@
+/* The product's buttons, segmented choices and tab bars, once.
+ *
+ * Each screen used to draw its own: Looking glass and AS paths had a mode
+ * picker of bordered pills, Monitor an underlined tab bar, Routes and
+ * Session history a black "load more", Link state a gray "re-layout" -- six
+ * variants of three controls, each a pixel or a shade apart. A screen now
+ * names a class and gets the shared look, so a seventh screen cannot drift.
+ *
+ * Global rather than scoped for the same reason tokens.css styles form
+ * fields globally: these are the product's controls, not one screen's.
+ * Colors come only from tokens (tokens.test.ts holds every .css file here to
+ * that), so the dark theme reaches them with no work of its own.
+ */
+
+/* Buttons. `.btn` is the secondary action; `.btn.primary` the one action a
+   form exists for (Search, Draw, Retry). 32px tall, 36px for primary in a
+   form row, which lines up with the 34px fields beside it. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 var(--text-body) var(--font-ui);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+}
+.btn:hover { border-color: var(--muted-2); color: var(--ink); text-decoration: none; }
+.btn:active { background: var(--surface-2); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink); }
+.btn.primary:hover { background: var(--ink-2); border-color: var(--ink-2); color: var(--on-ink); }
+.btn.small { min-height: 28px; padding: 0 10px; font-size: var(--text-sm); }
+.btn:disabled, .btn[aria-disabled='true'] { opacity: .5; cursor: not-allowed; }
+.btn svg { flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* A segmented choice: one of a few modes, joined into one control. The
+   selected one is filled. Marked by `.on` or aria-pressed, whichever the
+   screen sets. */
+.seg {
+  display: inline-flex;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.seg > button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font: 500 var(--text-sm) var(--font-ui);
+  padding: 7px 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.seg > button + button { border-left: 1px solid var(--line-2); }
+.seg > button:hover { color: var(--ink); background: var(--surface-2); }
+.seg > button.on, .seg > button[aria-pressed='true'] { background: var(--ink); color: var(--on-ink); }
+.seg > button:focus-visible { outline-offset: -2px; }
+
+/* A tab bar: views of one answer, underlined. Blue for the current tab,
+   since it is a control state and not a status. */
+/* The rule under the tabs is an inset shadow, not a border with each tab
+   pulled 1px over it by a negative margin: inside a box that scrolls
+   sideways (overflow-x makes overflow-y auto too), that 1px overhang was
+   content past the bottom edge, and Chrome drew a vertical scrollbar
+   beside Looking glass's Paths / Grouped / Changes / Topology. */
+.tabbar {
+  display: flex;
+  gap: var(--space-6);
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-shadow: inset 0 -1px 0 var(--line);
+  scrollbar-width: none;
+}
+.tabbar::-webkit-scrollbar { display: none; }
+.tabbar > button {
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  padding: 0 2px;
+  min-height: 38px;
+  color: var(--muted);
+  font: 500 var(--text-body) var(--font-ui);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tabbar > button:hover { color: var(--ink); }
+.tabbar > button.on, .tabbar > button[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--focus); }
+.tabbar > button:focus-visible { outline-offset: -2px; }
+
+/* Checkboxes and radios: native, so they keep their keyboard and
+   accessibility behavior, in the product's colors. */
+input[type='checkbox'], input[type='radio'] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--link);
+  cursor: pointer;
+}
+
+/* Labels that wrap a checkbox read as one control. */
+label:has(> input[type='checkbox']) { cursor: pointer; }
+
+/* Placeholders sit back from typed text in every field. */
+::placeholder { color: var(--muted-2); opacity: 1; }
+
+/* Selection in the product's blue, readable in both themes. */
+::selection { background: var(--info-line); color: var(--ink); }
+
+/* What a screen shows before it has been asked anything: one sentence,
+   where the answer will be, at the size of the answer's frame. A dashed
+   edge says "this is a place", not "this is a result". */
+.empty-state {
+  margin: 0;
+  padding: 48px 24px;
+  text-align: center;
+  border: 1px dashed var(--line-2);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  font: 400 var(--text-body) / 1.6 var(--font-ui);
+}
+
+/* Visually hidden, still read by a screen reader. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* The question a screen asks, as a card: Routes, Session history, AS paths
+   and Link state ask theirs in the same frame Looking glass does. */
+.query-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+/* A link that is itself the value -- an address, a router name -- in a
+   table or a list of records. Ink and a step heavier, no underline: the
+   column reads as data. It turns blue under the pointer, and when its row
+   is hovered, so the row shows what in it can be followed. */
+.value-link,
+td a:not(.btn) {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+}
+tr:hover td a:not(.btn), .value-link:hover {
+  color: var(--link);
+}
+td a:not(.btn):hover, .value-link:hover {
+  color: var(--link-hover);
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+}
+/* A record with no name of its own (no sysName TLV) still links, quieter. */
+td a.unnamed:not(:hover), .value-link.unnamed:not(:hover) { color: var(--muted); font-weight: 400; }
+
+/* An inline command or file name in running text. */
+code {
+  font: 400 .92em var(--font-data);
+  padding: 1px 5px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  /* A command is copied whole; broken across two lines it reads as two. */
+  white-space: nowrap;
+}
+
+/* A row of StatTiles whose labels, values and sub-lines line up across the
+   row. Each tile spans three rows of the grid and takes them as a subgrid,
+   so one tile whose label wraps ("Sessions · last 24 hours") moves every
+   tile's value down with it, rather than leaving its own value a line
+   lower than its neighbors'. Columns are the screen's to set. */
+.tile-grid { display: grid; gap: 12px; }
+.tile-grid > .tile {
+  grid-row: span 3;
+  display: grid;
+  grid-template-rows: subgrid;
+  row-gap: 0;
+  align-content: start;
+  min-width: 0;
+}

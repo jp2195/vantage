@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import EventKindMark from '@/components/EventKindMark.vue'
@@ -6,6 +7,7 @@ import ChurnChart from '@/components/ChurnChart.vue'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import AboutThis from '@/components/AboutThis.vue'
 import StatePill from '@/components/StatePill.vue'
 import StatTile from '@/components/StatTile.vue'
 import { bestVantageCount } from '@/lib/bestVantage'
@@ -86,6 +88,9 @@ function sectionKey(row: Peer): string {
  */
 const WINDOW = '24h'
 const WINDOW_LABEL = 'last 24 hours'
+/** The same window in a tile label, which has a sixth of the row: written
+ *  out, it wrapped two of the six labels and pushed their values down. */
+const WINDOW_SHORT = 'last 24h'
 
 // `session` is part of EventScope's shape but not part of the question this
 // screen asks: it wants the peer's history across whatever sessions the
@@ -323,13 +328,13 @@ const tiles = computed(() => {
   }
   out.push({
     key: 'sessions',
-    label: `Sessions · ${WINDOW_LABEL}`,
+    label: `Sessions · ${WINDOW_SHORT}`,
     value: formatCount(sessionCount.value),
     note: 'Distinct BMP sessions in this window, never the events inside them.',
   })
   out.push({
     key: 'flaps',
-    label: `Flaps · ${WINDOW_LABEL}`,
+    label: `Flaps · ${WINDOW_SHORT}`,
     value: formatCount(flapCount.value),
     note:
       'Times this session went down and came back inside the window. A ' +
@@ -339,7 +344,7 @@ const tiles = computed(() => {
   })
   out.push({
     key: 'view-lost',
-    label: `View lost · ${WINDOW_LABEL}`,
+    label: `View lost · ${WINDOW_SHORT}`,
     value: formatCount(viewLostCount.value),
     note:
       'Times a collector lost its own BMP transport while the router said ' +
@@ -406,9 +411,39 @@ const endpoints = computed(() => {
           </div>
         </div>
 
+        <!-- Where to go next from one peer. Each is a screen that already
+             takes this peer as its scope, so the link lands on an answer,
+             not on a picker. -->
+        <nav class="actions" aria-label="This peer elsewhere">
+          <RouterLink
+            class="action btn"
+            data-action="routes"
+            :to="{ path: '/routes', query: { router: peerRows[0].router_ip, peer: peerRows[0].peer_ip } }"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h8" /></svg>
+            Route table
+          </RouterLink>
+          <RouterLink
+            class="action btn"
+            data-action="history"
+            :to="{ path: '/session-history', query: { router: peerRows[0].router_ip, peer: peerRows[0].peer_ip } }"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg>
+            Session history
+          </RouterLink>
+          <RouterLink
+            class="action btn"
+            data-action="origin"
+            :to="{ path: '/looking-glass', query: { mode: 'asn', q: String(peerRows[0].asn) } }"
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 7a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0-9 0M10.5 10.5L14 14" /></svg>
+            Routes AS{{ peerRows[0].asn }} originates
+          </RouterLink>
+        </nav>
+
         <!-- Only the tiles with an answer behind them are shown, and
              each says which window it covers. -->
-        <div class="tiles">
+        <div class="tiles tile-grid">
           <StatTile
             v-for="t in tiles"
             :key="t.key"
@@ -479,7 +514,7 @@ const endpoints = computed(() => {
             <h2>Session history · {{ WINDOW_LABEL }}</h2>
             <ul class="events">
               <li v-for="(e, i) in recentEvents" :key="i" class="event">
-                <span class="mono when">{{ formatClock(e.ts_collector) }}</span>
+                <Clock class="when" :iso="e.ts_collector" />
                 <EventKindMark :kind="e.kind" />
                 <span class="mono why">{{ reasonDisplay(e) }}</span>
               </li>
@@ -508,9 +543,6 @@ const endpoints = computed(() => {
           <section class="panel" data-section="churn">
             <h2>
               Update churn · {{ WINDOW_LABEL }}
-              <span class="bucket">{{
-                churn.data.value?.meta?.churn_bucket ?? CHURN_BUCKET
-              }}</span>
             </h2>
             <p v-if="churn.error.value" class="error" role="alert">
               {{ churn.error.value.message }}
@@ -528,14 +560,16 @@ const endpoints = computed(() => {
             <h2>Most churn from this peer · {{ WINDOW_LABEL }}</h2>
             <!-- Said here because the ranking is not the obvious one, and a
                  reader who assumes it is will misread every row. -->
-            <p class="note">
-              Ranked by changes — re-advertisements and withdrawals — so a prefix
-              re-sent by a restarting session does not outrank one the network
-              actually moved. Observations counts every archived row, including
-              those dumps, which is why it does not match the order. Unicast
-              only: a prefix means one thing on route_unicast and something
-              else under a route distinguisher.
-            </p>
+            <AboutThis summary="How this is ranked">
+              <p class="note">
+                Ranked by changes — re-advertisements and withdrawals — so a prefix
+                re-sent by a restarting session does not outrank one the network
+                actually moved. Observations counts every archived row, including
+                those dumps, which is why it does not match the order. Unicast
+                only: a prefix means one thing on route_unicast and something
+                else under a route distinguisher.
+              </p>
+            </AboutThis>
             <DataTable
               :columns="prefixChurnColumns"
               :rows="prefixChurn.data.value?.data ?? []"
@@ -554,6 +588,7 @@ const endpoints = computed(() => {
       <!-- One section per rib row. The dump-state list is a per-rib fact (a
            peer can be dumping pre-policy and complete post-policy), so it
            belongs once per row. -->
+        <div class="rib-views">
         <section v-for="row in peerRows" :key="sectionKey(row)" class="rib-view">
           <h2 class="rib-label mono">{{ row.collector }} · {{ row.rib }}</h2>
 
@@ -571,6 +606,7 @@ const endpoints = computed(() => {
             </li>
           </ul>
         </section>
+        </div>
       </template>
 
       <!-- Every table's footer states completeness; this screen had been
@@ -589,22 +625,27 @@ const endpoints = computed(() => {
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
-.head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .states { display: flex; gap: 12px; }
 .state-of { display: inline-flex; align-items: center; gap: 6px; }
 .rib-tag { color: var(--muted); font-size: 10.5px; }
-.tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+.tiles { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+/* The ranked prefixes are a seven-column-wide table: in a third of the
+   row its numbers were clipped behind a scrollbar while two thirds of the
+   page beside it stood empty. */
+.panels > [data-section='churn-prefixes'] { grid-column: 1 / -1; }
 .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; }
 .panel {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
-h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
+h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 .facts { display: grid; grid-template-columns: auto 1fr; gap: 5px 12px; margin: 0; }
 .facts dt {
   color: var(--muted); text-transform: uppercase;
-  font: 600 9.5px var(--font-ui); letter-spacing: .07em; align-self: center;
+  font: 600 var(--text-label) var(--font-ui); letter-spacing: .07em; align-self: center;
 }
 .facts dd { margin: 0; color: var(--ink-2); font-size: 11.5px; text-align: right; }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -613,36 +654,32 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
   border-bottom: 1px solid var(--line-faint); font-size: 11px;
 }
 .event:last-child { border-bottom: 0; }
-.when { color: var(--faint); }
+.when { color: var(--muted); }
 .why { color: var(--muted); margin-left: auto; }
-.note { margin: 0; color: var(--muted); font: 400 11px var(--font-ui); }
-.link { color: var(--ink-2); }
-.rib-view { display: flex; flex-direction: column; gap: 8px; }
-/* A visible seam between two rib views of the same peer, not just
-   whitespace -- when peerRows has one row (the common case today) this
-   never renders, since there is only one .rib-view and no sibling above it
-   to draw the rule against. */
-.rib-view + .rib-view { padding-top: 12px; border-top: 1px solid var(--divider); }
+.note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+/* One card per rib view, side by side where they fit. They had floated
+   unstyled under the panels, which read as content that failed to load. */
+.rib-views { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 14px; }
+.rib-view {
+  display: flex; flex-direction: column; gap: 8px; padding: 14px 16px;
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
+}
 .rib-label {
-  margin: 0; padding: 1px 7px; align-self: flex-start; border-radius: 4px;
-  background: var(--neutral-chip); color: var(--muted); font: 500 10px var(--font-ui);
+  margin: 0; padding: 1px 7px; align-self: flex-start; border-radius: var(--radius-sm);
+  background: var(--neutral-chip); color: var(--muted); font: 500 var(--text-label) var(--font-ui);
   text-transform: uppercase; letter-spacing: .04em;
 }
-h3 { margin: 2px 0 0; font: 600 12px var(--font-ui); color: var(--ink-2); }
-.strip { display: flex; gap: 26px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+h3 { margin: 2px 0 0; font: 600 var(--text-sm) var(--font-ui); color: var(--ink-2); }
+.strip { display: flex; gap: 26px; padding: 12px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); }
 .stat { display: flex; flex-direction: column; gap: 5px; }
-.k { font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.k { font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .v { font: 500 15px var(--font-data); color: var(--ink); }
-.dumps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font: 400 12px var(--font-ui); }
+.dumps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font: 400 var(--text-sm) var(--font-ui); }
 .dumps li { display: flex; gap: 10px; align-items: center; }
-.dump { padding: 1px 7px; border-radius: 4px; font: 500 10px var(--font-ui); }
+.dump { padding: 1px 7px; border-radius: var(--radius-sm); font: 500 var(--text-label) var(--font-ui); }
 .complete { background: var(--good-tint); color: var(--good); }
-.dumping { background: var(--accent-tint); color: var(--accent-ink-2); }
-.error { margin: 0; color: var(--bad-2); font: 400 12px var(--font-ui); }
-.quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
+.dumping { background: var(--warn-tint); color: var(--warn-ink); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .descr { white-space: normal; line-height: 1.45; }
-.bucket {
-  margin-left: 7px; padding: 1px 6px; border-radius: 4px; background: var(--surface-2);
-  color: var(--muted); font: 400 10px var(--font-data); letter-spacing: .02em;
-}
 </style>

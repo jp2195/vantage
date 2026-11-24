@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import AboutThis from '@/components/AboutThis.vue'
 import { computed } from 'vue'
 import type { AsEdge, Graph } from '@/api/generated'
 import { HANDOFF_MAX_PX, NODE, round, settleGraph } from '@/lib/graphLayout'
@@ -261,14 +262,16 @@ const nodes = computed(() =>
       <span class="key"><i class="swatch appeared" />first seen in window</span>
       <span class="key"><i class="swatch withdrawn" />withdrawn</span>
       <span class="key"><i class="swatch stable" />stable</span>
-      <span class="says">
-        Line thickness is paths carried in this answer — how many of the matched routes cross
-        that adjacency. It is not how much traffic the link can carry, nor its preference,
-        stability or health. First seen dates the routes crossing an adjacency now, not the
-        adjacency: a route re-advertised with a new path brings its original timestamp to
-        whatever edge it crosses today, so a colored edge is not a claim that the adjacency
-        itself is new.
-      </span>
+      <AboutThis summary="How to read this graph">
+        <span class="says">
+          Line thickness is paths carried in this answer — how many of the matched routes cross
+          that adjacency. It is not how much traffic the link can carry, nor its preference,
+          stability or health. First seen dates the routes crossing an adjacency now, not the
+          adjacency: a route re-advertised with a new path brings its original timestamp to
+          whatever edge it crosses today, so a colored edge is not a claim that the adjacency
+          itself is new.
+        </span>
+      </AboutThis>
     </figcaption>
   </figure>
 </template>
@@ -286,7 +289,7 @@ const nodes = computed(() =>
    nodes or fewer still lays out on the project's 580-unit canvas, so its
    cap fell 640 -> 580 and every small graph -- which is every graph in
    this archive -- rendered 9.4% smaller than before, silently. */
-svg { width: 100%; height: auto; display: block; }
+svg { width: 100%; height: auto; display: block; margin-inline: auto; }
 
 .edge { stroke: var(--faint); }
 .edge.appeared { stroke: var(--good); }
@@ -296,9 +299,9 @@ svg { width: 100%; height: auto; display: block; }
 .node rect { fill: var(--surface); stroke: var(--line-2); }
 .node:focus-visible rect { stroke: var(--ink); stroke-width: 1.5; }
 .node .asn { font: 500 12.5px var(--font-data); fill: var(--ink); text-anchor: middle; }
-.node .role { font: 400 10.5px var(--font-ui); fill: var(--muted); text-anchor: middle; }
+.node .role { font: 400 var(--text-sm) var(--font-ui); fill: var(--muted); text-anchor: middle; }
 
-.legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font: 400 10.5px var(--font-ui); color: var(--muted); }
+.legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .key { display: flex; align-items: center; gap: 6px; }
 .swatch { width: 14px; height: 3px; display: block; background: var(--faint); }
 .swatch.appeared { background: var(--good); }

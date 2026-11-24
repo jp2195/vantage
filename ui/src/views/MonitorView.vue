@@ -1,13 +1,14 @@
 <script setup lang="ts">
+import Clock from '@/components/Clock.vue'
 import { computed, ref } from 'vue'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import EventKindMark from '@/components/EventKindMark.vue'
 import ChurnChart from '@/components/ChurnChart.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import AboutThis from '@/components/AboutThis.vue'
 import StatePill from '@/components/StatePill.vue'
 import StatTile from '@/components/StatTile.vue'
 import WindowPicker from '@/components/WindowPicker.vue'
-import { formatClock } from '@/lib/formatClock'
 import { formatCount } from '@/lib/formatCount'
 import { formatRate } from '@/lib/formatRate'
 import { bestVantageRouters } from '@/lib/bestVantage'
@@ -107,6 +108,24 @@ const churn = useCollectionChurn(since, churnBucket)
 // rather than server-side keeps each one answerable on its own.
 const churnPeers = useCollectionChurnPeers(since)
 const joinPeers = usePeers(ref(undefined), ref(undefined))
+
+/**
+ * The sessions the tiles count as not up, as rows you can open. "3 view
+ * lost" says how many; this says which. Worst first, the same order Peers
+ * sorts its State column by, and capped so a bad day cannot push the rest
+ * of the screen away: the remainder is one link to Peers.
+ *
+ * From /v1/peers, which is NOW, not the window: a session that went down
+ * and came back inside the hour is not listed, and the Sessions breakdown
+ * below is where the window's history lives.
+ */
+const ATTENTION_ORDER: Record<string, number> = { view_lost: 0, down: 1, stale: 2, unspecified: 3 }
+const ATTENTION_CAP = 8
+const attention = computed(() =>
+  (joinPeers.data.value?.data ?? [])
+    .filter((p) => p.state !== 'up')
+    .sort((a, b) => (ATTENTION_ORDER[a.state] ?? 9) - (ATTENTION_ORDER[b.state] ?? 9)),
+)
 
 /**
  * /v1/peers rows grouped by (router, peer) -- BOTH, never peer_ip alone.
@@ -214,7 +233,7 @@ const churnPeerColumns: Column<RankedPeer>[] = [
   // 12% for the ASN: 8% of a 641px panel is 51px, which clips even 65010,
   // and a 4-byte AS is ten digits.
   { id: 'peer_asn', header: 'ASN', numeric: true, width: '12%' },
-  { id: 'peer_ip', header: 'Peer', width: '20%' },
+  { id: 'peer_ip', header: 'Peer', width: '20%', mono: true },
   { id: 'router_sysname', header: 'Router', width: '18%' },
   { id: 'routes', header: 'Prefixes', numeric: true, width: '12%' },
   { id: 'changes_per_second', header: 'Archived/s', numeric: true, width: '12%' },
@@ -371,7 +390,7 @@ const tiles = computed(() => {
       // the per-row one, and composition is not a verdict.
       sub: `${formatCount(dt.dumps)} dumps · ${formatCount(dt.changes)} changes`,
       note:
-        'A dump is a router re-sending a route after its BMP session reset -- ' +
+        'A dump is a router re-sending a route after its BMP session reset — ' +
         'ordinary behavior, not a fault. This is what the window\'s archived rows ' +
         'are composed of.',
     })
@@ -454,8 +473,8 @@ const sessionColumns: Column<RouterSessionCount>[] = [
 // a 1366px viewport's panel, so the link was cut off. 38% is 213px at the
 // floor. Router is one address, 98px; the numeric headers need 93px.
 const locribColumns: Column<PeerLocRib>[] = [
-  { id: 'router_ip', header: 'Router', width: '26%' },
-  { id: 'peer_ip', header: 'Peer', width: '38%' },
+  { id: 'router_ip', header: 'Router', width: '26%', mono: true },
+  { id: 'peer_ip', header: 'Peer', width: '38%', mono: true },
   { id: 'reported', header: 'Reported', numeric: true, width: '18%' },
   { id: 'archived', header: 'Archived', numeric: true, width: '18%' },
 ]
@@ -464,6 +483,23 @@ const flagColumns: Column<FlagCount>[] = [
   { id: 'flag', header: 'Flag' },
   { id: 'envelopes', header: 'Envelopes', numeric: true },
 ]
+
+const BREAKDOWNS = [
+  { key: 'dumps', label: 'Dumps' },
+  { key: 'sessions', label: 'Sessions' },
+  { key: 'locrib', label: 'Loc-RIB' },
+  { key: 'flags', label: 'Parse flags' },
+] as const
+type Breakdown = (typeof BREAKDOWNS)[number]['key']
+const breakdown = ref<Breakdown>('dumps')
+
+/** Arrow keys move between tabs, the WAI-ARIA tabs pattern. */
+function stepBreakdown(by: 1 | -1) {
+  const i = BREAKDOWNS.findIndex((t) => t.key === breakdown.value)
+  const next = BREAKDOWNS[(i + by + BREAKDOWNS.length) % BREAKDOWNS.length]
+  breakdown.value = next.key
+  document.getElementById(`tab-${next.key}`)?.focus()
+}
 </script>
 
 <template>
@@ -484,7 +520,7 @@ const flagColumns: Column<FlagCount>[] = [
     <!-- Four measured signals, no verdict: the tiles state totals their own
          answers carried, and the claim each number must be read with is on
          the tile itself (StatTile's `note`). -->
-    <div class="tiles">
+    <div class="tiles tile-grid">
       <StatTile
         v-for="t in tiles"
         :key="t.key"
@@ -500,6 +536,24 @@ const flagColumns: Column<FlagCount>[] = [
          is the SHAPE of the window and the event feed is what made that
          shape, so the two are read together rather than a scroll apart,
          or the chart reads as a silhouette. -->
+    <section v-if="attention.length" class="panel attention" data-section="attention">
+      <div class="panel-head">
+        <h2>Needs attention <span class="mono count">{{ attention.length }}</span></h2>
+        <RouterLink class="more" to="/peers">All peers</RouterLink>
+      </div>
+      <p class="note">Sessions that are not up right now, worst first.</p>
+      <ul class="attention-list">
+        <li v-for="p in attention.slice(0, ATTENTION_CAP)" :key="`${p.collector}|${p.router_ip}|${p.peer_ip}|${p.rib}`">
+          <StatePill :state="p.state" />
+          <RouterLink class="mono value-link" :to="`/peers/${p.router_ip}/${p.peer_ip}`">{{ p.peer_ip }}</RouterLink>
+          <span class="where">on <span class="mono">{{ p.router_ip }}</span> · {{ p.rib }} · AS{{ p.asn }} · {{ p.collector }}</span>
+        </li>
+      </ul>
+      <p v-if="attention.length > ATTENTION_CAP" class="note">
+        and {{ attention.length - ATTENTION_CAP }} more on <RouterLink to="/peers">Peers</RouterLink>
+      </p>
+    </section>
+
     <div class="churn-row" data-row="churn">
     <section class="panel" data-section="churn">
       <h2>Update churn</h2>
@@ -526,15 +580,17 @@ const flagColumns: Column<FlagCount>[] = [
     </section>
 
     <section class="panel" data-section="events">
-      <h2>Recent peer events</h2>
+      <div class="panel-head">
+        <h2>Recent peer events</h2>
+        <RouterLink class="more" to="/events">All events</RouterLink>
+      </div>
       <!-- The collector is named on the row rather than only here, but the
            note has to say WHAT that id at the end of a row is: a feed has
            no column header to carry the word the Peers and Events tables
            put above the same value. -->
       <p class="note">
-        The newest {{ recentEvents.length }} of this window, fleet-wide, each
-        with the collector that saw it.
-        <RouterLink class="link" to="/events">All events</RouterLink>
+        Newest first, fleet-wide. The last column is the collector that saw
+        each one.
       </p>
       <ul class="events">
         <!-- Two lines, not one, because this panel now sits in a rail
@@ -545,7 +601,7 @@ const flagColumns: Column<FlagCount>[] = [
              (lib/eventReason.ts: the kind decides). -->
         <li v-for="(e, i) in recentEvents" :key="i" class="event">
           <span class="line">
-            <span class="mono when">{{ formatClock(e.ts_collector) }}</span>
+            <Clock class="when" :iso="e.ts_collector" today />
             <EventKindMark :kind="e.kind" />
             <span class="who mono">{{ e.router_sysname || e.router_ip }} · {{ e.peer_ip }}</span>
             <!-- WHOSE view this row is. /v1/events is one row per
@@ -559,9 +615,9 @@ const flagColumns: Column<FlagCount>[] = [
           </span>
           <span v-if="hasDownReason(e)" class="why mono" data-why>{{ reasonDisplay(e) }}</span>
         </li>
-        <li v-if="!recentEvents.length" class="quiet">
-          No peer event in the {{ windowLabel }}. An empty list here is an
-          answer -- the window held no session change -- not a missing feed.
+        <li v-if="!recentEvents.length" class="feed-empty">
+          <strong>No peer events in the {{ windowLabel }}.</strong>
+          <span>No session went up or down. This is an answer, not a missing feed.</span>
         </li>
       </ul>
     </section>
@@ -580,17 +636,20 @@ const flagColumns: Column<FlagCount>[] = [
            STORED inside the window; a BGP speaker's own update rate is not
            observable from a BMP archive, and reporting one would treat a
            collection artifact as a network fact. -->
-      <p class="note" data-churn-peers-note>
-        Ranked by changes archived — re-advertisements and withdrawals, not
-        session dumps, so a peer whose session restarted once does not outrank
-        a busy one. Archived/s is rows this collector stored per second over
-        {{ windowLabel }}, which is a collection rate and not the router's
-        update rate.
-      </p>
+      <AboutThis summary="What Archived/s measures">
+        <p class="note" data-churn-peers-note>
+          Ranked by changes archived — re-advertisements and withdrawals, not
+          session dumps, so a peer whose session restarted once does not outrank
+          a busy one. Archived/s is rows this collector stored per second over
+          {{ windowLabel }}, which is a collection rate and not the router's
+          update rate.
+        </p>
+      </AboutThis>
       <DataTable
         :columns="churnPeerColumns"
         :rows="churnPeerRows"
         :meta="churnPeers.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="churnPeers.isPending.value"
         :error="churnPeers.error.value ?? undefined"
         :min-width="WIDE_TABLE_MIN_WIDTH"
@@ -600,10 +659,10 @@ const flagColumns: Column<FlagCount>[] = [
             class="mono link"
             :to="`/peers/${(row as RankedPeer).router_ip}/${(row as RankedPeer).peer_ip}`"
           >{{ (row as RankedPeer).peer_ip }}</RouterLink>
-          <RouterLink class="history" :to="historyOf(row as RankedPeer)">history</RouterLink>
+          <RouterLink class="history" :to="historyOf(row as RankedPeer)" :title="`Session history for ${(row as RankedPeer).peer_ip}`"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg><span class="sr-only">Session history</span></RouterLink>
         </template>
         <template #cell-router_sysname="{ row }">
-          <RouterLink class="link" :to="peersOf(row as RankedPeer)">{{
+          <RouterLink class="link" :class="{ unnamed: !(row as RankedPeer).router_sysname }" :to="peersOf(row as RankedPeer)">{{
             (row as RankedPeer).router_sysname || '(no sysName TLV)'
           }}</RouterLink>
         </template>
@@ -633,12 +692,35 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
+    <!-- Four breakdowns of the same window, one at a time. Side by side
+         they made this screen four tables tall; as tabs, the summary above
+         stays on screen with whichever breakdown you are reading. Hidden
+         ones stay mounted (v-show), so switching costs no refetch. -->
+    <div class="breakdowns">
+    <div class="tabs" role="tablist" aria-label="Breakdowns">
+      <button
+        v-for="t in BREAKDOWNS"
+        :id="`tab-${t.key}`"
+        :key="t.key"
+        type="button"
+        role="tab"
+        class="tab"
+        :aria-selected="breakdown === t.key"
+        :aria-controls="`panel-${t.key}`"
+        :tabindex="breakdown === t.key ? 0 : -1"
+        @click="breakdown = t.key"
+        @keydown.right.prevent="stepBreakdown(1)"
+        @keydown.left.prevent="stepBreakdown(-1)"
+      >
+        {{ t.label }}
+      </button>
+    </div>
     <div class="panels">
-    <section class="panel" data-section="dumps">
+    <section v-show="breakdown === 'dumps'" id="panel-dumps" class="panel" data-section="dumps" role="tabpanel" aria-labelledby="tab-dumps">
       <h2>Dumps</h2>
       <p
         class="note"
-        title="A dump is a router re-sending a route it already sent, because its BMP session reset -- ordinary BMP behavior, not a fault. This column says what the window's archived rows are composed of; it is not an error state and not a ranking."
+        title="A dump is a router re-sending a route it already sent, because its BMP session reset — ordinary BMP behavior, not a fault. This column says what the window's archived rows are composed of; it is not an error state and not a ranking."
       >
         A dump is a session reset re-sending routes: composition, not a fault.
       </p>
@@ -646,13 +728,14 @@ const flagColumns: Column<FlagCount>[] = [
         :columns="dumpColumns"
         :rows="dumpRows"
         :meta="dumps.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="dumps.isPending.value"
         :error="dumps.error.value ?? undefined"
         :min-width="PANEL_TABLE_MIN_WIDTH"
         :row-attrs="dumpRowAttrs"
       >
         <template #cell-router_sysname="{ row }">
-          <RouterLink class="link" :to="peersOf(row as RouterDumpCount)">{{
+          <RouterLink class="link" :class="{ unnamed: !(row as RouterDumpCount).router_sysname }" :to="peersOf(row as RouterDumpCount)">{{
             sysnameOf(row as RouterDumpCount)
           }}</RouterLink>
         </template>
@@ -667,11 +750,11 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
-    <section class="panel" data-section="sessions">
+    <section v-show="breakdown === 'sessions'" id="panel-sessions" class="panel" data-section="sessions" role="tabpanel" aria-labelledby="tab-sessions">
       <h2>Sessions</h2>
       <p
         class="note"
-        title="Sessions counts distinct BMP sessions, never events -- one session can carry many peer events. down is the router stating, on the wire, that a session ended. view_lost is the collector losing its own BMP transport while the router said nothing at all. The two are never summed."
+        title="Sessions counts distinct BMP sessions, never events — one session can carry many peer events. down is the router stating, on the wire, that a session ended. view_lost is the collector losing its own BMP transport while the router said nothing at all. The two are never summed."
       >
         Distinct sessions, never events. <EventKindMark kind="down" /> is the
         router's statement; <EventKindMark kind="view_lost" /> is the
@@ -681,30 +764,33 @@ const flagColumns: Column<FlagCount>[] = [
         :columns="sessionColumns"
         :rows="sessionRows"
         :meta="sessions.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="sessions.isPending.value"
         :error="sessions.error.value ?? undefined"
         :min-width="PANEL_TABLE_MIN_WIDTH"
         :row-attrs="sessionRowAttrs"
       >
         <template #cell-router_sysname="{ row }">
-          <RouterLink class="link" :to="peersOf(row as RouterSessionCount)">{{
+          <RouterLink class="link" :class="{ unnamed: !(row as RouterSessionCount).router_sysname }" :to="peersOf(row as RouterSessionCount)">{{
             sysnameOf(row as RouterSessionCount)
           }}</RouterLink>
         </template>
       </DataTable>
     </section>
 
-    <section class="panel" data-section="locrib">
+    <section v-show="breakdown === 'locrib'" id="panel-locrib" class="panel" data-section="locrib" role="tabpanel" aria-labelledby="tab-locrib">
       <h2>Loc-RIB</h2>
-      <p class="note" data-locrib-note>
-        A gap is not proof of loss: most peers send adj-RIB-in, and RFC 9069
-        Loc-RIB monitoring is a separate capability most routers do not
-        enable. A peer that never sent the stat reads "no stat", never a
-        reported gap of 0; the window scopes reported only. Archived counts
-        the peer's live Loc-RIB routes in its router's current BMP session,
-        never what a superseded session left behind, so widening the window
-        never adds an archived route.
-      </p>
+      <AboutThis summary="What a gap here means">
+        <p class="note" data-locrib-note>
+          A gap is not proof of loss: most peers send adj-RIB-in, and RFC 9069
+          Loc-RIB monitoring is a separate capability most routers do not
+          enable. A peer that never sent the stat reads "no stat", never a
+          reported gap of 0; the window scopes reported only. Archived counts
+          the peer's live Loc-RIB routes in its router's current BMP session,
+          never what a superseded session left behind, so widening the window
+          never adds an archived route.
+        </p>
+      </AboutThis>
       <DataTable
         :columns="locribColumns"
         :rows="locribRows"
@@ -718,7 +804,7 @@ const flagColumns: Column<FlagCount>[] = [
             class="mono link"
             :to="`/peers/${(row as PeerLocRib).router_ip}/${(row as PeerLocRib).peer_ip}`"
           >{{ (row as PeerLocRib).peer_ip }}</RouterLink>
-          <RouterLink class="history" :to="historyOf(row as PeerLocRib)">history</RouterLink>
+          <RouterLink class="history" :to="historyOf(row as PeerLocRib)" :title="`Session history for ${(row as PeerLocRib).peer_ip}`"><svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8a6 6 0 1 0 12 0a6 6 0 1 0-12 0M8 4.8V8l2.2 1.6" /></svg><span class="sr-only">Session history</span></RouterLink>
         </template>
         <template #cell-reported="{ row }">
           <span v-if="!(row as PeerLocRib).has_stat" data-no-stat>no stat</span>
@@ -727,12 +813,12 @@ const flagColumns: Column<FlagCount>[] = [
       </DataTable>
     </section>
 
-    <section class="panel" data-section="flags">
+    <section v-show="breakdown === 'flags'" id="panel-flags" class="panel" data-section="flags" role="tabpanel" aria-labelledby="tab-flags">
       <h2>Parse flags</h2>
       <p
         class="note"
         data-flags-note
-        title="A flag counted in this window may describe a bug already fixed before the window even opened -- never read this count as a current diagnosis."
+        title="A flag counted in this window may describe a bug already fixed before the window even opened — never read this count as a current diagnosis."
       >
         Parse flags are historical: the count records the decoder as it stood
         when the row was written, never the current one.
@@ -741,23 +827,26 @@ const flagColumns: Column<FlagCount>[] = [
         :columns="flagColumns"
         :rows="flagRows"
         :meta="flags.data.value?.meta"
+        :empty-hint="`Nothing in the ${windowLabel}.`"
         :loading="flags.isPending.value"
         :error="flags.error.value ?? undefined"
         :min-width="PANEL_TABLE_MIN_WIDTH"
       />
     </section>
     </div>
+    </div>
   </section>
 </template>
 
 <style scoped>
-.screen { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; container: monitor / inline-size; }
 /* Wraps so that on a phone the window picker drops under the title rather
    than running past the screen's right edge. */
 .head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; }
-h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
-.window-note { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
-.tiles { display: flex; flex-wrap: wrap; gap: 12px; }
+h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
+.window-note { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@container monitor (max-width: 880px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .wide { margin-bottom: 0; }
 /* The chart gets the wider share because it is the only mark on this screen
    whose x axis is time: at 1.7:1 on a 1920px display the plot is ~1140px,
@@ -765,18 +854,21 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
    One column below 1040px, where the feed's own rows start wrapping --
    measured in a browser, not chosen: the feed needs ~330px for a clock, a
    kind, a router/peer pair and a reason, and the grid's own note records
-   620px as the narrowest a table on this screen reads at. */
+   620px as the narrowest a table on this screen reads at.
+   A container query on the screen, not a media query on the viewport: the
+   sidebar takes 228px of the viewport, so the 1040px viewport this was
+   measured at is a 992px screen (1040 less the old 24px side padding). */
 .churn-row { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px; }
 /* minmax(0, 1fr), not 1fr: a bare 1fr track cannot shrink below its
    content's min-content width, and on a 390px phone the event feed's
    one-line rows held it at 422px, so the whole page scrolled sideways. */
-@media (max-width: 1040px) { .churn-row { grid-template-columns: minmax(0, 1fr); } }
+@container monitor (max-width: 992px) { .churn-row { grid-template-columns: minmax(0, 1fr); } }
 /* And an event's line may wrap there, so that the clock, kind, pair and
    collector need not share one line on a phone. Only below the same
    breakpoint: on a desktop the pair already wraps inside its own span, and
    letting the whole line wrap too would move the collector id under the
    clock on the rows with an IPv6 peer. */
-@media (max-width: 1040px) { .line { flex-wrap: wrap; } }
+@container monitor (max-width: 992px) { .line { flex-wrap: wrap; } }
 /* Two columns where there is room, so the four signals and the event feed
    read as one dashboard rather than a stack four screens tall. */
 /* 620px is the narrowest a five-column table on this screen reads at
@@ -785,9 +877,28 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
    was as much of a flag name as fit. Two columns on a laptop, three on a
    wide display, one below 620. */
 .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(620px, 100%), 1fr)); gap: 14px; }
+/* One breakdown at a time, so it takes the full width. */
+.breakdowns .panels { grid-template-columns: minmax(0, 1fr); }
+.breakdowns .panel { border-top-left-radius: 0; border-top-right-radius: 0; }
+/* The tab already names the panel; its h2 stays for screen readers, which
+   announce the panel by it. */
+.breakdowns .panel > h2 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.tabs {
+  display: flex; gap: var(--space-6); padding: 0 14px; overflow-x: auto;
+  border: 1px solid var(--line); border-bottom: 0; background: var(--surface);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+.tab {
+  border: 0; background: none; padding: 0 2px; min-height: 40px; cursor: pointer; white-space: nowrap;
+  font: 500 var(--text-body) var(--font-ui); color: var(--muted);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tab:hover { color: var(--ink); }
+.tab[aria-selected='true'] { color: var(--ink); border-bottom-color: var(--focus); }
+.tab:focus-visible { outline-offset: -2px; }
 .panel {
   display: flex; flex-direction: column; gap: 8px; padding: 12px 14px;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
 .events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .event {
@@ -799,16 +910,18 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 /* The events panel's empty line had no rule of its own and inherited the
    body's 14px inside an 11px panel -- visible in a browser, invisible to
    every test, since jsdom computes no styles. */
-.events .quiet { padding: 7px 0; color: var(--muted); font: 400 11px var(--font-ui); }
+.events .quiet { padding: 7px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* The one span that must never wrap: a broken timestamp reads as two
    events, which is what the rail did before the row became two lines. */
-.when { color: var(--faint); white-space: nowrap; }
-.who { color: var(--ink-2); }
+.when { color: var(--muted); white-space: nowrap; }
+/* Shrinks and wraps inside itself, so a long IPv6 pair cannot push the
+   collector id past the card edge. */
+.who { color: var(--ink-2); flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .seen { margin-left: auto; padding-left: 10px; color: var(--muted); white-space: nowrap; }
 /* Indented under the row it explains, so a reason cannot be read as the
    next event's own line. */
 .why { color: var(--muted); padding-left: 14px; }
-.note { margin: 0; max-width: 84ch; color: var(--muted); font: 400 11px var(--font-ui); }
+.note { margin: 0; max-width: 84ch; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 /* Deliberately no color, no weight, no threshold-based class: a dump
    ratio describes composition, not a fault. See dumpCompositionPct's
    own comment. */
@@ -816,6 +929,36 @@ h2 { margin: 0; font: 600 13px var(--font-ui); color: var(--ink); }
 /* PeersView.vue's own link convention, not a second one. `history` is a
    secondary destination beside the peer address, so it reads as the
    quieter of the two rather than competing with it. */
-.link { color: var(--ink-2); }
-.history { margin-left: 7px; color: var(--muted); font: 400 11px var(--font-ui); }
+/* An icon, not the word: after a long IPv6 peer, "history" was the part
+   the column cut off. The name is still there for a screen reader and on
+   hover. */
+.history {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; margin-left: 4px;
+  vertical-align: middle; border-radius: var(--radius-sm); color: var(--muted);
+}
+.history:hover { color: var(--link); background: var(--surface-2); }
+.history svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+.panel-head h2 { margin: 0; }
+.feed-empty {
+  display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; text-align: center;
+  padding: 28px 16px; border: 1px dashed var(--line-2); border-radius: var(--radius-md);
+  color: var(--muted); font: 400 var(--text-sm) / 1.5 var(--font-ui);
+}
+.feed-empty strong { color: var(--ink-2); font-weight: 500; font-size: var(--text-body); }
+.attention .count { margin-left: 6px; color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
+.panel-head .more { font: 500 var(--text-sm) var(--font-ui); text-decoration: none; white-space: nowrap; }
+.panel-head .more:hover { text-decoration: underline; }
+.attention-list {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 0 var(--space-6);
+}
+.attention-list li {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px;
+  padding: var(--space-2) 0; border-top: 1px solid var(--line-faint); font: 400 var(--text-data) var(--font-ui);
+}
+.attention-list .where { color: var(--muted); font-size: var(--text-sm); }
+/* A router with no sysName: the placeholder reads as one (controls.css
+   mutes it; italic as on Routers and Events). */
+.unnamed { font-style: italic; }
 </style>

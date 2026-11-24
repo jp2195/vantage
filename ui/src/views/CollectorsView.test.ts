@@ -367,11 +367,13 @@ describe('CollectorsView', () => {
     expect(bars).toHaveLength(BUSY_ROWS.length)
 
     // Widths and x positions: five equal one-minute slots across the 0..100
-    // viewBox, each bar inset by 0.4 from its own slot.
+    // viewBox, each bar inset by 0.4 from its own slot -- except a minute
+    // with no rows, which fills its slot so a run of them draws as one
+    // continuous floor rather than a dashed rule.
     const slot = 100 / BUSY_ROWS.length
     bars.forEach((bar, i) => {
       expect(Number(bar.attributes('x'))).toBeCloseTo(i * slot, 5)
-      expect(Number(bar.attributes('width'))).toBeCloseTo(slot - 0.4, 5)
+      expect(Number(bar.attributes('width'))).toBeCloseTo(BUSY_ROWS[i] ? slot - 0.4 : slot, 5)
     })
 
     // Heights, against the PEAK (40 rows, the middle bucket) and not

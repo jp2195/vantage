@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import PathGraph from '@/components/PathGraph.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import CodeText from '@/components/CodeText.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import ScopePicker from '@/components/ScopePicker.vue'
 import { useAsNames, useTopology, type TopologyScope } from '@/api/queries'
@@ -102,12 +104,88 @@ const { data, error } = useTopology(scope)
 // rather than reinterpreting it. Without this, switching to "from a peer"
 // would leave the previous prefix's graph on screen under a picker that names
 // no peer -- an answer to a question the screen is no longer asking.
-watch(mode, () => {
+//
+// A function the buttons call rather than a watcher on `mode`: restoring a
+// link sets the mode AND the scope in one go, and a watcher would run after
+// both and throw the restored scope away.
+function setMode(m: Mode) {
+  if (mode.value === m) return
+  mode.value = m
   scope.value = undefined
   selectedAsn.value = undefined
-})
+  // The URL is left alone: it names the last graph DRAWN, and switching the
+  // form's shape draws nothing. Rewriting it here would replace that graph's
+  // history entry, so back from the next search would land on an empty form
+  // instead of the graph before it.
+}
 
-function submit() {
+const route = useRoute()
+const router = useRouter()
+
+/**
+ * The URL carries the question that was ASKED -- the scope -- never the
+ * half-typed form. The same keys Looking glass uses (mode, q, covers,
+ * inPath), so a link built for one screen reads the same on the other, plus
+ * router and peer for the third mode and the family on screen.
+ */
+function currentQuery(): Record<string, string> {
+  const q: Record<string, string> = { mode: mode.value }
+  const s = scope.value
+  if (!s) return q
+  if (s.prefix !== undefined) q.q = s.prefix
+  if (s.covers !== undefined) {
+    q.q = s.covers
+    q.covers = '1'
+  }
+  if (s.origin_asn !== undefined) q.q = String(s.origin_asn)
+  if (s.through_asn !== undefined) {
+    q.q = String(s.through_asn)
+    q.inPath = '1'
+  }
+  if (s.router !== undefined && s.peer !== undefined) {
+    q.router = s.router
+    q.peer = s.peer
+  }
+  if (family.value !== 'unicast') q.family = family.value
+  return q
+}
+
+const asString = (v: unknown) => (typeof v === 'string' ? v : undefined)
+
+/** True when the address bar already says exactly what this screen is showing. */
+function urlMatchesState(): boolean {
+  const want = currentQuery()
+  const have = route.query
+  const keys = new Set([...Object.keys(want), ...Object.keys(have)])
+  for (const k of keys) if (want[k] !== have[k]) return false
+  return true
+}
+
+/** The picker's seed in peer mode: the pair a link named, if it named one. */
+const seededRouter = computed(() => (mode.value === 'peer' ? asString(route.query.router) : undefined))
+const seededPeer = computed(() => (mode.value === 'peer' ? asString(route.query.peer) : undefined))
+
+// Applied on setup AND whenever the query changes underneath us, for the
+// reason LookingGlassView.vue gives: a query-only navigation (the back button)
+// reuses this component, so reading the URL only at setup would leave the
+// address bar naming one graph while the screen draws another.
+function applyQuery() {
+  const q = route.query
+  const seededMode = asString(q.mode)
+  mode.value = seededMode === 'asn' || seededMode === 'peer' ? seededMode : 'prefix'
+  covers.value = q.covers === '1'
+  inPath.value = q.inPath === '1'
+  const seededFamily = asString(q.family)
+  family.value = FAMILIES.find((f) => f.key === seededFamily)?.key ?? 'unicast'
+  selectedAsn.value = undefined
+  // Peer mode's scope arrives from the picker once it has resolved the
+  // seeded pair, exactly as on Routes; nothing to set here.
+  term.value = mode.value === 'peer' ? '' : (asString(q.q) ?? '')
+  if (mode.value !== 'peer' && term.value.trim()) submit({ fromUrl: true })
+  else scope.value = undefined
+}
+
+function submit(opts: { fromUrl?: boolean } = {}) {
   const v = term.value.trim()
   if (!v) return
   if (mode.value === 'prefix') {
@@ -123,6 +201,9 @@ function submit() {
     scope.value = inPath.value ? { through_asn: asn } : { origin_asn: asn }
   }
   selectedAsn.value = undefined
+  // A drawn graph is a new question, so it gets a history entry; arriving by
+  // a link is not one.
+  if (!opts.fromUrl && !urlMatchesState()) router.push({ query: currentQuery() })
 }
 
 /**
@@ -139,6 +220,14 @@ function submit() {
 function onPeerScope(s: { router: string; peer: string; session: string } | undefined) {
   scope.value = s ? { router: s.router, peer: s.peer } : undefined
   selectedAsn.value = undefined
+  syncPeerUrl(s)
+}
+
+// Only a resolved pair reaches the URL, as a question asked. "No scope" never
+// does: the picker emits it at mount and after a back-button re-seed, before
+// /v1/peers has answered, and the URL names the last graph drawn either way.
+function syncPeerUrl(s: { router: string; peer: string } | undefined) {
+  if (s && !urlMatchesState()) router.push({ query: currentQuery() })
 }
 
 /**
@@ -261,6 +350,25 @@ const selectedEdges = computed(() => {
 function select(asn: number) {
   selectedAsn.value = asn
 }
+
+applyQuery()
+
+// Both watchers act only when the URL and the screen disagree, which is what
+// keeps them from chasing each other.
+watch(
+  () => route.query,
+  () => {
+    if (urlMatchesState()) return
+    applyQuery()
+  },
+)
+
+// The family changes what you are looking AT, not what was asked: replace
+// keeps it in a shareable link without spending a history entry per click.
+watch(family, () => {
+  if (!scope.value || urlMatchesState()) return
+  router.replace({ query: currentQuery() })
+})
 </script>
 
 <template>
@@ -270,24 +378,27 @@ function select(asn: number) {
          over history, and the graph's own note says the same at length. -->
     <ScreenHeader title="AS paths" :eyebrow="['all collectors', 'live rib']" />
 
+    <!-- One card around the question, whichever mode asks it: the form for
+         a prefix or an AS, the pickers for a peer. -->
+    <div class="ask">
     <form class="scope" @submit.prevent="submit()">
-      <div class="modes">
+      <div class="modes seg" role="group" aria-label="Draw">
         <button
           type="button"
           data-mode="prefix"
           :class="{ on: mode === 'prefix' }"
-          @click="mode = 'prefix'"
+          @click="setMode('prefix')"
         >
           For a prefix
         </button>
-        <button type="button" data-mode="asn" :class="{ on: mode === 'asn' }" @click="mode = 'asn'">
+        <button type="button" data-mode="asn" :class="{ on: mode === 'asn' }" @click="setMode('asn')">
           Around an AS
         </button>
         <button
           type="button"
           data-mode="peer"
           :class="{ on: mode === 'peer' }"
-          @click="mode = 'peer'"
+          @click="setMode('peer')"
         >
           From a peer
         </button>
@@ -301,7 +412,7 @@ function select(asn: number) {
         />
         <label v-if="mode === 'prefix'"><input v-model="covers" type="checkbox" /> covering</label>
         <label v-else><input v-model="inPath" type="checkbox" /> in path</label>
-        <button type="submit">Draw</button>
+        <button type="submit" class="btn primary">Draw</button>
       </template>
     </form>
 
@@ -312,20 +423,27 @@ function select(asn: number) {
          is a stronger position than being unable to offer one: since
          2026-09-20 every count here deduplicates on the route identity with the
          collector removed, so a dual-homed router's graph is not doubled. -->
-    <ScopePicker v-if="mode === 'peer'" :pins-collector="false" @scope="onPeerScope">
+    <ScopePicker
+      v-if="mode === 'peer'"
+      :router="seededRouter"
+      :peer="seededPeer"
+      :pins-collector="false"
+      @scope="onPeerScope"
+    >
       <template #ambiguous>
         Both collectors' observations feed this one graph, which counts route
         identities rather than collector copies — so nothing here is doubled
         by the second collector.
       </template>
     </ScopePicker>
+    </div>
 
     <!-- Nothing is answered until something is asked. /v1/topology refuses an
          unscoped request outright -- its 400 says the alternative "would draw
          every route in the archive as one graph" -- and an empty graph pane
          rendered before a scope exists would claim this scope reaches no AS,
          about a question nobody asked. -->
-    <p v-if="!scope" class="quiet">
+    <p v-if="!scope" class="empty-state">
       Name a prefix, an AS, or a router and peer, to draw the graph their routes form.
     </p>
 
@@ -340,7 +458,7 @@ function select(asn: number) {
       <p v-else-if="!graph" class="quiet">loading…</p>
 
       <template v-else-if="graph">
-        <div class="families">
+        <div class="families seg" role="group" aria-label="Address family">
           <button
             v-for="f in FAMILIES"
             :key="f.key"
@@ -383,7 +501,7 @@ function select(asn: number) {
                same one every time. This re-seeds PathGraph's starting
                positions, which is the only nondeterminism the simulation
                has. -->
-          <button type="button" data-relayout @click="seed++">Re-layout</button>
+          <button type="button" class="btn small" data-relayout @click="seed++">Re-layout</button>
         </div>
 
         <!-- The family's own two counts. A third number like
@@ -409,7 +527,7 @@ function select(asn: number) {
              branches are mutually exclusive facts, and neither prints
              before the batch has answered: no answer yet is not "not
              loaded" -- see @/lib/asname.ts. -->
-        <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice>{{ asNamesLoadNotice }}</p>
+        <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice><CodeText :text="asNamesLoadNotice" /></p>
         <p v-else-if="asNamesDate" class="quiet" data-asnames-date>
           AS holder names as of {{ asNamesDate }}.
         </p>
@@ -546,33 +664,25 @@ function select(asn: number) {
 </template>
 
 <style scoped>
-.screen { padding: 20px 24px; display: flex; flex-direction: column; gap: 12px; }
-h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
-.scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.modes, .families { display: flex; gap: 2px; }
-.modes button, .families button {
-  font: 500 11.5px var(--font-ui);
-  padding: 5px 11px;
-  border: 1px solid var(--line-2);
-  background: var(--surface);
-  color: var(--muted);
-  border-radius: 6px;
-  cursor: pointer;
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
+/* The question as a card, the shape Looking glass and Routes give theirs. */
+.ask {
+  display: flex; flex-direction: column; gap: 14px;
+  padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface);
 }
-.modes button.on, .families button.on { background: var(--ink); color: var(--on-dark); border-color: var(--ink); }
-.scope input.term { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px; font-size: 12px; min-width: 220px; }
-.scope label { font: 400 11.5px var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
-.scope button[type="submit"] { background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.scope { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.scope input.term { min-width: 260px; }
+.scope label { font: 400 var(--text-sm) var(--font-ui); color: var(--muted); display: flex; gap: 5px; align-items: center; }
 
 .controls { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
-.controls label { display: flex; gap: 6px; align-items: center; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-.controls input, .controls select { font: 400 12px var(--font-ui); padding: 5px 8px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); text-transform: none; letter-spacing: normal; }
+.controls label { display: flex; gap: 6px; align-items: center; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.controls input, .controls select { text-transform: none; letter-spacing: normal; }
 .controls input { width: 72px; }
-.controls button { font: 500 11.5px var(--font-ui); padding: 5px 11px; border: 1px solid var(--line-2); background: var(--surface); color: var(--muted); border-radius: 6px; cursor: pointer; }
 
-.summary { margin: 0; font: 400 12px var(--font-ui); color: var(--muted); }
+.summary { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 .summary strong { color: var(--ink); font-weight: 600; }
-.matched { margin: 0; font: 400 11px var(--font-ui); color: var(--muted); }
+.matched { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--muted); }
 
 /* The rail is a fixed 300px and the canvas took whatever was left, down to
    nothing: `min-width: 0` let it shrink past its own content, so below about
@@ -602,27 +712,27 @@ h1 { margin: 0; font: 600 17px var(--font-ui); color: var(--ink); }
    thing a wide table does inside its card -- instead of pushing the whole
    page 174px sideways at a 390px viewport. It never scrolls on a desktop,
    where the pane is wider than its content. */
-.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 14px 16px; overflow-x: auto; }
+.pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
 .rail { width: 300px; flex: none; border-left: 1px solid var(--divider); padding-left: 16px; }
 .rail h2 { margin: 0 0 4px; font: 600 13px var(--font-data); color: var(--ink); }
-.rail .holder { margin: 0 0 8px; color: var(--muted); font: 400 11px var(--font-ui); }
-.rail h3 { margin: 14px 0 6px; font: 600 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.rail .holder { margin: 0 0 8px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.rail h3 { margin: 14px 0 6px; font: 600 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
 .fields { margin: 0; display: flex; flex-direction: column; gap: 5px; }
 .field { display: flex; gap: 8px; align-items: baseline; }
-.field dt { font: 500 10.5px var(--font-ui); color: var(--muted); min-width: 108px; }
-.field dd { margin: 0; font: 400 11.5px var(--font-ui); color: var(--ink-2); }
+.field dt { font: 500 var(--text-sm) var(--font-ui); color: var(--muted); min-width: 108px; }
+.field dd { margin: 0; font: 400 var(--text-sm) var(--font-ui); color: var(--ink-2); }
 .field dd.mono { font-family: var(--font-data); font-size: 10.5px; }
 
 .edges { width: 100%; border-collapse: collapse; font-size: 11px; }
-.edges th { text-align: left; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 4px; border-bottom: 1px solid var(--divider); }
+.edges th { text-align: left; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; padding-bottom: 4px; border-bottom: 1px solid var(--divider); }
 .edges td { padding: 3px 0; color: var(--ink-2); border-bottom: 1px solid var(--line-faint); }
 .edges td.mono { font: 400 10.5px var(--font-data); }
 .edges td.num { text-align: right; font: 400 10.5px var(--font-data); }
 .edges tr.withdrawn td { color: var(--bad-2); }
 
-.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 11.5px var(--font-ui); max-width: 46em; }
-.says { margin: 8px 0 0; color: var(--muted); font: 400 10.5px var(--font-ui); }
-.quiet { margin: 0; color: var(--muted); font: 400 11.5px var(--font-ui); }
-.error { margin: 0; color: var(--bad-2); font: 400 11.5px var(--font-ui); }
+.empty { margin: 0; padding: 16px 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); max-width: 46em; }
+.says { margin: 8px 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.error { margin: 0; color: var(--bad-2); font: 400 var(--text-sm) var(--font-ui); }
 </style>

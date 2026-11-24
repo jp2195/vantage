@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { usePeers, useRouters } from '@/api/queries'
 import type { Peer, Router } from '@/api/generated'
+import Notice from './Notice.vue'
 
 const emit = defineEmits<{
   (e: 'scope', v: { router: string; peer: string; session: string; collector?: string } | undefined): void
@@ -275,7 +276,7 @@ const unlistedPeer = computed<string | undefined>(() => {
     <label>
       <span>Router</span>
       <select v-model="routerIp">
-        <option :value="undefined">—</option>
+        <option :value="undefined">Choose a router…</option>
         <option v-for="r in routerRows" :key="r.ip" :value="r.ip">
           {{ r.sysname }} ({{ r.ip }})
         </option>
@@ -284,11 +285,11 @@ const unlistedPeer = computed<string | undefined>(() => {
     <label>
       <span>Peer</span>
       <select v-model="peerIp" :disabled="!routerIp">
-        <option :value="undefined">—</option>
+        <option :value="undefined">Choose a peer…</option>
         <!-- A selection the list cannot contain: a peer seeded from a URL
              whose session has ended, which /v1/peers does not carry. Without
              an option holding that value the control renders BLANK (not
-             "—"), because a <select> whose v-model matches no option has
+             the placeholder), because a <select> whose v-model matches no option has
              selectedIndex -1 -- found in a browser, where it reads as a
              broken control beside a populated Router dropdown.
 
@@ -333,9 +334,10 @@ const unlistedPeer = computed<string | undefined>(() => {
        uses <collector>'s session; the other collector's view is not
        shown": /v1/rib/* performs no such fallback, and a request without
        collector= that needs one answers 400. -->
-  <p
+  <Notice
     v-if="chosenPeer && multiCollectorPeers.has(chosenPeer.peer_ip)"
     class="ambiguous"
+    :tone="disagreeingPeers.has(chosenPeer.peer_ip) ? 'warn' : 'info'"
     role="alert"
   >
     <template v-if="disagreeingPeers.has(chosenPeer.peer_ip)">
@@ -357,7 +359,7 @@ const unlistedPeer = computed<string | undefined>(() => {
          fallback repeating the pinning copy would leave one that is false,
          which is the failure this prop exists to end. -->
     <slot v-else name="ambiguous" />
-  </p>
+  </Notice>
 </template>
 
 <style scoped>
@@ -368,7 +370,15 @@ const unlistedPeer = computed<string | undefined>(() => {
    page scrolled sideways, on Routes and on Session history. Nothing changes
    where the three fit on one line. */
 .picker { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; }
-label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; font: 500 10px var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-select { max-width: 100%; font: 400 12px var(--font-ui); padding: 6px 9px; border: 1px solid var(--line-2); border-radius: 6px; background: var(--surface); color: var(--ink); }
-.ambiguous { margin: 8px 0 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
+label { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: 100%; font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+select:disabled { color: var(--muted-2); background-color: var(--surface-2); cursor: not-allowed; }
+/* Sized to the choice, from a floor, up to the row: a peer reads
+   "10.0.0.80 · AS4200000002 · 2 collectors" and a fixed 240px cut it. */
+select { min-width: 220px; max-width: 100%; text-transform: none; letter-spacing: normal; }
+.ambiguous { margin-top: var(--space-2); }
+/* On a phone each control takes the row: three selects of three different
+   widths stacked down a 360px column read as misaligned, not as a form. */
+@media (max-width: 600px) {
+  .picker label, .picker select { width: 100%; }
+}
 </style>

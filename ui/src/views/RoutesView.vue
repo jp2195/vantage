@@ -3,8 +3,10 @@ import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
+import CodeText from '@/components/CodeText.vue'
 import DumpStateMark from '@/components/DumpStateMark.vue'
 import ScopePicker from '@/components/ScopePicker.vue'
+import Notice from '@/components/Notice.vue'
 import { useAsNames, useRibPage, type RibScope } from '@/api/queries'
 import {
   asNamesNotice,
@@ -91,16 +93,16 @@ function syncUrl(s: RibScope | undefined) {
 // layout spreads these eight short values across a 2000px viewport, so
 // reading one row means tracking the eye over 500px of white.
 const columns: Column<UnicastRoute>[] = [
-  { id: 'prefix', header: 'Prefix', width: '15%' },
+  { id: 'prefix', header: 'Prefix', width: '14%' },
   { id: 'rib', header: 'RIB', width: '82px' },
   { id: 'path_id', header: 'Path ID', numeric: true, width: '72px' },
-  { id: 'next_hop', header: 'Next hop', width: '12%' },
-  { id: 'as_path', header: 'AS path', width: '17%' },
+  { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
+  { id: 'as_path', header: 'AS path', width: '15%' },
   // Not `numeric`: once a holder name is beside it, the cell holds more
   // than a number, and right-aligned tabular figures are the wrong shape
   // for a name. Widened accordingly -- 78px fit a bare ASN, not "LEVEL3 -
   // Level 3 Parent, LLC" beside one.
-  { id: 'origin_asn', header: 'Origin', width: '13%' },
+  { id: 'origin_asn', header: 'Origin', width: '10%' },
   { id: 'local_pref', header: 'LocalPref', numeric: true, width: '84px' },
   { id: 'med', header: 'MED', numeric: true, width: '62px' },
   // Standard communities only, and the header says so. large_communities,
@@ -108,7 +110,7 @@ const columns: Column<UnicastRoute>[] = [
   // this same row, not longer spellings of this one, and folding them into
   // one column here would report a large community as a standard one. The
   // other three have no column on this screen today.
-  { id: 'communities', header: 'Communities', width: '18%' },
+  { id: 'communities', header: 'Communities', width: '15%' },
 ]
 
 /**
@@ -156,7 +158,7 @@ function holderName(asn: number | null): string | undefined {
  *  yet. Never both, and never a name for a router the rows do not describe. */
 const eyebrow = computed<string[]>(() => {
   const s = scope.value
-  if (!s) return []
+  if (!s) return ['choose a router and peer']
   const first = walk.rows.value[0]
   return [first?.router_sysname || s.router, s.peer]
 })
@@ -179,13 +181,13 @@ const counts = computed(() => {
 
 <template>
   <section class="screen">
-    <ScreenHeader title="Route table" :eyebrow="eyebrow" :counts="scope ? counts : undefined" />
+    <ScreenHeader title="Routes" :eyebrow="eyebrow" :counts="scope ? counts : undefined" />
 
     <!-- The filter row is a band, not a bare row of controls: its own
          --surface-2 with a hairline under it, so the question is visibly
          separate from the answer below it, full-bleed through the
          screen's own padding. -->
-    <div class="filters">
+    <div class="filters query-card">
       <!-- pins-collector: /v1/rib/* takes collector= (since 2026-09-20), so this
            screen can and MUST address one collector's view -- two
            collectors' RIBs are two answers a walk cannot interleave. -->
@@ -200,21 +202,21 @@ const counts = computed(() => {
     <!-- /v1/rib/* require router and peer. Fetching without them would 400,
          and rendering an empty table before a scope exists would say "this
          peer has no routes" about a question nobody asked. -->
-    <p v-if="!scope" class="quiet">Choose a router and peer to walk its RIB.</p>
+    <p v-if="!scope" class="empty-state">Choose a router and peer to walk the routes it holds for that session.</p>
 
     <template v-else>
-      <p v-if="walk.restarted.value" class="restart" role="alert">
+      <Notice v-if="walk.restarted.value" tone="warn" class="restart" role="alert">
         The BMP session changed while this list was being walked, so the cursor
         no longer refers to the view it started in. The list restarted rather
         than joining rows from two different views.
-      </p>
+      </Notice>
 
       <!-- The AS holder-name dataset's own state, said ONCE for the whole
            screen -- never once per row. The two branches are mutually
            exclusive facts, and neither prints before the batch has
            answered: no answer yet is not "not loaded" -- see
            @/lib/asname.ts. -->
-      <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice>{{ asNamesLoadNotice }}</p>
+      <p v-if="asNamesLoadNotice" class="quiet" data-asnames-notice><CodeText :text="asNamesLoadNotice" /></p>
       <p v-else-if="asNamesDate" class="quiet" data-asnames-date>
         AS holder names as of {{ asNamesDate }}.
       </p>
@@ -235,7 +237,7 @@ const counts = computed(() => {
         :loading="walk.loading.value"
         :error="walk.error.value"
         min-width="1150px"
-        actions-width="84px"
+        actions-width="100px"
       >
         <template #cell-as_path="{ row }">
           <span class="mono">{{ (row as UnicastRoute).as_path.join(' ') }}</span>
@@ -276,7 +278,7 @@ const counts = computed(() => {
              from the query. -->
         <template #actions="{ row }">
           <RouterLink
-            class="detail"
+            class="detail btn small"
             :to="{
               path: '/looking-glass',
               query: { mode: 'prefix', q: (row as UnicastRoute).prefix },
@@ -292,29 +294,19 @@ const counts = computed(() => {
            nothing here is virtualized, and no request duration is measured,
            so the control is what ships and the readout is not invented. -->
       <footer v-if="walk.hasMore.value" class="foot">
-        <button class="more" @click="walk.loadMore()">Load more</button>
+        <button type="button" class="more btn" @click="walk.loadMore()">Load more</button>
       </footer>
     </template>
   </section>
 </template>
 
 <style scoped>
-.screen { padding: 18px 0 20px; display: flex; flex-direction: column; gap: 12px; }
-.screen > :not(.filters) { margin-inline: 18px; }
-.filters {
-  padding: 10px 18px; background: var(--surface-2);
-  border-top: 1px solid var(--line-faint); border-bottom: 1px solid var(--line);
-}
-.quiet { margin: 0; color: var(--muted); font: 400 12px var(--font-ui); }
-.holder { margin-left: 6px; color: var(--muted); font: 400 11px var(--font-ui); }
+.screen { padding: var(--page-y) var(--page-x) 48px; display: flex; flex-direction: column; gap: 14px; }
+/* The scope controls as a card, the same shape the Looking glass gives its
+   query: the question above, the answer under it. */
+.quiet { margin: 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
+.holder { margin-left: 6px; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 .communities { color: var(--ink-2); font-size: 11px; }
 .foot { display: flex; justify-content: flex-end; }
-.detail {
-  display: inline-block; padding: 2px 8px; border: 1px solid var(--line);
-  border-radius: 5px; color: var(--ink-2); text-decoration: none;
-  font: 500 10.5px var(--font-ui);
-}
-.detail:hover { border-color: var(--ink); color: var(--ink); }
-.restart { margin: 0; padding: 9px 12px; border-radius: 6px; background: var(--accent-tint); color: var(--accent-ink-2); font: 400 11.5px var(--font-ui); }
-.more { align-self: flex-start; background: var(--ink); color: var(--on-dark); border: 0; border-radius: 6px; padding: 7px 13px; font: 500 11.5px var(--font-ui); cursor: pointer; }
+.more { align-self: flex-start; }
 </style>

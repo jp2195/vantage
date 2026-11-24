@@ -8,6 +8,7 @@ import { columnWidths, columnsOf, tableMinWidthPx } from '@/test-support/columns
 import { crampedAt, declaredTotalAt } from '@/test-support/tableFloor'
 import { inventedColumns } from '@/test-support/columnGuard'
 import { capturedMeta } from '@/test-support/capturedMeta'
+import { formatClock } from '@/lib/formatClock'
 
 let fixture: { data: unknown[]; meta: unknown } = fleetEvents
 // Drives useFleetEvents' own isPending, independent of isLoading, so a test
@@ -169,7 +170,7 @@ describe('EventsView', () => {
   it('states the window even when nothing matched, because empty is not the same as quiet', () => {
     fixture = { data: [], meta: { next_cursor: null, total_matched: 0, warnings: [] } }
     const w = mount(EventsView)
-    expect(w.text()).toContain('no rows matched')
+    expect(w.text()).toMatch(/no rows matched/i)
     expect(w.find('[data-window-note]').exists()).toBe(true)
     expect(w.find('[data-archive-note]').exists()).toBe(true)
   })
@@ -209,10 +210,7 @@ describe('EventsView', () => {
   // own version of this test gives for not hardcoding one locale's output.
   it('renders ts_collector as a readable clock string, not the raw ISO instant', () => {
     const w = mount(EventsView)
-    const expected = new Date(fleetEvents.data[0].ts_collector).toLocaleString([], {
-      dateStyle: 'medium',
-      timeStyle: 'medium',
-    })
+    const expected = formatClock(fleetEvents.data[0].ts_collector)
     expect(w.text()).toContain(expected)
     expect(w.text()).not.toContain(fleetEvents.data[0].ts_collector)
   })

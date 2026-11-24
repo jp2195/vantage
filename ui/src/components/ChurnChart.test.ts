@@ -76,7 +76,7 @@ describe('ChurnChart', () => {
   // The width is the chart's own claim about what a bar MEANS, and it comes
   // from the answer rather than from a default this component assumes.
   it('states the bucket width it was given', () => {
-    expect(chart().text()).toContain('5m0s')
+    expect(chart().text()).toContain('5 min buckets')
   })
 
   it('says an empty window is an answer rather than drawing an empty frame', () => {
