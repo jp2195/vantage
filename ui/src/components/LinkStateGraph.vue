@@ -77,6 +77,19 @@ const props = defineProps<{
    * re-layout control is this prop and nothing else; see `settled` below.
    */
   seed?: number
+  /**
+   * Draw only the band of the canvas the boxes occupy, at the same scale.
+   * For a screen stacking several topologies: a three-node graph on the
+   * default canvas is mostly empty height, and four of them stacked made a
+   * page of white. Width -- and so scale -- is unchanged; only the empty
+   * rows above and below the drawing are cut.
+   */
+  compact?: boolean
+  /** Leave out the line-style key and its explanation under the drawing.
+   *  A screen stacking several graphs shows it once, under the last.
+   *  (Inverted so absent means shown: Vue casts an absent boolean prop to
+   *  false.) */
+  hideLegend?: boolean
 }>()
 
 const emit = defineEmits<{ select: [nodeKey: string] }>()
@@ -224,6 +237,26 @@ const settled = computed(() =>
  */
 const placed = computed(() => settled.value.nodes)
 const canvas = computed(() => settled.value.canvas)
+
+/**
+ * The part of the canvas drawn: all of it, or with `compact` the band from
+ * just above the highest box to just below the lowest. The padding leaves
+ * room for an edge's bow and a metric label past a box's edge.
+ */
+const BAND_PAD = 28
+const view = computed(() => {
+  const c = canvas.value
+  if (!props.compact || placed.value.length === 0) return { y: 0, width: c.width, height: c.height }
+  let top = Infinity
+  let bottom = -Infinity
+  for (const p of placed.value) {
+    top = Math.min(top, p.y - NODE.height / 2)
+    bottom = Math.max(bottom, p.y + NODE.height / 2)
+  }
+  const y = Math.max(0, Math.floor(top - BAND_PAD))
+  const end = Math.min(c.height, Math.ceil(bottom + BAND_PAD))
+  return { y, width: c.width, height: end - y }
+})
 
 /**
  * What the picture is OF: whose LSDB, which protocol, which area. Rules 1 and
@@ -509,10 +542,11 @@ function clearanceAt(at: Point, halfWidth: number, boxes: Positioned<LsNode>[]) 
 <template>
   <figure class="graph">
     <!-- The screen already says "One router's link-state view: <router>"
-         directly above this figure; the caption carries what that line
-         does not -- protocols and areas -- after the router it names. -->
+         above this figure, so the caption leads with what tells stacked
+         graphs apart -- protocol and area -- and names the router last. -->
     <p v-if="scope" class="whose" data-observer>
-      <b>{{ scope.observers }}</b> · {{ scope.protocols }} · {{ scope.areas }}
+      <b>{{ scope.protocols }}</b> · {{ scope.areas }} · {{ nodes.length }}
+      {{ nodes.length === 1 ? 'node' : 'nodes' }} · {{ scope.observers }}
     </p>
     <!-- Rule 4, when the rows break it. Said rather than resolved: picking
          one of two areas would draw half a topology under a caption claiming
@@ -523,10 +557,10 @@ function clearanceAt(at: Point, halfWidth: number, boxes: Positioned<LsNode>[]) 
       canvas holds rows from more than one.
     </p>
     <svg
-      :viewBox="`0 0 ${canvas.width} ${canvas.height}`"
+      :viewBox="`0 ${view.y} ${view.width} ${view.height}`"
       :style="{
         maxWidth: `${Math.max(HANDOFF_MAX_PX, canvas.width)}px`,
-        aspectRatio: `${canvas.width} / ${canvas.height}`,
+        aspectRatio: `${view.width} / ${view.height}`,
       }"
       role="group"
       :aria-label="
@@ -598,7 +632,7 @@ function clearanceAt(at: Point, halfWidth: number, boxes: Positioned<LsNode>[]) 
       </g>
     </svg>
 
-    <figcaption class="legend" data-legend>
+    <figcaption v-if="!hideLegend" class="legend" data-legend>
       <span class="key"><i class="swatch" />seen from both sides in this view</span>
       <span class="key"><i class="swatch one-sided" />seen from one side in this view</span>
       <AboutThis summary="How to read this graph">

@@ -775,15 +775,21 @@ describe('LinkStateView', () => {
     expect(replace).toHaveBeenCalledWith(expect.objectContaining({ query: { router: XR_RR1 } }))
   })
 
-  it('draws one topology once a protocol is chosen, not two', async () => {
+  it('draws each topology as its own graph, and one once a protocol is chosen', async () => {
     // Rule 4 end to end: the control, the scope, the request and the canvas.
-    // Before the choice both protocols' nodes are on one canvas and the
-    // component says so itself; after it, one topology is drawn.
+    // Before the choice the answer holds two protocols, and each gets a
+    // graph of its own -- every row is still on screen, but no canvas mixes
+    // two topologies, so none has to apologize for doing so. After the
+    // choice, one topology is drawn.
     const w = await mountView({ router: NX_P3, nodes: nodesAcrossProtocols([2, 3]) })
     expect(w.findAll('[data-node]')).toHaveLength(2)
-    expect(w.find('[data-scope-mixed]').exists()).toBe(true)
+    const graphs = w.findAll('[data-topology]')
+    expect(graphs).toHaveLength(2)
+    for (const g of graphs) expect(g.findAll('[data-node]')).toHaveLength(1)
+    expect(w.find('[data-scope-mixed]').exists()).toBe(false)
 
     await choose(w, '[data-protocol]', '3')
+    expect(w.findAll('[data-topology]')).toHaveLength(1)
     expect(w.findAll('[data-node]').map((n) => n.attributes('data-node'))).toEqual(['p3'])
     expect(w.find('[data-scope-mixed]').exists()).toBe(false)
   })

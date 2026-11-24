@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { settleGraph, NODE } from './graphLayout'
+import { settleGraph, NODE, GAP } from './graphLayout'
 
 // The layout is domain-free on purpose: it is shared by the AS-path graph and
 // the IGP graph, whose nodes have nothing in common but a position. These
@@ -30,6 +30,30 @@ describe('settleGraph', () => {
     const a = settleGraph({ ...base, seed: 1 })
     const b = settleGraph({ ...base, seed: 2 })
     expect(a.nodes.map((p) => [p.x, p.y])).not.toEqual(b.nodes.map((p) => [p.x, p.y]))
+  })
+
+  it('leaves at least GAP of clearance between any two boxes, not just no overlap', () => {
+    // Boxes that merely do not overlap can sit exactly edge to edge, which
+    // reads as one shape. Every pair must be GAP apart on at least one axis.
+    // Positions are rounded to whole pixels on the way out, hence the 1px.
+    for (const count of [8, 19, 40]) {
+      for (let seed = 0; seed < 8; seed++) {
+        const laid = settleGraph({
+          nodes: ids(count),
+          id: (n: { id: string }) => n.id,
+          edges: ids(count - 1).map((_, i) => ({ src: `n${i}`, dst: `n${(i * 7 + 3) % count}` })),
+          seed,
+        }).nodes
+        for (let i = 0; i < laid.length; i++) {
+          for (let j = i + 1; j < laid.length; j++) {
+            const dx = Math.abs(laid[i].x - laid[j].x)
+            const dy = Math.abs(laid[i].y - laid[j].y)
+            const clear = dx >= NODE.width + GAP - 1 || dy >= NODE.height + GAP - 1
+            expect(clear, `${count} nodes, seed ${seed}: ${laid[i].node.id} and ${laid[j].node.id} are closer than GAP`).toBe(true)
+          }
+        }
+      }
+    }
   })
 
   it('never overlaps two node boxes, across seeds', () => {
