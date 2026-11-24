@@ -39,7 +39,7 @@ import AboutThis from '@/components/AboutThis.vue'
 import ResultMeta from '@/components/ResultMeta.vue'
 import { useLinkState, useRouters, type LinkStateScope } from '@/api/queries'
 import { distinctAdjacencies, distinctNodes, drawnAdjacencies } from '@/lib/lsAdjacencies'
-import type { LsNode, Meta, Router } from '@/api/generated'
+import type { LsLink, LsNode, Meta, Router } from '@/api/generated'
 
 /**
  * One router's view of one IGP topology.
@@ -335,6 +335,45 @@ const drawn = computed(() => {
     links: linkRows,
     adjacencies: drawnAdjacencies(linkRows, distinct),
   }
+})
+
+/**
+ * One graph per topology: the drawn nodes split by (router, protocol, area),
+ * largest first.
+ *
+ * Rule 4 of LinkStateGraph -- one graph is one topology -- used to be said
+ * rather than kept: at "every protocol" the canvas drew OSPFv2, OSPFv3 and
+ * both IS-IS levels on one layout, so a router appeared once per protocol
+ * under two different identifiers (xr-p1 as 10.255.0.4 and as
+ * 010255000004), adjacencies from unrelated databases crossed each other,
+ * and a caveat under the caption apologized for the picture. Splitting
+ * keeps every row on screen -- nothing is chosen for the operator, which a
+ * default-to-one-protocol picker would do -- and each graph is then the
+ * single topology its caption names.
+ *
+ * Links carry router and protocol but no area: an area-crossing link is
+ * returned for either of its areas. Each graph is handed its router and
+ * protocol's links and draws those whose ends are both among its nodes,
+ * which is the rule LinkStateGraph already applies to any node set.
+ */
+const topologies = computed(() => {
+  const d = drawn.value
+  if (!d) return []
+  const groups = new Map<string, { key: string; nodes: LsNode[]; links: LsLink[] }>()
+  for (const n of d.nodes) {
+    const key = `${n.router_ip}|${n.protocol}|${n.area}`
+    let g = groups.get(key)
+    if (!g) {
+      g = {
+        key,
+        nodes: [],
+        links: d.links.filter((l) => l.router_ip === n.router_ip && l.protocol === n.protocol),
+      }
+      groups.set(key, g)
+    }
+    g.nodes.push(n)
+  }
+  return [...groups.values()].sort((a, b) => b.nodes.length - a.nodes.length || a.key.localeCompare(b.key))
 })
 
 /**
@@ -781,12 +820,23 @@ function select(nodeKey: string) {
 
           <div class="pane">
             <div class="canvas">
-              <LinkStateGraph
-                :nodes="drawn.nodes"
-                :links="drawn.links"
-                :seed="seed"
-                @select="select"
-              />
+              <!-- One graph per topology, each with its own caption naming
+                   the protocol and area it draws; see `topologies`. -->
+              <div
+                v-for="(t, i) in topologies"
+                :key="t.key"
+                class="topology"
+                :data-topology="t.key"
+              >
+                <LinkStateGraph
+                  :nodes="t.nodes"
+                  :links="t.links"
+                  :seed="seed"
+                  :compact="topologies.length > 1"
+                  :hide-legend="i !== topologies.length - 1"
+                  @select="select"
+                />
+              </div>
               <p class="controls">
                 <!-- The layout is deterministic, which is what lets an
                      operator compare two loads of one graph -- and which
@@ -994,6 +1044,8 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
    where the pane is wider than its content. */
 .pane { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); padding: 14px 16px; overflow-x: auto; }
 .canvas { flex: 1; min-width: 500px; }
+/* Stacked topologies, each set off from the next by a rule and room. */
+.topology + .topology { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--line); }
 .controls { margin: 8px 0 0; }
 
 .rail { width: 300px; flex: none; border-left: 1px solid var(--divider); padding-left: 16px; }

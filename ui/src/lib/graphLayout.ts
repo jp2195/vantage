@@ -1,4 +1,4 @@
-import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation } from 'd3-force'
+import { forceCenter, forceCollide, forceLink, forceManyBody, forceSimulation, forceX, forceY } from 'd3-force'
 import type { SimulationLinkDatum, SimulationNodeDatum } from 'd3-force'
 
 /**
@@ -40,6 +40,14 @@ export const HANDOFF_MAX_PX = 640
 export const NODE = { width: 160, height: 54 }
 /** Kept clear of the canvas edge so a node's box never touches the frame. */
 export const MARGIN = 8
+
+/**
+ * The clearance `separate` leaves between two boxes, on at least one axis.
+ * Resolving overlap alone left boxes exactly touching -- a pair of
+ * rectangles with no air between them reads as one shape, and as a layout
+ * fault -- so separation now resolves to this gap rather than to zero.
+ */
+export const GAP = 20
 
 /**
  * Ticks run before first paint. d3's own default alpha schedule reaches
@@ -94,6 +102,8 @@ export const TICKS = 300
 export const LINK_DISTANCE = 150
 export const CHARGE = -900
 export const COLLIDE_RADIUS = 88
+/** Strength of the pull toward the middle; see settleGraph. */
+export const GRAVITY = 0.08
 
 export interface Canvas {
   width: number
@@ -182,8 +192,11 @@ function separate(nodes: LayoutNode[]): void {
         const b = nodes[j]
         const dx = (b.x ?? 0) - (a.x ?? 0)
         const dy = (b.y ?? 0) - (a.y ?? 0)
-        const overlapX = NODE.width - Math.abs(dx)
-        const overlapY = NODE.height - Math.abs(dy)
+        // "Overlap" here includes the GAP each box keeps around it: two boxes
+        // closer than that on both axes are pushed apart, so the loop ends
+        // with every pair at least GAP clear on one axis.
+        const overlapX = NODE.width + GAP - Math.abs(dx)
+        const overlapY = NODE.height + GAP - Math.abs(dy)
         if (overlapX <= 0 || overlapY <= 0) continue
 
         // A hair past touching, so a pair that lands exactly on the
@@ -399,6 +412,14 @@ export function settleGraph<T>(input: LayoutInput<T>): SettledGraph<T> {
     .force('charge', forceManyBody<LayoutNode>().strength(CHARGE))
     .force('collide', forceCollide<LayoutNode>(COLLIDE_RADIUS).strength(1).iterations(4))
     .force('center', forceCenter<LayoutNode>(canvas.width / 2, canvas.height / 2))
+    // A weak pull of every node toward the middle. forceCenter moves only
+    // the graph's mean, so a node with no adjacency -- a router this view
+    // knows of but holds no link for -- was pushed by the charge alone into
+    // the far corner, and a four-box graph drew as a cluster plus a stray
+    // box a canvas away. Weak enough that links and charge still shape the
+    // drawing; `separate` below still owns the no-overlap promise.
+    .force('x', forceX<LayoutNode>(canvas.width / 2).strength(GRAVITY))
+    .force('y', forceY<LayoutNode>(canvas.height / 2).strength(GRAVITY))
 
   // Bounded WHILE it settles, not scaled to fit afterwards. See BOUNDS
   // above: the collision force is what keeps two boxes apart, and a post-hoc
