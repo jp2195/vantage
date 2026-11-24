@@ -33,7 +33,7 @@ limits.**
   than passed off as current or silently dropped.
 - An empty chart says it has no rows instead of rendering as a gap.
 
-![One router's link-state view: seven nodes and twenty adjacency directions drawn as a topology graph](docs/images/link-state.png)
+![One router's link-state view: four IGP topologies (OSPFv2, IS-IS L2, IS-IS L1, OSPFv3), each drawn as its own graph](docs/images/link-state.png)
 
 *`nx-p3`'s own link-state database — 7 nodes, 20 adjacency directions over 22
 advertised links, 27 prefixes over 16 networks, ospfv2 area 0. Each curve is
@@ -75,7 +75,7 @@ cross-collector arithmetic is easy to get wrong and expensive to notice.
 
 ### 3. Peers — the fleet at a glance
 
-![The peers table: 35 rows with state, routes, up-since and churn columns](docs/images/peers.png)
+![The peers table: eight rows with state, routes, up-since and churn columns](docs/images/peers.png)
 
 Every BGP peer every collector can see, 35 rows here across all routers and
 both collectors, with state (`up`, `down`, `view lost`, `stale`), a
@@ -152,14 +152,14 @@ as a quiet feed.*
 Both collectors' events appear, with the Collector column saying which saw
 each — the walk is not pinned to either.*
 
-![The routers table: fifteen routers across nineteen router-and-collector rows](docs/images/routers.png)
+![The routers table: two routers across four router-and-collector rows](docs/images/routers.png)
 
 *Routers: 15 routers across 19 (router, collector) rows — four of them
 dual-homed to both collectors, which is how the cross-collector counting
 above gets exercised for real rather than against fixtures. A router that
 sent no sysName TLV is labeled as such rather than given a guessed name.*
 
-![Peer detail with four panels showing explicit empty states](docs/images/peer-detail.png)
+![Peer detail: route and session tiles, session facts, recent session history, update churn and the prefixes that churned most](docs/images/peer-detail.png)
 
 *Peer detail, and the most useful thing in this picture is the empty space.
 No peer shown here is both route-rich and session-active, so four panels
