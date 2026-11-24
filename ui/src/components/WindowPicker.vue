@@ -50,8 +50,11 @@ defineProps<{
 }
 .segmented button {
   border: 0; background: var(--surface); color: var(--ink-2);
-  font: 500 var(--text-sm) var(--font-ui); padding: 7px 12px; cursor: pointer; white-space: nowrap;
+  font: 500 var(--text-sm) var(--font-ui); padding: 0 12px; min-height: 32px; cursor: pointer; white-space: nowrap;
 }
+/* Sentence case on the button only: the same labels run inside sentences
+   elsewhere ("from the last hour"), so the data stays lowercase. */
+.segmented button::first-letter { text-transform: uppercase; }
 .segmented button:hover { color: var(--ink); background: var(--surface-2); }
 .segmented button + button { border-left: 1px solid var(--line-2); }
 .segmented button.on { background: var(--ink); color: var(--on-ink); }

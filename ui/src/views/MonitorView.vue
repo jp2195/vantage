@@ -603,7 +603,7 @@ function stepBreakdown(by: 1 | -1) {
           <span class="line">
             <Clock class="when" :iso="e.ts_collector" today />
             <EventKindMark :kind="e.kind" />
-            <span class="who mono">{{ e.router_sysname || e.router_ip }} · {{ e.peer_ip }}</span>
+            <span class="who mono" :title="`${e.router_sysname || e.router_ip} · ${e.peer_ip}`">{{ e.router_sysname || e.router_ip }} · {{ e.peer_ip }}</span>
             <!-- WHOSE view this row is. /v1/events is one row per
                  (collector, router, peer, session), so a router two
                  collectors monitor sends two rows for one event -- and a
@@ -914,9 +914,11 @@ h2 { margin: 0; font: 600 var(--text-body) var(--font-ui); color: var(--ink); }
 /* The one span that must never wrap: a broken timestamp reads as two
    events, which is what the rail did before the row became two lines. */
 .when { color: var(--muted); white-space: nowrap; }
-/* Shrinks and wraps inside itself, so a long IPv6 pair cannot push the
-   collector id past the card edge. */
-.who { color: var(--ink-2); flex: 1; min-width: 0; overflow-wrap: anywhere; }
+/* Shrinks and ellipsizes inside itself, so a long IPv6 pair cannot push the
+   collector id past the card edge. One line, not wrapped: a feed whose rows
+   are one or two lines tall depending on the address family reads as
+   ragged, and the full pair is on hover. */
+.who { color: var(--ink-2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .seen { margin-left: auto; padding-left: 10px; color: var(--muted); white-space: nowrap; }
 /* Indented under the row it explains, so a reason cannot be read as the
    next event's own line. */

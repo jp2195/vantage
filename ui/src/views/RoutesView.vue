@@ -110,7 +110,7 @@ const columns: Column<UnicastRoute>[] = [
   // this same row, not longer spellings of this one, and folding them into
   // one column here would report a large community as a standard one. The
   // other three have no column on this screen today.
-  { id: 'communities', header: 'Communities', width: '15%' },
+  { id: 'communities', header: 'Communities', width: '15%', wrap: true },
 ]
 
 /**

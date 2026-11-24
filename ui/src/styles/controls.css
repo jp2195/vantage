@@ -13,15 +13,17 @@
  */
 
 /* Buttons. `.btn` is the secondary action; `.btn.primary` the one action a
-   form exists for (Search, Draw, Retry). 32px tall, 36px for primary in a
-   form row, which lines up with the 34px fields beside it. */
+   form exists for (Search, Draw, Retry). 34px tall, the height of the
+   fields and segmented controls beside them, so a query row is one line. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 32px;
-  padding: 0 12px;
+  /* The field height (tokens.css), so a button beside a field or a
+     segmented control lines up with both. */
+  min-height: 34px;
+  padding: 0 14px;
   border: 1px solid var(--line-2);
   border-radius: var(--radius-md);
   background: var(--surface);
@@ -57,7 +59,11 @@
   background: transparent;
   color: var(--ink-2);
   font: 500 var(--text-sm) var(--font-ui);
-  padding: 7px 12px;
+  /* 32 inside the 1px border: 34, the height of the field beside it. It
+     was 7px padding, about 30 in all, so a Looking glass row read as three
+     different heights -- segment, field, button. */
+  padding: 0 12px;
+  min-height: 32px;
   white-space: nowrap;
   cursor: pointer;
 }

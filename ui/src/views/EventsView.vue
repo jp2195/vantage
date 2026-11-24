@@ -104,30 +104,33 @@ function rowAttrs(row: PeerEvent): Record<string, string> {
 // where two collectors each lost their own session, and the sessions are
 // genuinely different (different session_id on the wire).
 const columns: Column<PeerEvent>[] = [
-  { id: 'ts_collector', header: 'Time', width: '180px', sortable: true },
-  { id: 'kind', header: 'Kind', width: '160px', sortable: true },
+  { id: 'ts_collector', header: 'Time', width: '172px', sortable: true },
+  { id: 'kind', header: 'Kind', width: '176px', sortable: true },
   { id: 'router_sysname', header: 'Router', width: '12%', sortable: true },
-  { id: 'peer_ip', header: 'Peer', width: '13%', sortable: true, mono: true },
-  { id: 'collector', header: 'Collector', width: '10%', sortable: true },
-  // 110px holds a ten-digit 4-byte ASN such as 4200000002, 109px with its
-  // padding (measured in Chromium). At 84px it read "42000..." at every
-  // width, 1440 included.
-  { id: 'peer_asn', header: 'ASN', numeric: true, width: '110px', sortable: true },
+  // 16%: an IPv6 peer such as 2001:db8:5549:3::1 needs about 175px in the
+  // data face once rows stopped wrapping, and at 13% it read "2001:db8:554..."
+  // at 1440. The points came from Collector, whose ids are short, and
+  // Reason, which wraps and is set in the UI face.
+  { id: 'peer_ip', header: 'Peer', width: '16%', sortable: true, mono: true },
+  { id: 'collector', header: 'Collector', width: '9%', sortable: true },
+  // 120px holds a ten-digit 4-byte ASN such as 4200000002 with its padding.
+  // At 110px it still read "42000000..." at 1440.
+  { id: 'peer_asn', header: 'ASN', numeric: true, width: '120px', sortable: true },
   { id: 'rib', header: 'RIB', width: '92px', sortable: true },
-  { id: 'down_reason', header: 'Reason', width: '15%' },
+  { id: 'down_reason', header: 'Reason', width: '13%', wrap: true },
 ]
 
-// Four of the eight columns are fixed px, 494px between them, and
+// Four of the eight columns are fixed px, 560px between them, and
 // table-layout:fixed hands the four percentage columns only what is left:
 // on a 390px phone that was nothing, and Router, Peer, Collector and Reason
 // rendered 0px wide with their headers cut off. The floor holds the fixed
-// columns plus the percentages taken of the floor itself (494 + 55% of
-// 1098 = 1098), the pattern RoutersView uses. At the floor Peer's 13% is
-// 143px, which holds 2001:db8:5549:3::1 (142px), and Router's holds a
-// 12-character sysName (123px). Reason went from 22% to 18% so that the
-// floor stays under the table's 1199px at a 1280px viewport; above the
-// floor the browser spreads the slack over every column as before.
-const EVENTS_MIN_WIDTH = '1098px'
+// columns plus the percentages taken of the floor itself (560 + 50% of
+// 1120 = 1120), the pattern RoutersView uses. At the floor Peer's 16% is
+// 179px, which holds 2001:db8:5549:3::1, Router's 12% holds a
+// 12-character sysName (123px) and Collector's 9% its 99px header. The floor stays under the table's 1199px
+// at a 1280px viewport; above the floor the browser spreads the slack over
+// every column as before.
+const EVENTS_MIN_WIDTH = '1120px'
 </script>
 
 <template>
@@ -191,7 +194,7 @@ const EVENTS_MIN_WIDTH = '1098px'
         <EventKindMark :kind="(row as PeerEvent).kind" />
       </template>
       <template #cell-down_reason="{ row }">
-        <span data-reason class="mono">{{ reasonDisplay(row as PeerEvent) }}</span>
+        <span data-reason>{{ reasonDisplay(row as PeerEvent) }}</span>
       </template>
     </DataTable>
 

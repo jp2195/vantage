@@ -57,7 +57,7 @@ const columns: Column<Router>[] = [
   { id: 'peers_down', header: 'Down', numeric: true, width: '76px', sortable: true },
   { id: 'peers_view_lost', header: 'View lost', numeric: true, width: '86px', sortable: true },
   { id: 'peers_stale', header: 'Stale', numeric: true, width: '70px', sortable: true },
-  { id: 'last_seen', header: 'Last seen', width: '170px', sortable: true },
+  { id: 'last_seen', header: 'Last seen', width: '172px', sortable: true },
 ]
 
 // The fixed columns alone are 612px, so below that width table-layout:fixed

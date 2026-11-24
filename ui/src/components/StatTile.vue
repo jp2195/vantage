@@ -15,7 +15,9 @@
  * client-side would mean two requests whose windows the screen -- not
  * the operator -- chose.
  */
-defineProps<{
+import { computed } from 'vue'
+
+const props = defineProps<{
   label: string
   value: string
   /** What the value is composed of, e.g. "8 416 dumps · 8 006 changes". */
@@ -23,6 +25,16 @@ defineProps<{
   /** The claim this number must be read with, shown on hover. */
   note?: string
 }>()
+
+/**
+ * A ratio the caller formatted as "4 / 4" is split so the denominator can
+ * recede: the count is the reading, the total is its context. Presentation
+ * only -- the text is unchanged, so a reader (or a test) still gets "4 / 4".
+ */
+const ratio = computed(() => {
+  const m = /^(\S+) \/ (\S+)$/.exec(props.value)
+  return m ? { count: m[1], total: m[2] } : null
+})
 </script>
 
 <template>
@@ -31,7 +43,10 @@ defineProps<{
     <!-- The size container is this wrapper, not the tile: containment on
          the tile made it an independent layout, which switches off the
          subgrid a .tile-grid lines tiles up with. -->
-    <div class="fit"><p class="value mono" :class="{ long: value.length > 12 }">{{ value }}</p></div>
+    <div class="fit">
+      <p v-if="ratio" class="value mono">{{ ratio.count }}<span class="of"> / {{ ratio.total }}</span></p>
+      <p v-else class="value mono" :class="{ long: value.length > 12 }">{{ value }}</p>
+    </div>
     <p v-if="sub" class="sub">{{ sub }}</p>
   </div>
 </template>
@@ -55,5 +70,6 @@ defineProps<{
    type: "Sep 7, 2026, 21:11:38" at the KPI size wrapped to three lines in a
    tile a sixth of the row wide. */
 .value.long { font-size: var(--text-title); letter-spacing: 0; line-height: 1.35; padding-top: 4px; }
+.of { color: var(--muted); font-size: .62em; font-weight: 400; letter-spacing: 0; }
 .sub { margin: var(--space-1) 0 0; color: var(--muted); font: 400 var(--text-sm) var(--font-ui); }
 </style>
