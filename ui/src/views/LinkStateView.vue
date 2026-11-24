@@ -575,6 +575,33 @@ const warnedLegs = computed(() => legs.value.filter((l) => l.meta.warnings.lengt
 const allLegsClean = computed(() => legs.value.length === 3 && warnedLegs.value.length === 0)
 
 /**
+ * Warned legs whose caveats say the same thing, on one line.
+ *
+ * During a dump all three answers carry the same session_dumping warning,
+ * and three identical lines -- NODES, LINKS, PREFIXES, each "a session is
+ * still loading" -- read as the screen stuttering. Legs are merged only
+ * when their warnings are identical AND none of them is `truncated`:
+ * ResultMeta pairs truncation with that leg's own total_matched and rows
+ * shown, so a truncated leg keeps a line naming only itself.
+ */
+const legGroups = computed(() => {
+  const groups: { legs: AnswerLeg['leg'][]; meta: Meta; shown: number }[] = []
+  const byKey = new Map<string, (typeof groups)[number]>()
+  for (const l of warnedLegs.value) {
+    const truncated = l.meta.warnings.some((w) => w.code === 'truncated')
+    const key = truncated ? `solo:${l.leg}` : JSON.stringify(l.meta.warnings.map((w) => [w.code, w.message]))
+    const existing = byKey.get(key)
+    if (existing) existing.legs.push(l.leg)
+    else {
+      const g = { legs: [l.leg], meta: l.meta, shown: l.shown }
+      byKey.set(key, g)
+      groups.push(g)
+    }
+  }
+  return groups
+})
+
+/**
  * A prefix-SID, with the one thing that changes what the number MEANS.
  *
  * `has_prefix_sid` separates an absent Prefix-SID TLV from index 0, which is
@@ -920,9 +947,9 @@ function select(nodeKey: string) {
              matters most. -->
         <ResultMeta v-if="allLegsClean" :meta="legs[0].meta" :shown="legs[0].shown" />
         <div v-else-if="warnedLegs.length > 0" class="legs">
-          <div v-for="l in warnedLegs" :key="l.leg" class="leg" :data-meta-leg="l.leg">
-            <span class="leg-name">{{ l.leg }}</span>
-            <ResultMeta :meta="l.meta" :shown="l.shown" />
+          <div v-for="g in legGroups" :key="g.legs.join()" class="leg" :data-meta-legs="g.legs.join(' ')">
+            <span class="leg-name">{{ g.legs.join(' · ') }}</span>
+            <ResultMeta :meta="g.meta" :shown="g.shown" />
           </div>
         </div>
       </template>
@@ -988,6 +1015,6 @@ h1 { margin: 0; font: 600 var(--text-page) var(--font-ui); color: var(--ink); }
    one query rather than about the screen. */
 .legs { display: flex; flex-direction: column; }
 .leg { display: flex; align-items: baseline; gap: 8px; }
-.leg-name { font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; min-width: 62px; padding-left: 18px; }
+.leg-name { font: 500 var(--text-label) var(--font-ui); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; min-width: 62px; padding-left: 18px; white-space: nowrap; }
 .leg :deep(.meta) { flex: 1; border-top: 1px solid var(--line-faint); padding-left: 0; }
 </style>

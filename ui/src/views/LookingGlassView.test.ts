@@ -1302,14 +1302,17 @@ it('floors the Paths table where every header fits its column', async () => {
   expect(floor).toBeDefined()
   const columns = columnsOf(w)
   expect(declaredTotalAt(columns, floor!)).toBeLessThanOrEqual(floor!)
+  // Each header's label plus its cell's padding, measured in Chromium. The
+  // padding is 28px between columns (14px a side) since DataTable tightened
+  // it from 36px; every figure here was re-based by that 8px.
   const HEADER_PX = {
-    prefix: 74, rib: 54, path_id: 77, router_sysname: 79, peer_ip: 64,
-    collector: 99, next_hop: 91, as_path: 81,
+    prefix: 66, rib: 46, path_id: 69, router_sysname: 71, peer_ip: 56,
+    collector: 91, next_hop: 83, as_path: 73,
   }
   expect(crampedAt(columns, floor!, HEADER_PX)).toEqual([])
-  // A prefix does not wrap: 10.255.0.2/32 needs 130px, and at 14% a phone
-  // cut 10.91.0.0/16 off.
-  expect(crampedAt(columns, floor!, { prefix: 130 })).toEqual([])
+  // A prefix does not wrap mid-address: 10.255.0.2/32 needs 122px with its
+  // padding, and at 14% a phone cut 10.91.0.0/16 off.
+  expect(crampedAt(columns, floor!, { prefix: 122 })).toEqual([])
 })
 
 describe('LookingGlassView reads the term, not only the button', () => {

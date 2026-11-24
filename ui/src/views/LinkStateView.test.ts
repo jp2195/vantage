@@ -462,12 +462,12 @@ describe('LinkStateView', () => {
     // The warning is on screen, against the LINK rows it describes -- not
     // against the nodes answer's totals, which merging the three metas
     // would have paired it with.
-    expect(w.get('[data-meta-leg="links"]').text()).toMatch(/showing 2 of 24000/)
+    expect(w.get('[data-meta-legs~="links"]').text()).toMatch(/showing 2 of 24000/)
     // And no completeness claim anywhere, labeled or not: two of the three
     // answers are clean, and saying so beside a short canvas is the claim
     // this rule is about.
     expect(w.text()).not.toMatch(/complete as of/i)
-    expect(w.findAll('[data-meta-leg]').map((l) => l.attributes('data-meta-leg'))).toEqual([
+    expect(w.findAll('[data-meta-legs]').flatMap((l) => l.attributes('data-meta-legs')!.split(' '))).toEqual([
       'links',
     ])
   })
@@ -478,7 +478,7 @@ describe('LinkStateView', () => {
     // one of the three.
     const w = await mountView({ router: NX_P3 })
     expect(w.text()).toMatch(/complete as of/i)
-    expect(w.find('[data-meta-leg]').exists()).toBe(false)
+    expect(w.find('[data-meta-legs]').exists()).toBe(false)
 
     // A prefixes answer that is still pending is not a complete one either.
     freshState()
@@ -491,20 +491,27 @@ describe('LinkStateView', () => {
     // footer reaches it: an empty answer while a peer is still sending its
     // initial dump is "nothing YET", and without the warning it reads as
     // "this router has no IGP topology".
+    const dumping: Meta = {
+      warnings: [{ code: 'session_dumping', message: 'a peer is still sending its dump' }],
+      total_matched: 0,
+      next_cursor: null,
+    } as Meta
     const w = await mountView({
       router: NX_P3,
       nodes: [],
       links: [],
       prefixes: [],
-      meta: {
-        warnings: [{ code: 'session_dumping', message: 'a peer is still sending its dump' }],
-        total_matched: 0,
-        next_cursor: null,
-      },
+      meta: dumping,
+      linksMeta: dumping,
+      prefixesMeta: dumping,
     })
     expect(w.find('[data-empty-view]').exists()).toBe(true)
-    expect(w.get('[data-meta-leg="nodes"]').text()).toMatch(/still loading its initial view/)
+    expect(w.get('[data-meta-legs~="nodes"]').text()).toMatch(/still loading its initial view/)
     expect(w.text()).not.toMatch(/complete as of/i)
+    // All three answers carry the same caveat, so it is said once, naming
+    // all three, rather than three identical lines.
+    expect(w.findAll('[data-meta-legs]')).toHaveLength(1)
+    expect(w.get('[data-meta-legs]').attributes('data-meta-legs')).toBe('nodes links prefixes')
   })
 
   it('renders xr-p2\'s real capture: no nodes, and a warned leg beside a clean one', async () => {
@@ -547,7 +554,7 @@ describe('LinkStateView', () => {
     // The clean leg (nodes) stays silent; both warned legs name themselves;
     // no completeness claim anywhere, because two of the three answers are
     // not clean.
-    expect(w.findAll('[data-meta-leg]').map((l) => l.attributes('data-meta-leg')).sort()).toEqual([
+    expect(w.findAll('[data-meta-legs]').flatMap((l) => l.attributes('data-meta-legs')!.split(' ')).sort()).toEqual([
       'links',
       'prefixes',
     ])
@@ -648,7 +655,7 @@ describe('LinkStateView', () => {
 
     // All three legs clean, so rule 6's single completeness line is the one
     // that shows -- the real captured metas, not a synthesized OK_META.
-    expect(w.findAll('[data-meta-leg]')).toHaveLength(0)
+    expect(w.findAll('[data-meta-legs]')).toHaveLength(0)
   })
 
   it('puts the scope in the URL', async () => {

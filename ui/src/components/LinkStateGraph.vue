@@ -508,9 +508,11 @@ function clearanceAt(at: Point, halfWidth: number, boxes: Positioned<LsNode>[]) 
 
 <template>
   <figure class="graph">
+    <!-- The screen already says "One router's link-state view: <router>"
+         directly above this figure; the caption carries what that line
+         does not -- protocols and areas -- after the router it names. -->
     <p v-if="scope" class="whose" data-observer>
-      One router's link-state view: <b>{{ scope.observers }}</b> · {{ scope.protocols }} ·
-      {{ scope.areas }}
+      <b>{{ scope.observers }}</b> · {{ scope.protocols }} · {{ scope.areas }}
     </p>
     <!-- Rule 4, when the rows break it. Said rather than resolved: picking
          one of two areas would draw half a topology under a caption claiming
@@ -645,7 +647,9 @@ svg { width: 100%; height: auto; display: block; margin-inline: auto; }
    (every .error paragraph, the withdrawn-route cells, the view_lost pills),
    --bad for strokes, borders and swatches. Both clear AA on this ground, so
    the fix is consistency rather than contrast. */
-.mixed { margin: 0; font: 500 var(--text-sm) var(--font-ui); color: var(--bad-2); }
+/* A caveat about the answer, so the status color for "needs attention"
+   (tokens.css), not the one for "we are blind" or a failed query. */
+.mixed { margin: 0; font: 500 var(--text-sm) var(--font-ui); color: var(--warn-ink); }
 
 .edge { fill: none; stroke: var(--faint); }
 /* Distinct, and deliberately not alarming: a dash and the design system's

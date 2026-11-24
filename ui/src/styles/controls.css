@@ -127,13 +127,45 @@ label:has(> input[type='checkbox']) { cursor: pointer; }
    where the answer will be, at the size of the answer's frame. A dashed
    edge says "this is a place", not "this is a result". */
 .empty-state {
+  position: relative;
   margin: 0;
-  padding: 48px 24px;
+  /* Room above the text for the mark below (32px plus a 14px gap), and the
+     text held to a readable measure in the middle of a wide frame. */
+  padding: 92px max(24px, calc((100% - 56ch) / 2)) 52px;
   text-align: center;
+  text-wrap: balance;
   border: 1px dashed var(--line-2);
   border-radius: var(--radius-lg);
+  background: var(--surface-2);
   color: var(--muted);
   font: 400 var(--text-body) / 1.6 var(--font-ui);
+}
+/* A quiet mark above the sentence: a chip with a magnifier, the shape of
+   "ask a question here". A single line of grey text in a dashed box read
+   as a placeholder someone forgot to fill; the mark makes it read as a
+   designed state. The glyph is a mask (only its shape is used) filled with
+   a token, so it follows the theme with no asset and no request. */
+.empty-state::before,
+.empty-state::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.empty-state::before {
+  top: 46px;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: var(--neutral-chip);
+}
+.empty-state::after {
+  top: 54px;
+  width: 16px;
+  height: 16px;
+  background: var(--muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.75'/%3E%3Cpath d='M10.5 10.5L14 14'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='currentColor' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='7' cy='7' r='4.75'/%3E%3Cpath d='M10.5 10.5L14 14'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 /* Visually hidden, still read by a screen reader. */

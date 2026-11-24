@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useRememberedScope } from '@/lib/rememberedScope'
 import DataTable, { type Column } from '@/components/DataTable.vue'
 import ScreenHeader from '@/components/ScreenHeader.vue'
 import { formatCount } from '@/lib/formatCount'
@@ -158,6 +159,9 @@ function onGraphSelect(asn: number) {
 
 const route = useRoute()
 const router = useRouter()
+// Opened bare from the nav, the screen asks the last question it was asked
+// in this tab rather than opening empty -- see the composable.
+useRememberedScope('looking-glass', ['mode', 'q', 'covers', 'inPath', 'tab', 'since'])
 
 /** The question and the view, as a URL carries them. Defaults are omitted so a
  *  shared link stays short and says only what was actually chosen. */
@@ -307,13 +311,13 @@ const columns: Column<UnicastRoute>[] = [
   // the one hop a reader most needs.
   { id: 'prefix', header: 'Prefix', width: '16%', wrap: true },
   { id: 'rib', header: 'RIB', width: '72px' },
-  // 78px, not 74: PATH ID needs 77px with its padding (measured in
+  // 70px: PATH ID needs 69px with its 28px of padding (measured in
   // Chromium), and at the Paths floor below this column gets exactly its px.
-  { id: 'path_id', header: 'Path ID', numeric: true, width: '78px' },
-  { id: 'router_sysname', header: 'Router', width: '10%' },
+  { id: 'path_id', header: 'Path ID', numeric: true, width: '70px' },
+  { id: 'router_sysname', header: 'Router', width: '11%' },
   // 16%: an IPv6 peer ran 2px past 15% at 1440 once rows stopped wrapping.
   // The point came from AS path, which wraps.
-  { id: 'peer_ip', header: 'Peer', width: '16%', mono: true },
+  { id: 'peer_ip', header: 'Peer', width: '18%', mono: true },
   // /v1/routes is one row per (collector, router, peer, rib, prefix,
   // path_id), so a router two collectors monitor renders each route twice.
   // Without this the pair is two rows identical in every rendered column --
@@ -326,21 +330,22 @@ const columns: Column<UnicastRoute>[] = [
   // beside the table dedupe (see distinctRoutes) because "how many paths"
   // is a question about the network; the table shows what was observed.
   //
-  // 12%, not 10%: the COLLECTOR header needs 99px with its padding
-  // (measured in Chromium), and 10% of the 652px table a 1024px viewport
-  // leaves cut it off. The two points came from AS path, which wraps.
-  { id: 'collector', header: 'Collector', width: '12%' },
-  { id: 'next_hop', header: 'Next hop', width: '11%', mono: true },
-  { id: 'as_path', header: 'AS path', width: '15%', wrap: true },
+  // 11%: the COLLECTOR header needs 91px with its padding (measured in
+  // Chromium), which 11% of the floor below holds.
+  { id: 'collector', header: 'Collector', width: '11%' },
+  { id: 'next_hop', header: 'Next hop', width: '12%', mono: true },
+  // 12%: wide enough at 1280 for one ten-digit 4-byte ASN, the one token
+  // in a path that cannot wrap.
+  { id: 'as_path', header: 'AS path', width: '12%', wrap: true },
 ]
 
-// Two of the eight columns are fixed px, 166px between them, and the rest
+// Two of the eight columns are fixed px, 142px between them, and the rest
 // are percentages of whatever the table is given. With no floor they
 // shrank with the screen, and on a 390px phone six of eight headers were
 // cut off. The floor holds the fixed columns plus the percentages taken of
-// the floor itself (166 + 80% of 830 = 830), and Collector's 12% of it is
-// 99.6px, its header's 99. Below it the table scrolls inside its own card,
-// the pattern RoutersView uses.
+// the floor itself (142 + 80% of 830 = 806, within it), and Collector's
+// 11% of it is 91.3px, its header's 91. Below it the table scrolls inside
+// its own card, the pattern RoutersView uses.
 const PATHS_MIN_WIDTH = '830px'
 
 // findRoutes answers with a RouteFanout -- { unicast, vpn, evpn } -- because
