@@ -153,7 +153,7 @@ ui-gen: ## Regenerate the typed API client from api/openapi.yaml
 ui-test: ## Run the UI test suite
 	cd ui && npm ci && npm test
 
-go-versions: ## Fail if a setup-go pin or a Dockerfile's golang digest is not go.mod's toolchain
+go-versions: ## Fail if anything but go.mod's toolchain line sets the Go version (workflows, Dockerfiles)
 	@./scripts/check-go-versions.sh
 
 standalone-check: ## Fail if a published file cites an internal path, a commit SHA or internal process material

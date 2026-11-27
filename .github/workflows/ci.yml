@@ -77,33 +77,22 @@ jobs:
 
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
-          # Matches go.mod's `toolchain` line exactly -- not its
-          # `go 1.27.0` line, which is the LANGUAGE version floor rather
-          # than the toolchain a build runs on. The two differ now: the go
-          # directive says what the source may use, the toolchain directive
-          # says what compiles it, and this pin has to track the second or
-          # it is pinning nothing.
-          #
-          # Leaving this behind go.mod would not fail the build --
-          # GOTOOLCHAIN defaults to "auto", so go itself would silently
-          # download whatever the toolchain directive names -- it would
-          # just mean this pin is decorative and the toolchain actually
-          # used drifts unpinned between runs. Which is the whole reason
-          # it is written down. scripts/check-go-versions.sh (next step)
-          # fails the job when it falls behind.
-          go-version: "1.27.4"
+          # go.mod's `toolchain` line is the one place the Go version is
+          # written; setup-go installs exactly that (not the `go 1.27.0`
+          # line, which is the language floor the source may use). The
+          # Dockerfiles read the same line, so a Go bump -- Renovate's
+          # included -- is a one-line change to go.mod.
+          go-version-file: go.mod
 
-      # Every Go toolchain the repo builds with -- this workflow's and the
-      # other workflows' setup-go pins, and each Dockerfile's golang digest --
-      # must be the one go.mod's toolchain line names. Nothing else ties them
-      # together: Renovate moves go.mod (security releases skip its 7-day
-      # wait) but not the setup-go pins, and the Dockerfile digests move on
-      # their own schedule. The golang image sets GOTOOLCHAIN=local, so the
-      # images ignore go.mod entirely; v0.1.1 shipped images on go1.27.3
-      # while go.mod and the CLI were on the go1.27.4 security release, and
-      # the `docker build` step below stayed green because 1.27.3 still
-      # compiles the source. Reads image configs only, so it takes seconds.
-      - name: Go toolchain pins match go.mod
+      # Keeps it that way. v0.1.1 shipped images built on go1.27.3 while
+      # go.mod and the CLI were on the go1.27.4 security release: the
+      # Dockerfiles took Go from the golang image's digest (that image sets
+      # GOTOOLCHAIN=local, so go.mod was ignored), and the `docker build`
+      # step below stayed green because 1.27.3 still compiles the source.
+      # This fails if a workflow pins a go-version again or a Dockerfile's
+      # golang stage stops reading its toolchain from go.mod. Text only, no
+      # network.
+      - name: Go version comes only from go.mod
         run: scripts/check-go-versions.sh
 
       - name: go build
@@ -231,10 +220,11 @@ jobs:
           echo "buf breaking against $against"
           buf breaking --against ".git#ref=$against"
 
-      # `go build ./...` above proves the SOURCE compiles with the toolchain
-      # this workflow pins. It says nothing about the toolchain the images
-      # are built with, which is pinned separately in each Dockerfile's FROM
-      # line -- and that gap has already cost us: go.mod moved to 1.25.0
+      # `go build ./...` above proves the SOURCE compiles with go.mod's
+      # toolchain. It says nothing about whether the images build. The
+      # Dockerfiles used to pin their own Go in the FROM line (they now read
+      # go.mod; the "Go version comes only from go.mod" step keeps them
+      # honest), and that gap has already cost us: go.mod moved to 1.25.0
       # while both Dockerfiles still said golang:1.24, so every binary in
       # the dev stack failed to build while CI stayed green. Nothing here
       # ran docker build, so nothing noticed until the stack was brought up
@@ -247,8 +237,9 @@ jobs:
       # here.
       #
       # No registry, no push, no cache: the artifact is not wanted, only the
-      # exit status. All three images are built because they pin their
-      # toolchains independently and have drifted independently before.
+      # exit status. All three images are built because each has its own
+      # base images, build steps and COPY paths, and they have drifted
+      # independently before.
       # Dockerfile.api joined this list when it grew a second, independently
       # pinned toolchain of its own (node:24 alongside golang:1.25) plus a
       # COPY --from=ui path between stages -- exactly the shape of drift this
