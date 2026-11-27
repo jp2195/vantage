@@ -217,7 +217,7 @@ with its NATS subchart bundled, so an install needs no clone of this
 repository:
 
 ```
-helm install vantage oci://ghcr.io/jp2195/charts/vantage --version 0.1.1 \
+helm install vantage oci://ghcr.io/jp2195/charts/vantage --version 0.1.2 \
   --namespace vantage -f my-values.yaml --wait --wait-for-jobs --timeout 10m
 ```
 
@@ -237,9 +237,9 @@ name a database and NATS certificates that already exist.
   `deploy/grafana/` import into whatever instance you already run.
 
 The chart reference's [quick start](deploy/helm/README.md#quick-start) has
-every step before that line. The docs pin `0.1.1`; use the newest version on
+every step before that line. The docs pin `0.1.2`; use the newest version on
 the [Releases page](https://github.com/jp2195/vantage/releases). `helm show
-values oci://ghcr.io/jp2195/charts/vantage --version 0.1.1` prints every
+values oci://ghcr.io/jp2195/charts/vantage --version 0.1.2` prints every
 setting with its default.
 
 The chart's images are `ghcr.io/jp2195/vantage-collector`, `-writer` and
