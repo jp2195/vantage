@@ -15,7 +15,17 @@ FROM --platform=$BUILDPLATFORM golang:1.27@sha256:5f1b98fa02fe396ebce2a0227a0e08
 ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+# Build with exactly the Go toolchain go.mod's `toolchain` line names, not
+# whichever Go this base image happens to hold, so go.mod is the one place
+# the version is written. The golang image sets GOTOOLCHAIN=local, which
+# would ignore go.mod; clearing it lets `go env -w` (saved in Go's env file,
+# so later RUN steps see it too) select go.mod's version, which go fetches
+# from the module proxy and verifies against the checksum database. An exact
+# version rather than GOTOOLCHAIN=auto: auto keeps a newer base image's Go,
+# so a base image bump would silently move the images ahead of the CLI.
+ENV GOTOOLCHAIN=
+RUN tc=$(awk '$1 == "toolchain" { print $2 }' go.mod) && test -n "$tc" && \
+    go env -w GOTOOLCHAIN="$tc" && go mod download && go version
 COPY . .
 COPY --from=ui /webui/dist ./webui/dist
 # .dockerignore keeps .git out of the context, so the version cannot be read
