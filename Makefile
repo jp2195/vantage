@@ -1,4 +1,4 @@
-.PHONY: help check chart-deps dev-api generate test test-nodb build fuzz images push-images ui ui-gen ui-test ui-fixtures standalone-check sync-helm-schema fetch-asnames restore-archive-backup
+.PHONY: help check chart-deps dev-api generate test test-nodb build fuzz images push-images ui ui-gen ui-test ui-fixtures go-versions standalone-check sync-helm-schema fetch-asnames restore-archive-backup
 
 # Default target: an index that is DERIVED from the recipes rather than
 # hand-maintained, so it cannot fall behind the targets it describes. A target
@@ -152,6 +152,9 @@ ui-gen: ## Regenerate the typed API client from api/openapi.yaml
 
 ui-test: ## Run the UI test suite
 	cd ui && npm ci && npm test
+
+go-versions: ## Fail if a setup-go pin or a Dockerfile's golang digest is not go.mod's toolchain
+	@./scripts/check-go-versions.sh
 
 standalone-check: ## Fail if a published file cites an internal path, a commit SHA or internal process material
 	@./scripts/check-citations-test.sh
